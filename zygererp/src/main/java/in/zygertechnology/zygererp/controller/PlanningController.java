@@ -137,6 +137,13 @@ public class PlanningController {
         return planning.getWorkOrderStatusHistory(id);
     }
 
+    // ── FRS §3.3: Work Order Summary ──
+
+    @GetMapping("/work-order/{id}/summary")
+    Map<String, Object> woSummary(@PathVariable Long id) {
+        return planning.getWorkOrderSummary(id);
+    }
+
     // ── FRS §17: Reports ──
 
     @GetMapping("/work-order/reports/overdue")

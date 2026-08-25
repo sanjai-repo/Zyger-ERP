@@ -279,7 +279,9 @@ public class PlanningService {
             try {
                 var bomOpt = bomRepo.findById(wo.getBomId());
                 if (bomOpt.isPresent()) {
-                    wo.setBomRevision(bomOpt.get().getBomVersion());
+                    ProductionBOM bom = bomOpt.get();
+                    wo.setBomRevision(bom.getBomVersion());
+                    wo.setBomCode(bom.getBomNumber());
                 }
             } catch (Exception ignored) {}
         }
@@ -287,7 +289,9 @@ public class PlanningService {
             try {
                 var routeOpt = routeRepo.findById(wo.getRouteId());
                 if (routeOpt.isPresent()) {
-                    wo.setRouteRevision(routeOpt.get().getRouteVersion());
+                    RouteSheet route = routeOpt.get();
+                    wo.setRouteRevision(route.getRouteVersion());
+                    wo.setRouteSheetCode(route.getRouteNumber());
                 }
             } catch (Exception ignored) {}
         }
@@ -312,25 +316,30 @@ public class PlanningService {
         throw new IllegalStateException("Action not allowed in status " + current + ". Required: " + Arrays.toString(allowed));
     }
 
-    // FRS §5.5: Work Order creation validations
+    // FRS §6: Work Order creation validations (V1-V6)
     private void validateWorkOrderBeforeCreate(Map<String, Object> body) {
-        // Sales Order is mandatory
+        // V1: Sales Order is mandatory
         if (body.get("salesOrderId") == null && body.get("sourceDocNo") == null) {
-            // Allow creation without SO for backward compat, but warn
+            // Soft enforcement — allow for backward compat but warn
         }
-        // Production Qty validation
-        BigDecimal prodQty = body.containsKey("productionQty")
+        // V2: Production Qty is mandatory
+        BigDecimal prodQty = body.containsKey("productionQty") && body.get("productionQty") != null
             ? new BigDecimal(String.valueOf(body.get("productionQty")))
-            : (body.containsKey("orderQuantity") ? new BigDecimal(String.valueOf(body.get("orderQuantity"))) : null);
-        BigDecimal pendingQty = body.containsKey("pendingQty")
+            : (body.containsKey("orderQuantity") && body.get("orderQuantity") != null
+                ? new BigDecimal(String.valueOf(body.get("orderQuantity"))) : null);
+        if (prodQty == null || prodQty.signum() <= 0) {
+            throw new IllegalArgumentException("Production Quantity is mandatory and must be greater than zero.");
+        }
+        // V3: Production Qty must not exceed Pending Qty
+        BigDecimal pendingQty = body.containsKey("pendingQty") && body.get("pendingQty") != null
             ? new BigDecimal(String.valueOf(body.get("pendingQty"))) : null;
         if (prodQty != null && pendingQty != null && prodQty.compareTo(pendingQty) > 0) {
             throw new IllegalArgumentException("Production Quantity exceeds Pending Quantity.");
         }
-        // Planned End Date > Start Date
+        // V6: Planned End Date > Start Date
         if (body.containsKey("plannedStartDate") && body.containsKey("plannedEndDate")) {
-            String start = String.valueOf(body.get("plannedStartDate"));
-            String end = String.valueOf(body.get("plannedEndDate"));
+            String start = String.valueOf(body.getOrDefault("plannedStartDate", ""));
+            String end = String.valueOf(body.getOrDefault("plannedEndDate", ""));
             if (!start.isEmpty() && !end.isEmpty()) {
                 LocalDate sd = LocalDate.parse(start.substring(0, 10));
                 LocalDate ed = LocalDate.parse(end.substring(0, 10));
@@ -342,10 +351,28 @@ public class PlanningService {
     }
 
     private void validateWoCanRelease(WorkOrder wo) {
+        // V4: Active BOM must exist for item_code
+        if (wo.getBomId() == null && wo.getItemCode() != null) {
+            List<?> activeBoms = em.createQuery(
+                "SELECT b.id FROM ProductionBOM b WHERE b.itemCode = :itemCode AND b.status = 'APPROVED'")
+                .setParameter("itemCode", wo.getItemCode()).setMaxResults(1).getResultList();
+            if (activeBoms.isEmpty()) {
+                throw new IllegalStateException("Active BOM not found for item: " + wo.getItemCode());
+            }
+        }
         if (wo.getBomId() != null) {
             Optional<ProductionBOM> bom = bomRepo.findById(wo.getBomId());
             if (bom.isPresent() && !"APPROVED".equals(bom.get().getStatus())) {
                 throw new IllegalStateException("BOM must be APPROVED before releasing Work Order.");
+            }
+        }
+        // V5: Active Route Sheet must exist for item_code
+        if (wo.getRouteId() == null && wo.getItemCode() != null) {
+            List<?> activeRoutes = em.createQuery(
+                "SELECT r.id FROM RouteSheet r WHERE r.itemCode = :itemCode AND r.status = 'APPROVED'")
+                .setParameter("itemCode", wo.getItemCode()).setMaxResults(1).getResultList();
+            if (activeRoutes.isEmpty()) {
+                throw new IllegalStateException("Active Route Sheet not found for item: " + wo.getItemCode());
             }
         }
         if (wo.getRouteId() != null) {
@@ -500,6 +527,41 @@ public class PlanningService {
         BigDecimal completed = wo.getCompletedQty() != null ? wo.getCompletedQty() : BigDecimal.ZERO;
         BigDecimal rejected = wo.getRejectedQty() != null ? wo.getRejectedQty() : BigDecimal.ZERO;
         wo.setBalanceQty(order.subtract(completed).subtract(rejected));
+        // FRS §3.2: recompute material balance_qty = required_qty - issued_qty
+        if (wo.getMaterials() != null) {
+            for (WorkOrderMaterial mat : wo.getMaterials()) {
+                BigDecimal req = mat.getRequiredQuantity() != null ? mat.getRequiredQuantity() : BigDecimal.ZERO;
+                BigDecimal issued = mat.getIssuedQuantity() != null ? mat.getIssuedQuantity() : BigDecimal.ZERO;
+                mat.setBalanceQty(req.subtract(issued));
+            }
+        }
+    }
+
+    /** FRS §3.3: Compute derived summary for work order process lines. */
+    @Transactional(readOnly = true)
+    public Map<String, Object> getWorkOrderSummary(Long workOrderId) {
+        WorkOrder wo = (WorkOrder) docs.get("work-order", workOrderId);
+        BigDecimal totalSetupTime = BigDecimal.ZERO;
+        BigDecimal totalCycleTimePerUnit = BigDecimal.ZERO;
+        BigDecimal productionQty = wo.getProductionQty() != null ? wo.getProductionQty() : BigDecimal.ZERO;
+
+        if (wo.getOperations() != null) {
+            for (WorkOrderOperation op : wo.getOperations()) {
+                totalSetupTime = totalSetupTime.add(op.getSetupTimePlanned() != null ? op.getSetupTimePlanned() : BigDecimal.ZERO);
+                totalCycleTimePerUnit = totalCycleTimePerUnit.add(op.getCycleTimePlanned() != null ? op.getCycleTimePlanned() : BigDecimal.ZERO);
+            }
+        }
+        BigDecimal totalProductionTimeMin = totalSetupTime.add(totalCycleTimePerUnit.multiply(productionQty));
+        BigDecimal totalProductionTimeHrs = totalProductionTimeMin.divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("totalSetupTimeMin", totalSetupTime);
+        summary.put("totalCycleTimePerUnitMin", totalCycleTimePerUnit);
+        summary.put("totalProductionTimeMin", totalProductionTimeMin);
+        summary.put("totalProductionTimeHrs", totalProductionTimeHrs);
+        summary.put("materialLineCount", wo.getMaterials() != null ? wo.getMaterials().size() : 0);
+        summary.put("processLineCount", wo.getOperations() != null ? wo.getOperations().size() : 0);
+        return summary;
     }
 
     /** FRS §4.4: Create new BOM revision from existing. */
@@ -584,6 +646,9 @@ public class PlanningService {
             Optional<ProductionBOM> bomOpt = bomRepo.findById(effectiveBomId);
             if (bomOpt.isPresent()) {
                 ProductionBOM bom = bomOpt.get();
+                // FRS §3.1: snapshot BOM code display
+                wo.setBomCode(bom.getBomNumber());
+                wo.setBomRevision(bom.getBomVersion());
                 BigDecimal bomBaseQty = bom.getBaseQuantity() == null ? BigDecimal.ONE : bom.getBaseQuantity();
                 BigDecimal scaleFactor = orderQty.divide(bomBaseQty, 10, RoundingMode.HALF_UP);
 
@@ -608,6 +673,8 @@ public class PlanningService {
                         mat.setRequiredDate(wo.getPlannedStartDate());
                         mat.setIssueMethod(bomLine.getIssueMethod());
                         mat.setWarehouse(bomLine.getWarehouse());
+                        mat.setUom(bomLine.getUom());
+                        mat.setBalanceQty(required);
                         mat.setReservationStatus("None");
                         mat.setIssueStatus("Pending");
                         newMats.add(mat);
@@ -622,6 +689,9 @@ public class PlanningService {
             Optional<RouteSheet> routeOpt = routeRepo.findById(wo.getRouteId());
             if (routeOpt.isPresent()) {
                 RouteSheet route = routeOpt.get();
+                // FRS §3.1: snapshot Route Sheet code display
+                wo.setRouteSheetCode(route.getRouteNumber());
+                wo.setRouteRevision(route.getRouteVersion());
                 List<WorkOrderOperation> newOps = new ArrayList<>();
                 if (route.getOperations() != null) {
                     for (RouteOperation rtOp : route.getOperations()) {

@@ -14,6 +14,7 @@ import { formatDate, formatNumber, toOptionalNumber } from '../../../utils/forma
 import { getApiErrorMessage } from '../../../utils/apiError';
 import { useToast } from '../../../contexts/ToastContext';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useTabs } from '../../../contexts/TabsContext';
 import StatusBadge from '../../../components/common/StatusBadge';
 import ConfirmActionModal from '../../../components/common/ConfirmActionModal';
 import AuditHistoryDrawer from '../../../components/common/AuditHistoryDrawer';
@@ -45,6 +46,7 @@ type ActionModal = { action: string; danger: boolean; title?: string };
 export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { initialDocId?: string | number; viewOnly?: boolean }) {
   const { toast } = useToast();
   const { can } = useAuth();
+  const { openTab } = useTabs();
   const [mode, setMode] = useState<'list' | 'form'>(initialDocId ? 'form' : 'list');
   const [documentId, setDocumentId] = useState<string | null>(initialDocId ? String(initialDocId) : null);
   const [isViewOnly, setIsViewOnly] = useState(viewOnly);
@@ -64,6 +66,7 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
   const [statusHistory, setStatusHistory] = useState<Array<Record<string, unknown>>>([]);
   const [activeTab, setActiveTab] = useState<'operations' | 'materials' | 'quantity' | 'history'>('operations');
   const [populating, setPopulating] = useState(false);
+  const [summary, setSummary] = useState<Record<string, unknown> | null>(null);
   const [bomList, setBomList] = useState<Array<{ id: number; bomNumber: string; itemCode: string }>>([]);
   const [routeList, setRouteList] = useState<Array<{ id: number; routeNumber: string; itemCode: string }>>([]);
   const [machines, setMachines] = useState<Array<{ code: string; name: string }>>([]);
@@ -209,6 +212,26 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
     } catch (e) { toast('Failed to load status history.', 'error'); }
   };
 
+  const fetchSummary = useCallback(async () => {
+    if (!documentId) return;
+    try {
+      const res = await apiClient.get(`/v1/planning/work-order/${documentId}/summary`);
+      setSummary(res.data);
+    } catch { /* ignore */ }
+  }, [documentId]);
+
+  useEffect(() => { if (documentId && documentQuery.data) fetchSummary(); }, [documentId, documentQuery.data, fetchSummary]);
+
+  const viewBom = () => {
+    const bomId = form.bomId;
+    if (bomId) openTab({ id: 'bom-master', label: 'BOM', icon: 'account_tree', component: null as any, props: { initialDocId: bomId, viewOnly: true } });
+  };
+
+  const viewRoute = () => {
+    const routeId = form.routeId;
+    if (routeId) openTab({ id: 'route-sheet', label: 'Route Sheet', icon: 'route', component: null as any, props: { initialDocId: routeId, viewOnly: true } });
+  };
+
   const cellValue = (row: Record<string, unknown>, field: string): string => {
     const raw = row[field]; if (raw == null) return '\u2014';
     if (typeof raw === 'number') return formatNumber(raw);
@@ -231,6 +254,25 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
     machineCode: machines.map((m) => m.code),
     workCenterCode: workCenters.map((w) => w.code),
     operator: operators.map((o) => o.username),
+  };
+
+  /** FRS §3.2: Recalculate material required_qty when production_qty changes in Draft */
+  const handleProductionQtyChange = (val: string) => {
+    const numVal = toOptionalNumber(val);
+    setForm((c) => {
+      const prev = toOptionalNumber(String(c.productionQty ?? ''));
+      const baseQty = toOptionalNumber(String(c.orderQuantity ?? ''));
+      // Recompute material lines ratio
+      if (prev && prev > 0 && mats.length > 0 && baseQty && baseQty > 0) {
+        setMats((m) => m.map((line) => {
+          const origReq = toOptionalNumber(String(line.requiredQuantity ?? ''));
+          if (!origReq || origReq <= 0) return line;
+          const ratio = origReq / prev;
+          return { ...line, requiredQuantity: ratio * (numVal || 0) };
+        }));
+      }
+      return { ...c, productionQty: val };
+    });
   };
 
   const renderLineTable = (lineFields: MaterialLineDef[], data: Array<Record<string, unknown>>, setData: React.Dispatch<React.SetStateAction<Array<Record<string, unknown>>>>, editableLines: boolean) => (
@@ -396,6 +438,9 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
                   <span className="material-symbols-rounded">history</span> Audit
                 </button>
                 <StatusBadge status={genericStatus} />
+                {/* FRS §4.1: View BOM / View Route Sheet buttons */}
+                {Boolean(form.bomId) && <button type="button" className="btn btn-sm" onClick={viewBom}><span className="material-symbols-rounded">account_tree</span> View BOM</button>}
+                {Boolean(form.routeId) && <button type="button" className="btn btn-sm" onClick={viewRoute}><span className="material-symbols-rounded">route</span> View Route Sheet</button>}
               </div>
             )}
           </div>
@@ -416,6 +461,7 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
                 : field.key === 'routeId'
                   ? routeList.map((r) => `${r.routeNumber} \u2014 ${r.itemCode}`)
                   : pickerOptions;
+              const isProdQty = field.key === 'productionQty';
               return (
                 <label key={field.key} className={`fld ${field.span2 ? 'span2' : ''} ${isFieldError(field.key) ? 'invalid' : ''}`}>
                   <span>{field.label}</span>
@@ -427,13 +473,25 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
                       {pickerOptions.map((o, i) => <option key={o} value={o}>{pickerLabels[i] ?? o}</option>)}
                     </select>
                   ) : (
-                    <input className="in" type={field.type ?? 'text'} readOnly={!editable} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))} />
+                    <input className="in" type={field.type ?? 'text'} readOnly={!editable} value={String(form[field.key] ?? '')} onChange={(e) => isProdQty && editable ? handleProductionQtyChange(e.target.value) : setForm((c) => ({ ...c, [field.key]: e.target.value }))} />
                   )}
                 </label>
               );
             })}
           </div>
         </div>
+
+        {documentId && summary && (
+          <div className="panel" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+            <div className="panel-h"><h2><span className="material-symbols-rounded">analytics</span> Summary (FRS §3.3)</h2></div>
+            <div className="fgrid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+              <label className="fld"><span>Total Setup Time (min)</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#fff', borderRadius: 4, fontWeight: 600 }}>{formatNumber(Number(summary.totalSetupTimeMin ?? 0))}</span></label>
+              <label className="fld"><span>Cycle Time/Unit (min)</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#fff', borderRadius: 4, fontWeight: 600 }}>{formatNumber(Number(summary.totalCycleTimePerUnitMin ?? 0))}</span></label>
+              <label className="fld"><span>Total Prod. Time (min)</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#fff', borderRadius: 4, fontWeight: 600 }}>{formatNumber(Number(summary.totalProductionTimeMin ?? 0))}</span></label>
+              <label className="fld"><span>Total Prod. Time (hrs)</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#fff', borderRadius: 4, fontWeight: 700, color: '#166534' }}>{formatNumber(Number(summary.totalProductionTimeHrs ?? 0))}</span></label>
+            </div>
+          </div>
+        )}
 
         {documentId && (
           <div className="panel">
@@ -453,14 +511,14 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
             </div>
             {activeTab === 'operations' && (
               <>
-                {editable && <div style={{ padding: '8px 16px' }}><button type="button" className="btn btn-sm" disabled={isBusy} onClick={() => setOps((c) => [...c, {}])}><span className="material-symbols-rounded">add</span> Add Operation</button></div>}
-                {renderLineTable(config.lines!.fields, ops, setOps, editable)}
+                {editable && !documentId && <div style={{ padding: '8px 16px' }}><button type="button" className="btn btn-sm" disabled={isBusy} onClick={() => setOps((c) => [...c, {}])}><span className="material-symbols-rounded">add</span> Add Operation</button></div>}
+                {renderLineTable(config.lines!.fields, ops, setOps, editable && !documentId)}
               </>
             )}
             {activeTab === 'materials' && (
               <>
-                {editable && <div style={{ padding: '8px 16px' }}><button type="button" className="btn btn-sm" disabled={isBusy} onClick={() => setMats((c) => [...c, {}])}><span className="material-symbols-rounded">add</span> Add Material</button></div>}
-                {renderLineTable(WORK_ORDER_MATERIAL_FIELDS, mats, setMats, editable)}
+                {editable && !documentId && <div style={{ padding: '8px 16px' }}><button type="button" className="btn btn-sm" disabled={isBusy} onClick={() => setMats((c) => [...c, {}])}><span className="material-symbols-rounded">add</span> Add Material</button></div>}
+                {renderLineTable(WORK_ORDER_MATERIAL_FIELDS, mats, setMats, editable && !documentId)}
               </>
             )}
             {activeTab === 'quantity' && (

@@ -27,6 +27,8 @@ public class WorkOrderMaterial extends BaseLine implements LineEntity {
     @Column(name = "reservation_status", length = 30) String reservationStatus;
     @Column(name = "issue_status", length = 30) String issueStatus;
     @Column(length = 60) String warehouse;
+    @Column(length = 20) String uom;
+    @Column(name = "balance_qty") BigDecimal balanceQty;
 
     @Override public String getItemCode() { return componentItemCode; }
     @Override public BigDecimal getQty() { return requiredQuantity == null ? BigDecimal.ZERO : requiredQuantity; }

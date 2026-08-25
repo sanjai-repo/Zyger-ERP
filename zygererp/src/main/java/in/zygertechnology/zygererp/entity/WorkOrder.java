@@ -32,8 +32,10 @@ public class WorkOrder extends BaseDoc implements DocEntity {
     String plant;
     @Column(name = "production_line", length = 60) String productionLine;
     @Column(name = "bom_id") Long bomId;
+    @Column(name = "bom_code", length = 60) String bomCode;
     @Column(name = "bom_revision", length = 20) String bomRevision;
     @Column(name = "route_id") Long routeId;
+    @Column(name = "route_sheet_code", length = 60) String routeSheetCode;
     @Column(name = "route_revision", length = 20) String routeRevision;
     @Column(name = "pending_qty") BigDecimal pendingQty;
     @Column(name = "production_qty") BigDecimal productionQty;
