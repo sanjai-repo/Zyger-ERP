@@ -222,7 +222,7 @@ export default function BomMasterScreen() {
           </div>
         )}
 
-        {formTab === 'details' && (
+        {formTab === 'details' && (<>
           <div className="panel">
             <div className="sec-head">
               <span className="material-symbols-rounded" style={{ fontSize: '1.2rem' }}>info</span>
@@ -298,7 +298,7 @@ export default function BomMasterScreen() {
             <div className="empty" style={{ padding: 16 }}>No components added. Click "Add Line" to start.</div>
           )}
         </div>
-        )}
+        </>)}
 
         {formTab === 'where-used' && (
           <div className="panel">
