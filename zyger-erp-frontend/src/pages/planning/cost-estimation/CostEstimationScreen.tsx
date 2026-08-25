@@ -84,6 +84,11 @@ const STATUS_COLORS: Record<string, { color: string; bg: string }> = {
 
 const fmt = (v?: number) => v != null ? `$${v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
 
+const formatCurrency = (val: unknown) => {
+  if (val == null || val === '') return '—';
+  return `$${Number(val).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
 export default function CostEstimationScreen() {
   const { toast } = useToast();
   const { closeTab } = useTabs();
@@ -103,6 +108,13 @@ export default function CostEstimationScreen() {
   const [reconcileTarget, setReconcileTarget] = useState<number | null>(null);
   const [reconcileResult, setReconcileResult] = useState<ReconcileResult | null>(null);
   const [reconcileLoading, setReconcileLoading] = useState(false);
+  const [componentTypes, setComponentTypes] = useState<Array<{code: string; name: string}>>([]);
+
+  useEffect(() => {
+    apiClient.get('/v1/planning/cost-component-types').then(({ data }) => {
+      setComponentTypes(Array.isArray(data) ? data : []);
+    }).catch(() => {});
+  }, []);
 
   const load = async () => {
     setLoading(true);
@@ -403,12 +415,16 @@ export default function CostEstimationScreen() {
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {lines.map((ln) => (
+                                    {lines.map((ln, idx) => (
                                       <tr key={ln.id}>
                                         <td>
-                                          <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 8, fontSize: 11, fontWeight: 600, color: ln.lineType === 'MATERIAL' ? '#007bff' : '#6f42c1', background: ln.lineType === 'MATERIAL' ? '#d1ecf1' : '#e8daef' }}>
-                                            {ln.lineType}
-                                          </span>
+                                          <select className="in" value={String(ln.lineType ?? '')} onChange={(e) => {
+                                            const val = e.target.value;
+                                            setLines((c) => c.map((l, i) => i === idx ? { ...l, lineType: val } : l));
+                                          }}>
+                                            <option value="">Select...</option>
+                                            {componentTypes.map((ct) => <option key={ct.code} value={ct.code}>{ct.name}</option>)}
+                                          </select>
                                         </td>
                                         <td>{ln.componentCode ?? ln.machineCode ?? '—'}</td>
                                         <td>{ln.componentDescription ?? ln.operationDescription ?? '—'}</td>
@@ -449,6 +465,24 @@ export default function CostEstimationScreen() {
             <button className="btn btn-sm" disabled={(page + 1) * PAGE_SIZE >= total} onClick={() => setPage((p) => p + 1)}>Next</button>
           </div>
         )}
+      </div>
+
+      {/* FRS §3.10: Summary Panel */}
+      <div className="panel">
+        <div className="panel-h"><h2><span className="material-symbols-rounded">summarize</span> Cost Summary</h2></div>
+        <div className="fgrid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+          <label className="fld"><span>Total Material Cost</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatCurrency(form.totalMaterialCost)}</span></label>
+          <label className="fld"><span>Total Machine Cost</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatCurrency(form.totalMachineCost)}</span></label>
+          <label className="fld"><span>Total Labour Cost</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatCurrency(form.totalLabourCost)}</span></label>
+          <label className="fld"><span>Total Tooling Cost</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatCurrency(form.totalToolingCost)}</span></label>
+          <label className="fld"><span>Total Subcontract Cost</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatCurrency(form.totalSubcontractCost)}</span></label>
+          <label className="fld"><span>Total Overhead Cost</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatCurrency(form.totalOverheadCost)}</span></label>
+          <label className="fld"><span>Scrap Allowance Cost</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatCurrency(form.scrapAllowanceCost)}</span></label>
+          <label className="fld"><span style={{ fontWeight: 700 }}>Total Manufacturing Cost</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#eff6ff', borderRadius: 4, fontWeight: 700, color: '#1e40af' }}>{formatCurrency(form.totalManufacturingCost)}</span></label>
+          <label className="fld"><span>Profit Margin %</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{String(form.profitMarginPercent ?? '—')}%</span></label>
+          <label className="fld"><span>Profit Amount</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatCurrency(form.profitAmount)}</span></label>
+          <label className="fld"><span style={{ fontWeight: 700 }}>Estimated Selling Price</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f0fdf4', borderRadius: 4, fontWeight: 700, color: '#16a34a' }}>{formatCurrency(form.estimatedSellingPrice)}</span></label>
+        </div>
       </div>
 
       <ConfirmActionModal open={Boolean(deleteTarget)} title="Delete Cost Estimation" body="Permanently delete this cost estimation?" okLabel="Delete" danger busy={busy} onClose={() => setDeleteTarget(null)} onConfirm={del} />

@@ -40,6 +40,7 @@ interface Ecr {
   reviewedBy?: string;
   approvedBy?: string;
   remarks?: string;
+  existingOrdersEvaluated?: boolean;
 }
 
 const PAGE_SIZE = 20;
@@ -96,6 +97,7 @@ export default function EcrScreen() {
   const [deleteTarget, setDeleteTarget] = useState<Ecr | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionTarget, setActionTarget] = useState<{ ecr: Ecr; action: string } | null>(null);
+  const [existingOrders, setExistingOrders] = useState<Array<{workOrderId: number; woNumber: string; status: string; orderQuantity: number; disposition: string | null}>>([]);
 
   const load = async () => {
     setLoading(true);
@@ -163,6 +165,31 @@ export default function EcrScreen() {
   };
 
   const set = (k: string, v: unknown) => setForm((c) => ({ ...c, [k]: v }));
+
+  const genericStatus = String(form.status ?? 'RAISED');
+
+  const fetchExistingOrders = async () => {
+    if (!editId) return;
+    try {
+      const { data } = await apiClient.get(`/v1/planning/engineering-changes/${editId}/existing-orders`);
+      setExistingOrders(Array.isArray(data) ? data : []);
+    } catch { setExistingOrders([]); }
+  };
+
+  const markEvaluated = async () => {
+    if (!editId) return;
+    try {
+      await apiClient.put(`/v1/planning/engineering-changes/${editId}/mark-evaluated`);
+      setForm((c) => ({ ...c, existingOrdersEvaluated: true }));
+      toast('Existing orders marked as evaluated.');
+    } catch (e) { toast(getApiErrorMessage(e, 'Failed.'), 'error'); }
+  };
+
+  useEffect(() => {
+    if (editId && genericStatus !== 'DRAFT') {
+      fetchExistingOrders();
+    }
+  }, [editId, genericStatus]);
 
   return (
     <>
@@ -331,6 +358,48 @@ export default function EcrScreen() {
           <button className="btn btn-p" onClick={save} disabled={busy}>{editId ? 'Update' : 'Create'}</button>
         </div>
       </div>
+
+      {editId && genericStatus !== 'DRAFT' && (
+        <div className="panel">
+          <div className="panel-h">
+            <h2><span className="material-symbols-rounded">fact_check</span> Existing Orders Evaluated</h2>
+            {!form.existingOrdersEvaluated && existingOrders.length > 0 && (
+              <button type="button" className="btn btn-sm btn-p" onClick={markEvaluated} disabled={busy}>
+                <span className="material-symbols-rounded">check_circle</span> Mark Evaluated
+              </button>
+            )}
+          </div>
+          {existingOrders.length === 0 ? (
+            <div className="empty" style={{ padding: 12 }}><span className="material-symbols-rounded">info</span> No open work orders found for this item.</div>
+          ) : (
+            <div className="twrap">
+              <table className="tbl">
+                <thead><tr><th>WO Number</th><th>Status</th><th>Order Qty</th><th>Disposition</th></tr></thead>
+                <tbody>
+                  {existingOrders.map((o, idx) => (
+                    <tr key={idx}>
+                      <td>{o.woNumber}</td>
+                      <td>{o.status}</td>
+                      <td>{o.orderQuantity}</td>
+                      <td>
+                        <select className="in" value={o.disposition ?? ''} onChange={(e) => {
+                          const val = e.target.value;
+                          setExistingOrders((c) => c.map((item, i) => i === idx ? { ...item, disposition: val } : item));
+                        }}>
+                          <option value="">Select...</option>
+                          <option value="CONTINUE">Continue on old revision</option>
+                          <option value="HOLD">Hold</option>
+                          <option value="REWORK">Rework</option>
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="panel">
         <div className="toolbar">

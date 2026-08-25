@@ -23,4 +23,12 @@ public class MachineLoadWOMapping {
     @Column(precision = 12, scale = 2) BigDecimal estimatedHours;
     @Builder.Default Integer priority = 50;
     @Column(length = 30) @Builder.Default String status = "PLANNED";
+    /** FRS §3.7: structured reschedule action */
+    @Column(name = "reschedule_action", length = 30) String rescheduleAction;
+    /** FRS §3.7: target machine for reschedule */
+    @Column(name = "reschedule_machine_code", length = 60) String rescheduleMachineCode;
+    /** FRS §3.7: target shift for reschedule */
+    @Column(name = "reschedule_shift", length = 60) String rescheduleShift;
+    /** FRS §3.7: target date for reschedule */
+    @Column(name = "reschedule_date") java.time.LocalDate rescheduleDate;
 }

@@ -27,4 +27,16 @@ public class NumberingConfig {
 
     @Column(nullable = false)
     private Boolean active = true;
+
+    /** FRS §1.2: include plant code in document number */
+    @Column(name = "use_plant_segment")
+    @Builder.Default private Boolean usePlantSegment = false;
+
+    /** FRS §1.2: include financial year in document number */
+    @Column(name = "use_fy_segment")
+    @Builder.Default private Boolean useFySegment = true;
+
+    /** FRS §1.2: financial year start month (4 = April for India) */
+    @Column(name = "fy_start_month")
+    @Builder.Default private Integer fyStartMonth = 4;
 }

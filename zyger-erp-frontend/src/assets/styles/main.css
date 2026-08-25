@@ -117,6 +117,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.8rem;min-width:760px}
 .tbl th[data-sort]:hover{color:#8ec9ff}
 .tbl td{padding:10px 12px;border-bottom:1px solid var(--border)}
 .tbl tbody tr:hover{background:var(--blue-bg)}
+.tbl tbody tr.selected-row{background:#dbeafe;border-left:3px solid var(--accent)}
 .tbl .num{text-align:right;font-variant-numeric:tabular-nums}
 .cell-b{font-weight:600;color:var(--blue)}
 .mut{color:var(--muted);font-size:.74rem}

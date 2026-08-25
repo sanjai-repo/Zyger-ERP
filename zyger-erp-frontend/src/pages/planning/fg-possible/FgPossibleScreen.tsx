@@ -17,6 +17,8 @@ interface FeasibilityResult {
   limitingComponent: string;
   limitingComponentAvailableQty?: number;
   isFeasible: boolean;
+  decisionAction?: string;
+  decisionRemarks?: string;
   bomIdUsed?: number;
   resultJson?: string;
   breakdown: ComponentBreakdown[];
@@ -37,6 +39,10 @@ export default function FgPossibleScreen() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<FeasibilityResult | null>(null);
   const [checked, setChecked] = useState(false);
+  const [orderQty, setOrderQty] = useState<number | ''>('');
+  const [decisionAction, setDecisionAction] = useState('');
+  const [decisionRemarks, setDecisionRemarks] = useState('');
+  const [savingDecision, setSavingDecision] = useState(false);
 
   const checkFeasibility = async () => {
     if (!itemCode.trim()) { toast('Item code is required.', 'error'); return; }
@@ -96,6 +102,10 @@ export default function FgPossibleScreen() {
             <span>Target Qty</span>
             <input className="in" type="number" step="1" min="1" placeholder="Leave empty for max" value={qty} onChange={(e) => setQty(e.target.value ? Number(e.target.value) : '')} />
           </label>
+          <label className="fld">
+            <span>Order/Required Qty</span>
+            <input className="in" type="number" step="1" min="1" placeholder="Target qty" value={orderQty} onChange={(e) => setOrderQty(e.target.value ? Number(e.target.value) : '')} />
+          </label>
           <label className="fld" style={{ display: 'flex', alignItems: 'center', gap: 6, paddingTop: 20 }}>
             <input type="checkbox" checked={includeWip} onChange={(e) => setIncludeWip(e.target.checked)} />
             <span style={{ fontSize: 13 }}>Include WIP</span>
@@ -130,21 +140,48 @@ export default function FgPossibleScreen() {
                 <span className="material-symbols-rounded">{result.isFeasible ? 'check_circle' : 'cancel'}</span> Feasibility Result
               </h2>
             </div>
-            <div className="fgrid">
-              <label className="fld">
-                <span>Feasibility</span>
-                <span className="in" style={{ display: 'block', padding: '8px 12px', background: result.isFeasible ? '#d4edda' : '#f8d7da', borderRadius: 4, fontWeight: 700, color: result.isFeasible ? '#28a745' : '#dc3545' }}>
-                  {result.isFeasible ? 'FEASIBLE' : 'NOT FEASIBLE'}
-                </span>
+            {/* FRS §3.5: Three-number result panel */}
+            <div style={{ display: 'flex', gap: 16, padding: '16px 20px', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 150, textAlign: 'center', padding: 20, background: '#f0f9ff', borderRadius: 8, border: '2px solid #bfdbfe' }}>
+                <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Order / Required Qty</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: '#1e40af' }}>{orderQty || result.maxProducibleQty || 0}</div>
+              </div>
+              <div style={{ flex: 1, minWidth: 150, textAlign: 'center', padding: 20, background: result.isFeasible ? '#f0fdf4' : '#fef2f2', borderRadius: 8, border: `2px solid ${result.isFeasible ? '#bbf7d0' : '#fecaca'}` }}>
+                <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>FG Possible Qty</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: result.isFeasible ? '#16a34a' : '#dc2626' }}>{result.maxProducibleQty}</div>
+              </div>
+              <div style={{ flex: 1, minWidth: 150, textAlign: 'center', padding: 20, background: result.maxProducibleQty < (orderQty || 0) ? '#fef2f2' : '#f0fdf4', borderRadius: 8, border: `2px solid ${result.maxProducibleQty < (orderQty || 0) ? '#fecaca' : '#bbf7d0'}` }}>
+                <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Shortage Qty</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: result.maxProducibleQty < (orderQty || 0) ? '#dc2626' : '#16a34a' }}>{Math.max(0, (orderQty || 0) - result.maxProducibleQty)}</div>
+              </div>
+            </div>
+            {/* Limiting Factor */}
+            <div style={{ padding: '0 20px 12px' }}>
+              <label className="fld" style={{ marginBottom: 0 }}>
+                <span>Limiting Factor</span>
+                <span className="in" style={{ display: 'block', padding: '8px 12px', background: '#fffbeb', borderRadius: 4, fontWeight: 600, color: '#92400e' }}>{result.limitingComponent || '—'}</span>
               </label>
-              <label className="fld">
-                <span>Max Producible Qty</span>
-                <span className="in" style={{ display: 'block', padding: '8px 12px', background: '#fff', borderRadius: 4, fontWeight: 600 }}>{result.maxProducibleQty}</span>
-              </label>
-              <label className="fld">
-                <span>Limiting Component</span>
-                <span className="in" style={{ display: 'block', padding: '8px 12px', background: '#fff', borderRadius: 4, fontWeight: 600 }}>{result.limitingComponent}</span>
-              </label>
+            </div>
+            {/* FRS §3.5: Decision Action */}
+            <div style={{ padding: '0 20px 16px' }}>
+              <h4 style={{ margin: '0 0 8px', fontSize: 13, color: '#555' }}>Decision Action</h4>
+              <div className="fgrid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+                <label className="fld">
+                  <span>Action</span>
+                  <select className="in" value={decisionAction} onChange={(e) => setDecisionAction(e.target.value)}>
+                    <option value="">Select action...</option>
+                    <option value="PURCHASE">Purchase Additional Material</option>
+                    <option value="ALT_MATERIAL">Use Approved Alternative Material</option>
+                    <option value="RESCHEDULE">Reschedule Production</option>
+                    <option value="SPLIT_BATCH">Split Production Batch</option>
+                    <option value="REPRIORITIZE">Reprioritize Another Order</option>
+                  </select>
+                </label>
+                <label className="fld">
+                  <span>Remarks</span>
+                  <input className="in" value={decisionRemarks} onChange={(e) => setDecisionRemarks(e.target.value)} placeholder="Decision notes..." />
+                </label>
+              </div>
             </div>
           </div>
 

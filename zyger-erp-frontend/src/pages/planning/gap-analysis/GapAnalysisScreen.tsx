@@ -63,6 +63,7 @@ export default function GapAnalysisScreen() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [results, setResults] = useState<GapResult[]>([]);
   const [resultsLoading, setResultsLoading] = useState(false);
+  const [gapTypeFilter, setGapTypeFilter] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -163,6 +164,7 @@ export default function GapAnalysisScreen() {
               <option value="ALL">All</option>
               <option value="CUSTOMER">Customer</option>
               <option value="ITEM_GROUP">Item Group</option>
+              <option value="FIXTURE_GAP">Fixture Gap</option>
             </select>
           </label>
           <label className="fld">
@@ -195,6 +197,21 @@ export default function GapAnalysisScreen() {
             <span className="material-symbols-rounded">search</span>
             <input className="in" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
+          <label className="fld">
+            <span>Gap Type</span>
+            <select className="in" value={gapTypeFilter} onChange={(e) => setGapTypeFilter(e.target.value)}>
+              <option value="">All Types</option>
+              <option value="MATERIAL">Material Gap</option>
+              <option value="MACHINE_CAPACITY">Machine Capacity Gap</option>
+              <option value="MANPOWER">Manpower Gap</option>
+              <option value="TOOL">Tool Gap</option>
+              <option value="FIXTURE">Fixture Gap</option>
+              <option value="QUALITY">Quality Gap</option>
+              <option value="SUBCONTRACT">Subcontract Gap</option>
+              <option value="PRODUCTION_CAPACITY">Production Capacity Gap</option>
+              <option value="DELIVERY">Delivery/Time Gap</option>
+            </select>
+          </label>
           <span className="count">{total} analyses</span>
         </div>
         <div className="twrap">
@@ -270,7 +287,7 @@ export default function GapAnalysisScreen() {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {results.map((res) => {
+                                  {results.filter((res) => !gapTypeFilter || res.gapType === gapTypeFilter).map((res) => {
                                     const sev = SEVERITY_COLORS[res.severity] ?? { color: '#888', bg: '#e9ecef' };
                                     return (
                                       <tr key={res.id}>

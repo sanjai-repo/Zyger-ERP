@@ -27,6 +27,10 @@ interface MaterialPlanLine {
   suggestedOrderQty: number;
   sourceType: string;
   remarks?: string;
+  reservedQty: number;
+  reservationStatus: string;
+  allocatedStock: number;
+  netRequirement: number;
 }
 
 const PAGE_SIZE = 20;
@@ -266,7 +270,11 @@ export default function MaterialPlanningScreen() {
                                     <th>Shortfall</th>
                                     <th>Suggested Order</th>
                                     <th>Source</th>
+                                    <th>Reserved Qty</th>
+                                    <th>Reservation Status</th>
+                                    <th>Allocated Stock</th>
                                     <th>Remarks</th>
+                                    <th>Actions</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -279,7 +287,27 @@ export default function MaterialPlanningScreen() {
                                       <td style={{ color: line.shortfallQty > 0 ? '#ef4444' : undefined }}>{line.shortfallQty}</td>
                                       <td>{line.suggestedOrderQty}</td>
                                       <td>{line.sourceType}</td>
+                                      <td>{line.reservedQty}</td>
+                                      <td>
+                                        <select className="in" value={line.reservationStatus ?? ''} onChange={(e) => {
+                                          const newStatus = e.target.value;
+                                          setPlanLines((prev) => prev.map((l) => l.id === line.id ? { ...l, reservationStatus: newStatus } : l));
+                                        }}>
+                                          <option value="">--</option>
+                                          <option value="NOT_RESERVED">Not Reserved</option>
+                                          <option value="RESERVED">Reserved</option>
+                                          <option value="PARTIALLY_RESERVED">Partially Reserved</option>
+                                        </select>
+                                      </td>
+                                      <td>{line.allocatedStock}</td>
                                       <td>{line.remarks ?? ''}</td>
+                                      <td>
+                                        <button className="ibtn" title="Reserve" disabled={line.reservationStatus === 'RESERVED'} onClick={() => {
+                                          setPlanLines((prev) => prev.map((l) => l.id === line.id ? { ...l, reservationStatus: 'RESERVED', reservedQty: line.netRequirement } : l));
+                                        }}>
+                                          <span className="material-symbols-rounded">inventory_2</span>
+                                        </button>
+                                      </td>
                                     </tr>
                                   ))}
                                 </tbody>

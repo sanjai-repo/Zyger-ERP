@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   usePlanningDoc,
   usePlanningDocAction,
@@ -20,6 +21,7 @@ import { exportToCsv } from '../../utils/csvExport';
 import { useFormKeyboard } from '../../hooks/useFormKeyboard';
 import { useUnsavedWarning } from '../../hooks/useUnsavedWarning';
 import { useFormValidation } from '../../hooks/useFormValidation';
+import apiClient from '../../api/axiosClient';
 
 const PAGE_SIZE = 8;
 
@@ -52,6 +54,8 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
   const [initializedForId, setInitializedForId] = useState('');
   const [actionModal, setActionModal] = useState<ActionModal | null>(null);
   const [auditOpen, setAuditOpen] = useState(false);
+  const [selectedLineIdx, setSelectedLineIdx] = useState<number | null>(null);
+  const [childGridData, setChildGridData] = useState<Record<string, unknown>[]>([]);
 
   const listQuery = usePlanningDocList(docType, {
     page,
@@ -68,12 +72,32 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
   const deleteMutation = usePlanningDocDelete(docType);
   const actionMutation = usePlanningDocAction(docType);
 
+  const childGrid = config.childGrids?.[0];
+  const selectedLine = selectedLineIdx !== null && config.lines ? lines[selectedLineIdx] ?? (form.lines as Array<Record<string, unknown>>)?.[selectedLineIdx] : null;
+  const selectedLineId = selectedLine?.[childGrid?.parentIdField ?? 'id'];
+
+  const childGridQuery = useQuery({
+    queryKey: ['child-grid', docType, documentId, childGrid?.apiPath, selectedLineId],
+    queryFn: () => {
+      const url = (childGrid?.apiPath ?? '').replace('{parentId}', String(selectedLineId));
+      return apiClient.get<Record<string, unknown>[]>(url).then((r) => r.data);
+    },
+    enabled: Boolean(childGrid && documentId && selectedLineId != null),
+    staleTime: 0,
+    retry: 1,
+  });
+
   useEffect(() => {
     const timer = setTimeout(() => setSearch(searchInput.trim()), 300);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
   useEffect(() => { setPage(0); }, [search, status, type]);
+
+  useEffect(() => {
+    setSelectedLineIdx(null);
+    setChildGridData([]);
+  }, [documentId]);
 
   useEffect(() => {
     if (initialDocId) {
@@ -92,6 +116,10 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
     setForm({ ...doc });
     setLines(Array.isArray(doc.lines) ? (doc.lines as Array<Record<string, unknown>>).map((l) => ({ ...l })) : []);
   }, [documentQuery.data, documentId, initializedForId]);
+
+  useEffect(() => {
+    if (childGridQuery.data) setChildGridData(childGridQuery.data as Record<string, unknown>[]);
+  }, [childGridQuery.data]);
 
   const doc = documentQuery.data;
   const genericStatus = String(doc?.status ?? 'DRAFT');
@@ -331,10 +359,10 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
             </div>
             <div className="twrap">
               <table className="tbl lines">
-                <thead><tr>{config.lines.fields.map((f) => <th key={f.key}>{f.label}</th>)}</tr></thead>
+                <thead><tr>{config.lines.fields.map((f) => <th key={f.key}>{f.label}</th>)}{!config.lines.seed && <th></th>}</tr></thead>
                 <tbody>
                   {lines.map((line, index) => (
-                    <tr key={index}>
+                    <tr key={index} onClick={() => config.childGrids && setSelectedLineIdx(selectedLineIdx === index ? null : index)} style={config.childGrids ? { cursor: 'pointer' } : undefined} className={selectedLineIdx === index ? 'selected-row' : ''}>
                       {config.lines!.fields.map((f) => (
                         <td key={f.key}>
                           {f.type === 'select' ? (
@@ -347,7 +375,7 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
                           )}
                         </td>
                       ))}
-                      {!config.lines!.seed && <td><button type="button" className="ibtn danger" disabled={isBusy} onClick={() => setLines((c) => c.filter((_, i) => i !== index))}><span className="material-symbols-rounded">delete</span></button></td>}
+                      {!config.lines!.seed && <td><button type="button" className="ibtn danger" disabled={isBusy} onClick={(e) => { e.stopPropagation(); setLines((c) => c.filter((_, i) => i !== index)); if (selectedLineIdx === index) setSelectedLineIdx(null); }}><span className="material-symbols-rounded">delete</span></button></td>}
                     </tr>
                   ))}
                 </tbody>
@@ -364,11 +392,32 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
                 <thead><tr>{config.lines.fields.map((f) => <th key={f.key}>{f.label}</th>)}</tr></thead>
                 <tbody>
                   {(form.lines as Array<Record<string, unknown>>).map((line, index) => (
-                    <tr key={index}>{config.lines!.fields.map((f) => <td key={f.key}>{line[f.key] == null ? '\u2014' : String(line[f.key])}</td>)}</tr>
+                    <tr key={index} onClick={() => config.childGrids && setSelectedLineIdx(selectedLineIdx === index ? null : index)} style={config.childGrids ? { cursor: 'pointer' } : undefined} className={selectedLineIdx === index ? 'selected-row' : ''}>{config.lines!.fields.map((f) => <td key={f.key}>{line[f.key] == null ? '\u2014' : String(line[f.key])}</td>)}</tr>
                   ))}
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {config.childGrids && selectedLineIdx !== null && childGrid && (
+          <div className="panel">
+            <div className="panel-h"><h2><span className="material-symbols-rounded">checklist</span> {childGrid.title}</h2></div>
+            {childGridQuery.isPending && <div className="empty"><span className="material-symbols-rounded">hourglass_empty</span> Loading...</div>}
+            {childGridQuery.isError && <div className="empty"><span className="material-symbols-rounded">error</span> Failed to load inspection parameters.</div>}
+            {childGridQuery.isSuccess && childGridData.length === 0 && <div className="empty"><span className="material-symbols-rounded">info</span> No inspection parameters for this operation.</div>}
+            {childGridQuery.isSuccess && childGridData.length > 0 && (
+              <div className="twrap">
+                <table className="tbl">
+                  <thead><tr>{childGrid.fields.map((f) => <th key={f.key}>{f.label}</th>)}</tr></thead>
+                  <tbody>
+                    {childGridData.map((row, idx) => (
+                      <tr key={idx}>{childGrid.fields.map((f) => <td key={f.key}>{row[f.key] == null ? '\u2014' : String(row[f.key])}</td>)}</tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 

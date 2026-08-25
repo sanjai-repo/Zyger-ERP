@@ -56,6 +56,11 @@ public class RouteOperation implements LineEntity {
     @Builder.Default
     List<RouteOperationTool> tools = new ArrayList<>();
 
+    /** FRS §3.3: inspection parameters for this operation */
+    @OneToMany(mappedBy = "routeOperation", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @Builder.Default
+    List<RouteOperationInspection> inspections = new ArrayList<>();
+
     @Override public String getItemCode() { return operationCode; }
     @Override public String getLocation() { return workCenterCode; }
     @Override public String getBatchNo() { return null; }

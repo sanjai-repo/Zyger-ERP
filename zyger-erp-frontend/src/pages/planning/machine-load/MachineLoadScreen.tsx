@@ -29,6 +29,10 @@ interface MachineLoadLine {
   workOrderId?: string;
   operationCode?: string;
   status: string;
+  rescheduleAction?: string;
+  rescheduleMachineCode?: string;
+  rescheduleShift?: string;
+  rescheduleDate?: string;
 }
 
 const PAGE_SIZE = 20;
@@ -119,6 +123,27 @@ export default function MachineLoadScreen() {
       toast(getApiErrorMessage(e, 'Generate load failed.'), 'error');
     }
     setGenerating(null);
+  };
+
+  const saveLine = async (line: MachineLoadLine) => {
+    try {
+      await apiClient.put(`/v1/planning/machine-load-lines/${line.id}`, {
+        rescheduleAction: line.rescheduleAction || null,
+        rescheduleMachineCode: line.rescheduleMachineCode || null,
+        rescheduleShift: line.rescheduleShift || null,
+        rescheduleDate: line.rescheduleDate || null,
+      });
+      toast('Line reschedule updated.');
+      if (expandedId) toggleExpand(expandedId);
+    } catch (e) {
+      toast(getApiErrorMessage(e, 'Failed to update line.'), 'error');
+    }
+  };
+
+  const updateLine = (lineId: number, field: string, value: string) => {
+    setLoadLines((prev) =>
+      prev.map((l) => (l.id === lineId ? { ...l, [field]: value } : l))
+    );
   };
 
   const toggleExpand = async (id: number) => {
@@ -263,6 +288,11 @@ export default function MachineLoadScreen() {
                                     <th>Work Order</th>
                                     <th>Operation</th>
                                     <th>Status</th>
+                                    <th>Reschedule Action</th>
+                                    <th>Reschedule Machine</th>
+                                    <th>Reschedule Shift</th>
+                                    <th>Reschedule Date</th>
+                                    <th></th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -282,6 +312,56 @@ export default function MachineLoadScreen() {
                                       <td>{line.workOrderId ?? ''}</td>
                                       <td>{line.operationCode ?? ''}</td>
                                       <td>{line.status}</td>
+                                      <td>
+                                        <select
+                                          className="in"
+                                          value={line.rescheduleAction ?? ''}
+                                          onChange={(e) => updateLine(line.id, 'rescheduleAction', e.target.value)}
+                                        >
+                                          <option value="">None</option>
+                                          <option value="ANOTHER_MACHINE">Another Machine</option>
+                                          <option value="ANOTHER_SHIFT">Another Shift</option>
+                                          <option value="ANOTHER_DATE">Another Date</option>
+                                          <option value="SUBCONTRACT">Subcontract</option>
+                                        </select>
+                                      </td>
+                                      <td>
+                                        {(line.rescheduleAction ?? '') === 'ANOTHER_MACHINE' && (
+                                          <input
+                                            className="in"
+                                            value={line.rescheduleMachineCode ?? ''}
+                                            onChange={(e) => updateLine(line.id, 'rescheduleMachineCode', e.target.value)}
+                                            placeholder="Machine code"
+                                          />
+                                        )}
+                                      </td>
+                                      <td>
+                                        {(line.rescheduleAction ?? '') === 'ANOTHER_SHIFT' && (
+                                          <input
+                                            className="in"
+                                            value={line.rescheduleShift ?? ''}
+                                            onChange={(e) => updateLine(line.id, 'rescheduleShift', e.target.value)}
+                                            placeholder="Shift"
+                                          />
+                                        )}
+                                      </td>
+                                      <td>
+                                        {(line.rescheduleAction ?? '') === 'ANOTHER_DATE' && (
+                                          <input
+                                            className="in"
+                                            type="date"
+                                            value={line.rescheduleDate ?? ''}
+                                            onChange={(e) => updateLine(line.id, 'rescheduleDate', e.target.value)}
+                                          />
+                                        )}
+                                      </td>
+                                      <td>
+                                        {(line.rescheduleAction ?? '') !== '' && (
+                                          <button className="ibtn" title="Save reschedule" onClick={() => saveLine(line)}>
+                                            <span className="material-symbols-rounded">save</span>
+                                          </button>
+                                        )}
+                                      </td>
                                     </tr>
                                   ))}
                                 </tbody>

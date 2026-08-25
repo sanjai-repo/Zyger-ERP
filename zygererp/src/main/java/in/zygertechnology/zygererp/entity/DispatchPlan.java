@@ -61,6 +61,19 @@ public class DispatchPlan {
     @Column(name = "total_weight", precision = 8, scale = 2)
     BigDecimal totalWeight;
 
+    /** FRS §3.6: QC gate status */
+    @Column(name = "qc_status", length = 30)
+    String qcStatus;
+    /** FRS §3.6: packing status */
+    @Column(name = "packing_status", length = 30)
+    String packingStatus;
+    /** FRS §3.6: delivery priority */
+    @Column(name = "delivery_priority", length = 20)
+    String deliveryPriority;
+    /** FRS §3.6: sales order reference */
+    @Column(name = "sales_order_ref", length = 60)
+    String salesOrderRef;
+
     @Column(length = 500)
     String remarks;
 

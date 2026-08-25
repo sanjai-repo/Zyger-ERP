@@ -62,7 +62,7 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
   const [auditOpen, setAuditOpen] = useState(false);
   const [statusHistoryOpen, setStatusHistoryOpen] = useState(false);
   const [statusHistory, setStatusHistory] = useState<Array<Record<string, unknown>>>([]);
-  const [activeTab, setActiveTab] = useState<'operations' | 'materials'>('operations');
+  const [activeTab, setActiveTab] = useState<'operations' | 'materials' | 'quantity' | 'history'>('operations');
   const [populating, setPopulating] = useState(false);
   const [bomList, setBomList] = useState<Array<{ id: number; bomNumber: string; itemCode: string }>>([]);
   const [routeList, setRouteList] = useState<Array<{ id: number; routeNumber: string; itemCode: string }>>([]);
@@ -442,6 +442,8 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
                 <span className="material-symbols-rounded">tab</span>
                 <button type="button" className={`btn btn-sm ${activeTab === 'operations' ? 'btn-p' : ''}`} onClick={() => setActiveTab('operations')}>Operations ({ops.length})</button>
                 <button type="button" className={`btn btn-sm ${activeTab === 'materials' ? 'btn-p' : ''}`} onClick={() => setActiveTab('materials')} style={{ marginLeft: '8px' }}>Materials ({mats.length})</button>
+                <button type="button" className={`btn btn-sm ${activeTab === 'quantity' ? 'btn-p' : ''}`} onClick={() => setActiveTab('quantity')} style={{ marginLeft: '8px' }}>Quantity Tracking</button>
+                <button type="button" className={`btn btn-sm ${activeTab === 'history' ? 'btn-p' : ''}`} onClick={() => { setActiveTab('history'); fetchStatusHistory(); }} style={{ marginLeft: '8px' }}>History</button>
               </h2>
               {editable && Boolean(form.bomId) && Boolean(form.routeId) && (
                 <button type="button" className="btn btn-sm" disabled={isBusy || populating} onClick={handlePopulate}>
@@ -460,6 +462,57 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
                 {editable && <div style={{ padding: '8px 16px' }}><button type="button" className="btn btn-sm" disabled={isBusy} onClick={() => setMats((c) => [...c, {}])}><span className="material-symbols-rounded">add</span> Add Material</button></div>}
                 {renderLineTable(WORK_ORDER_MATERIAL_FIELDS, mats, setMats, editable)}
               </>
+            )}
+            {activeTab === 'quantity' && (
+              <div style={{ padding: '16px' }}>
+                <h3 style={{ margin: '0 0 12px', fontSize: 14, color: '#374151' }}>FRS §3.1 — Shop-Floor Stage Progress</h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginBottom: 16 }}>
+                  {['Material Availability', 'Material Issue', 'Op10', 'Op20', 'Op30', 'Op40', 'Final Inspection', 'FG Receipt', 'WO Close'].map((stage, idx) => {
+                    const completedStages = genericStatus === 'CLOSED' ? 9 : genericStatus === 'COMPLETED' ? 8 : genericStatus === 'IN_PROCESS' ? 4 : genericStatus === 'RELEASED' ? 2 : 0;
+                    const isComplete = idx < completedStages;
+                    const isCurrent = idx === completedStages;
+                    return (
+                      <div key={stage} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <div style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: isComplete ? '#d1fae5' : isCurrent ? '#dbeafe' : '#f3f4f6', color: isComplete ? '#065f46' : isCurrent ? '#1e40af' : '#9ca3af', border: isCurrent ? '2px solid #3b82f6' : '1px solid transparent' }}>
+                          {stage}
+                        </div>
+                        {idx < 8 && <span style={{ color: '#d1d5db', fontSize: 14 }}>&#8594;</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+                <h3 style={{ margin: '0 0 12px', fontSize: 14, color: '#374151' }}>Quantity Tracking</h3>
+                <div className="fgrid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+                  <label className="fld"><span>Released Qty</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatNumber(Number(form.releasedQty ?? 0))}</span></label>
+                  <label className="fld"><span>Completed Qty</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatNumber(Number(form.completedQty ?? 0))}</span></label>
+                  <label className="fld"><span>Rejected Qty</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatNumber(Number(form.rejectedQty ?? 0))}</span></label>
+                  <label className="fld"><span>Balance Qty</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatNumber(Number(form.balanceQty ?? 0))}</span></label>
+                  <label className="fld"><span>FG Receipt Qty</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#eff6ff', borderRadius: 4, fontWeight: 700, color: '#1e40af' }}>{formatNumber(Number(form.fgReceiptQty ?? 0))}</span></label>
+                  <label className="fld"><span>Scrap Qty</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatNumber(Number(form.scrapQty ?? 0))}</span></label>
+                  <label className="fld"><span>Scrap Allowance %</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{String(form.scrapAllowancePercent ?? '—')}%</span></label>
+                </div>
+              </div>
+            )}
+            {activeTab === 'history' && (
+              <div style={{ padding: '16px' }}>
+                {statusHistory.length === 0 ? (
+                  <div className="empty"><span className="material-symbols-rounded">history</span> No status changes recorded.</div>
+                ) : (
+                  <div style={{ position: 'relative', paddingLeft: '24px' }}>
+                    <div style={{ position: 'absolute', left: '8px', top: 0, bottom: 0, width: '2px', background: '#e5e7eb' }} />
+                    {statusHistory.map((h, idx) => (
+                      <div key={idx} style={{ position: 'relative', marginBottom: '16px', padding: '10px 14px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                        <div style={{ position: 'absolute', left: '-20px', top: '14px', width: '12px', height: '12px', borderRadius: '50%', background: STATUS_COLORS[String(h.toStatus ?? '')] ?? '#6b7280', border: '2px solid #fff' }} />
+                        <div style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                          {String(h.fromStatus ?? '').replace('_', ' ')} <span style={{ color: '#9ca3af' }}>&#8594;</span> <span style={{ color: STATUS_COLORS[String(h.toStatus ?? '')] ?? '#374151' }}>{String(h.toStatus ?? '').replace('_', ' ')}</span>
+                        </div>
+                        {h.reason && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>{String(h.reason)}</div>}
+                        <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>{String(h.createdBy ?? '')} &#8226; {String(h.createdAt ?? '').replace('T', ' ').slice(0, 19)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}

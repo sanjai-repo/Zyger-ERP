@@ -79,6 +79,16 @@ public class MaterialPlanLine {
     @Column(length = 20)
     private String priority;
 
+    /** FRS §3.4: quantity reserved for a specific WO */
+    @Column(name = "reserved_qty", precision = 38, scale = 2)
+    private BigDecimal reservedQty;
+    /** FRS §3.4: reservation status */
+    @Column(name = "reservation_status", length = 30)
+    private String reservationStatus;
+    /** FRS §3.4: allocated stock */
+    @Column(name = "allocated_stock", precision = 38, scale = 2)
+    private BigDecimal allocatedStock;
+
     @Column(length = 200)
     private String remarks;
 

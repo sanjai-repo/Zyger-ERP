@@ -59,6 +59,10 @@ public class WorkOrder extends BaseDoc implements DocEntity {
     @Column(name = "cancel_reason", length = 500) String cancelReason;
     @Column(name = "hold_reason", length = 500) String holdReason;
     @Column(name = "short_close_reason", length = 500) String shortCloseReason;
+    /** FRS §3.1: quantity received into FG store */
+    @Column(name = "fg_receipt_qty") BigDecimal fgReceiptQty;
+    /** FRS §3.1: scrap allowance % on WO header */
+    @Column(name = "scrap_allowance_percent") BigDecimal scrapAllowancePercent;
 
     @OneToMany(mappedBy = "doc", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     List<WorkOrderOperation> operations = new ArrayList<>();

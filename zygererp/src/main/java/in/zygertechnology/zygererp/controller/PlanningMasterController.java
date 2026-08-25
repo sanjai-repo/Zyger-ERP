@@ -45,6 +45,10 @@ public class PlanningMasterController {
     private final in.zygertechnology.zygererp.repository.ApprovalStepRepository approvalSteps;
     private final in.zygertechnology.zygererp.repository.EscalationRuleRepository escalationRules;
     private final in.zygertechnology.zygererp.service.NotificationService notificationService;
+    private final MaterialReservationRepository materialReservations;
+    private final FgPossibleRepository fgPossibles;
+    private final CostComponentTypeRepository costComponentTypes;
+    private final RouteOperationInspectionRepository routeOpInspections;
 
     private String principalName(Principal p) { return p != null ? p.getName() : "system"; }
 
@@ -980,6 +984,195 @@ public class PlanningMasterController {
                     "total", varTotal.multiply(BigDecimal.valueOf(100)).divide(estTotal, 2, RoundingMode.HALF_UP)));
         }
         return result;
+    }
+
+    // ===========================
+    // §3.4 Material Reservation --
+    // ===========================
+
+    @GetMapping("/api/v1/planning/material-reservations")
+    public List<MaterialReservation> listMaterialReservations() { return materialReservations.findAll(); }
+
+    @PostMapping("/api/v1/planning/material-reservations")
+    public MaterialReservation createMaterialReservation(@RequestBody MaterialReservation r, Principal principal) {
+        r.setId(null);
+        r.setReservationNumber(numbers.next("material-reservation", "MRES"));
+        r.setReservedDate(Instant.now());
+        r.setStatus("RESERVED");
+        r.setCreatedBy(principalName(principal));
+        return materialReservations.save(r);
+    }
+
+    @PutMapping("/api/v1/planning/material-reservations/{id}")
+    public MaterialReservation updateMaterialReservation(@PathVariable Long id, @RequestBody MaterialReservation r, Principal principal) {
+        r.setId(id);
+        r.setUpdatedBy(principalName(principal));
+        return materialReservations.save(r);
+    }
+
+    @PostMapping("/api/v1/planning/material-reservations/{id}/release")
+    public MaterialReservation releaseMaterialReservation(@PathVariable Long id) {
+        MaterialReservation r = materialReservations.findById(id).orElseThrow(() -> new RuntimeException("Reservation not found"));
+        r.setStatus("RELEASED");
+        r.setReleasedDate(Instant.now());
+        return materialReservations.save(r);
+    }
+
+    // ===========================
+    // §3.5 FG Possible Persistent
+    // ===========================
+
+    @GetMapping("/api/v1/planning/fg-possible-list")
+    public List<FgPossible> listFgPossible() { return fgPossibles.findAll(); }
+
+    @PostMapping("/api/v1/planning/fg-possible-list")
+    public FgPossible createFgPossible(@RequestBody FgPossible fp, Principal principal) {
+        fp.setId(null);
+        fp.setInquiryNumber(numbers.next("fg-possible", "FGP"));
+        fp.setRunBy(principalName(principal));
+        fp.setRunDate(Instant.now());
+        fp.setStatus("COMPLETE");
+        return fgPossibles.save(fp);
+    }
+
+    @GetMapping("/api/v1/planning/fg-possible-list/{id}")
+    public FgPossible getFgPossible(@PathVariable Long id) {
+        return fgPossibles.findById(id).orElseThrow(() -> new RuntimeException("FG Possible inquiry not found"));
+    }
+
+    @PutMapping("/api/v1/planning/fg-possible-list/{id}")
+    public FgPossible updateFgPossible(@PathVariable Long id, @RequestBody FgPossible fp, Principal principal) {
+        fp.setId(id);
+        fp.setUpdatedBy(principalName(principal));
+        return fgPossibles.save(fp);
+    }
+
+    // ===========================
+    // §3.10 Cost Component Type --
+    // ===========================
+
+    @GetMapping("/api/v1/planning/cost-component-types")
+    public List<CostComponentType> listCostComponentTypes() {
+        return costComponentTypes.findByIsActiveTrueOrderBySortOrderAsc();
+    }
+
+    // ===========================
+    // §3.3 Route Operation Inspections
+    // ===========================
+
+    @GetMapping("/api/v1/planning/route-operations/{opId}/inspections")
+    public List<RouteOperationInspection> listInspections(@PathVariable Long opId) {
+        return routeOpInspections.findByRouteOperationIdOrderBySortOrderAsc(opId);
+    }
+
+    @PostMapping("/api/v1/planning/route-operations/{opId}/inspections")
+    public RouteOperationInspection addInspection(@PathVariable Long opId, @RequestBody RouteOperationInspection insp) {
+        RouteOperation op = em.find(RouteOperation.class, opId);
+        if (op == null) throw new RuntimeException("Route Operation not found");
+        insp.setRouteOperation(op);
+        insp.setId(null);
+        return routeOpInspections.save(insp);
+    }
+
+    @DeleteMapping("/api/v1/planning/route-inspections/{id}")
+    public void deleteInspection(@PathVariable Long id) {
+        routeOpInspections.deleteById(id);
+    }
+
+    // ===========================
+    // §3.2 BOM Where-Used + Version Compare
+    // ===========================
+
+    @GetMapping("/api/v1/planning/production-bom/{id}/where-used")
+    public List<Map<String, Object>> bomWhereUsed(@PathVariable Long id) {
+        ProductionBOM bom = productionBoms.findById(id).orElseThrow(() -> new RuntimeException("BOM not found"));
+        String itemCode = bom.getItemCode();
+        List<Map<String, Object>> result = new ArrayList<>();
+        // Find WOs using this BOM
+        List<WorkOrder> wos = workOrders.findByBomId(id);
+        for (WorkOrder wo : wos) {
+            Map<String, Object> entry = new HashMap<>();
+            entry.put("type", "WORK_ORDER");
+            entry.put("reference", wo.getWoNumber());
+            entry.put("itemCode", wo.getItemCode());
+            entry.put("status", wo.getStatus());
+            entry.put("quantity", wo.getOrderQuantity());
+            result.add(entry);
+        }
+        // Find other BOMs referencing this item as a component
+        List<ProductionBOM> allBoms = productionBoms.findAll();
+        for (ProductionBOM other : allBoms) {
+            if (other.getId().equals(id)) continue;
+            boolean used = other.getLines().stream()
+                .anyMatch(line -> itemCode.equals(line.getComponentItemCode()));
+            if (used) {
+                Map<String, Object> entry = new HashMap<>();
+                entry.put("type", "PRODUCTION_BOM");
+                entry.put("reference", other.getBomNumber());
+                entry.put("itemCode", other.getItemCode());
+                entry.put("status", other.getStatus());
+                entry.put("quantity", other.getBaseQuantity());
+                result.add(entry);
+            }
+        }
+        return result;
+    }
+
+    @GetMapping("/api/v1/planning/production-bom/{id}/version-compare")
+    public Map<String, Object> bomVersionCompare(@PathVariable Long id) {
+        ProductionBOM bom = productionBoms.findById(id).orElseThrow(() -> new RuntimeException("BOM not found"));
+        Map<String, Object> result = new HashMap<>();
+        result.put("currentVersion", bom.getBomVersion());
+        result.put("currentRevision", bom.getItemRevision());
+        result.put("componentCount", bom.getLines().size());
+        if (bom.getPreviousRevisionId() != null) {
+            ProductionBOM prev = productionBoms.findById(bom.getPreviousRevisionId()).orElse(null);
+            if (prev != null) {
+                result.put("previousVersion", prev.getBomVersion());
+                result.put("previousComponentCount", prev.getLines().size());
+                result.put("changed", !bom.getLines().stream()
+                    .map(ProductionBOMLine::getComponentItemCode)
+                    .collect(Collectors.toSet())
+                    .equals(prev.getLines().stream()
+                        .map(ProductionBOMLine::getComponentItemCode)
+                        .collect(Collectors.toSet())));
+            }
+        } else {
+            result.put("previousVersion", null);
+            result.put("changed", null);
+        }
+        return result;
+    }
+
+    // ===========================
+    // §3.8 ECO Existing Orders Gate
+    // ===========================
+
+    @GetMapping("/api/v1/planning/engineering-changes/{id}/existing-orders")
+    public List<Map<String, Object>> getExistingOrdersForEco(@PathVariable Long id) {
+        EngineeringChange ec = engineeringChanges.findById(id).orElseThrow(() -> new RuntimeException("ECR/ECO not found"));
+        String itemCode = ec.getItemCode();
+        List<WorkOrder> wos = workOrders.findByItemCode(itemCode);
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (WorkOrder wo : wos) {
+            if (wo.getStatus() != null && !List.of("CLOSED", "CANCELLED").contains(wo.getStatus())) {
+                Map<String, Object> entry = new HashMap<>();
+                entry.put("workOrderId", wo.getId());
+                entry.put("woNumber", wo.getWoNumber());
+                entry.put("status", wo.getStatus());
+                entry.put("orderQuantity", wo.getOrderQuantity());
+                entry.put("disposition", null);
+                result.add(entry);
+            }
+        }
+        return result;
+    }
+
+    @PutMapping("/api/v1/planning/engineering-changes/{id}/mark-evaluated")
+    public EngineeringChange markExistingOrdersEvaluated(@PathVariable Long id) {
+        EngineeringChange ec = engineeringChanges.findById(id).orElseThrow(() -> new RuntimeException("ECR/ECO not found"));
+        ec.setExistingOrdersEvaluated(true);
+        return engineeringChanges.save(ec);
     }
 
     // ===========================

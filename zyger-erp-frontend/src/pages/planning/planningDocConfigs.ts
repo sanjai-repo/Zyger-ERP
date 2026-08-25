@@ -21,6 +21,13 @@ export interface ColumnDef {
   numeric?: boolean;
 }
 
+export interface ChildGridConfig {
+  title: string;
+  parentIdField: string;
+  apiPath: string;
+  fields: LineFieldDef[];
+}
+
 export interface DocScreenConfig {
   docType: string;
   title: string;
@@ -35,6 +42,7 @@ export interface DocScreenConfig {
     fields: LineFieldDef[];
     seed?: Record<string, string>[];
   };
+  childGrids?: ChildGridConfig[];
 }
 
 export const PRODUCTION_BOM_CONFIG: DocScreenConfig = {
@@ -140,6 +148,7 @@ export const ROUTE_SHEET_CONFIG: DocScreenConfig = {
       { key: 'operationDescription', label: 'Description', type: 'text' },
       { key: 'workCenterCode', label: 'Work Center', type: 'text' },
       { key: 'machineCode', label: 'Machine', type: 'text' },
+      { key: 'alternateMachineCode', label: 'Alt Machine', type: 'text' },
       { key: 'processId', label: 'Process (FK)', type: 'number' },
       { key: 'resourceId', label: 'Resource (FK)', type: 'number' },
       { key: 'processType', label: 'Process Type', type: 'text' },
@@ -167,6 +176,24 @@ export const ROUTE_SHEET_CONFIG: DocScreenConfig = {
       { key: 'remarks', label: 'Remarks', type: 'text' },
     ],
   },
+  childGrids: [
+    {
+      title: 'Inspection Parameters',
+      parentIdField: 'id',
+      apiPath: '/v1/planning/route-operations/{parentId}/inspections',
+      fields: [
+        { key: 'parameterName', label: 'Parameter Name', type: 'text' },
+        { key: 'parameterType', label: 'Type', type: 'select', options: ['Dimensional', 'Visual', 'Functional', 'Surface Finish', 'Hardness', 'Chemical', 'Other'] },
+        { key: 'nominalValue', label: 'Nominal Value', type: 'text' },
+        { key: 'tolerancePlus', label: 'Tolerance +', type: 'text' },
+        { key: 'toleranceMinus', label: 'Tolerance -', type: 'text' },
+        { key: 'method', label: 'Method', type: 'text' },
+        { key: 'toolGauge', label: 'Tool/Gauge', type: 'text' },
+        { key: 'frequency', label: 'Frequency', type: 'text' },
+        { key: 'mandatory', label: 'Mandatory', type: 'select', options: ['true', 'false'] },
+      ],
+    },
+  ],
 };
 
 export const WORK_ORDER_CONFIG: DocScreenConfig = {
@@ -201,6 +228,8 @@ export const WORK_ORDER_CONFIG: DocScreenConfig = {
     { key: 'scrapQty', label: 'Scrap Qty', type: 'number' },
     { key: 'balanceQty', label: 'Balance Qty', type: 'number' },
     { key: 'pendingQty', label: 'Pending Qty', type: 'number' },
+    { key: 'fgReceiptQty', label: 'FG Receipt Qty', type: 'number' },
+    { key: 'scrapAllowancePercent', label: 'Scrap Allowance %', type: 'number' },
     { key: 'uom', label: 'UOM', type: 'text' },
     { key: 'woType', label: 'WO Type', type: 'select', options: ['Production', 'Rework', 'Trial', 'Sample', 'Internal', 'Subcontract'] },
     { key: 'priority', label: 'Priority', type: 'select', options: ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] },

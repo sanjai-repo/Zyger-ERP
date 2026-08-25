@@ -17,13 +17,17 @@ interface DispatchPlan {
   vehicleNumber?: string;
   status: string;
   remarks?: string;
+  qcStatus?: string;
+  packingStatus?: string;
+  deliveryPriority?: string;
+  salesOrderRef?: string;
 }
 
 const PAGE_SIZE = 20;
 
 const STATUS_OPTIONS = [
   'PLANNED', 'MATERIAL_READY', 'PRODUCTION_READY', 'FG_READY',
-  'QC_APPROVED', 'PACKING_READY', 'DISPATCH_READY', 'DISPATCHED',
+  'QC_PENDING', 'QC_APPROVED', 'PACKING_READY', 'DISPATCH_READY', 'DISPATCHED',
 ];
 
 const STATUS_LABELS: Record<string, string> = {
@@ -31,6 +35,7 @@ const STATUS_LABELS: Record<string, string> = {
   MATERIAL_READY: 'Material Ready',
   PRODUCTION_READY: 'Production Ready',
   FG_READY: 'FG Ready',
+  QC_PENDING: 'QC Pending',
   QC_APPROVED: 'QC Approved',
   PACKING_READY: 'Packing Ready',
   DISPATCH_READY: 'Dispatch Ready',
@@ -42,6 +47,7 @@ const STATUS_COLORS: Record<string, { color: string; bg: string }> = {
   MATERIAL_READY:  { color: '#3b82f6', bg: '#dbeafe' },
   PRODUCTION_READY:{ color: '#6366f1', bg: '#e0e7ff' },
   FG_READY:        { color: '#a855f7', bg: '#f3e8ff' },
+  QC_PENDING:      { color: '#f59e0b', bg: '#fef3c7' },
   QC_APPROVED:     { color: '#f59e0b', bg: '#fef3c7' },
   PACKING_READY:   { color: '#f97316', bg: '#ffedd5' },
   DISPATCH_READY:  { color: '#22c55e', bg: '#d4edda' },
@@ -185,6 +191,38 @@ export default function DispatchPlanScreen() {
                 <option key={s} value={s}>{STATUS_LABELS[s]}</option>
               ))}
             </select>
+          </label>
+          <label className="fld">
+            <span>QC Status</span>
+            <select className="in" value={String(form.qcStatus ?? '')} onChange={(e) => set('qcStatus', e.target.value)}>
+              <option value="">Select...</option>
+              <option value="QC_PENDING">QC Pending</option>
+              <option value="QC_APPROVED">QC Approved</option>
+              <option value="QC_REJECTED">QC Rejected</option>
+            </select>
+          </label>
+          <label className="fld">
+            <span>Packing Status</span>
+            <select className="in" value={String(form.packingStatus ?? '')} onChange={(e) => set('packingStatus', e.target.value)}>
+              <option value="">Select...</option>
+              <option value="NOT_STARTED">Not Started</option>
+              <option value="IN_PROGRESS">In Progress</option>
+              <option value="COMPLETE">Complete</option>
+            </select>
+          </label>
+          <label className="fld">
+            <span>Delivery Priority</span>
+            <select className="in" value={String(form.deliveryPriority ?? '')} onChange={(e) => set('deliveryPriority', e.target.value)}>
+              <option value="">Select...</option>
+              <option value="LOW">Low</option>
+              <option value="NORMAL">Normal</option>
+              <option value="HIGH">High</option>
+              <option value="URGENT">Urgent</option>
+            </select>
+          </label>
+          <label className="fld">
+            <span>Sales Order Ref</span>
+            <input className="in" value={String(form.salesOrderRef ?? '')} onChange={(e) => set('salesOrderRef', e.target.value)} />
           </label>
           <label className="fld">
             <span>Remarks</span>

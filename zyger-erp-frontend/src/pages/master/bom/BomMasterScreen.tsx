@@ -51,6 +51,21 @@ const emptyLine = (n: number): BomLine => ({
   uom: 'PCS', scrapPercentage: 0, warehouse: '', remarks: '',
 });
 
+interface WhereUsedRow {
+  type: string;
+  reference: string;
+  itemCode: string;
+  status: string;
+  quantity: number;
+}
+
+interface VersionCompareRow {
+  currentVersion: string;
+  previousVersion: string;
+  componentCount: number;
+  changed: boolean;
+}
+
 export default function BomMasterScreen() {
   const { toast } = useToast();
   const [rows, setRows] = useState<BomDoc[]>([]);
@@ -61,6 +76,11 @@ export default function BomMasterScreen() {
   const [busy, setBusy] = useState(false);
   const [viewMode, setViewMode] = useState<'LIST' | 'FORM'>('LIST');
   const [expandedLine, setExpandedLine] = useState<number | null>(null);
+  const [formTab, setFormTab] = useState<'details' | 'where-used' | 'version-compare'>('details');
+  const [whereUsedRows, setWhereUsedRows] = useState<WhereUsedRow[]>([]);
+  const [whereUsedLoading, setWhereUsedLoading] = useState(false);
+  const [versionRows, setVersionRows] = useState<VersionCompareRow[]>([]);
+  const [versionLoading, setVersionLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,12 +111,14 @@ export default function BomMasterScreen() {
   const openNew = () => {
     setBom(emptyBom());
     setEditId(null);
+    setFormTab('details');
     setViewMode('FORM');
   };
 
   const edit = (r: BomDoc) => {
     setBom({ ...r, lines: r.lines ? [...r.lines] : [] });
     setEditId(r.id);
+    setFormTab('details');
     setViewMode('FORM');
   };
 
@@ -160,6 +182,30 @@ export default function BomMasterScreen() {
     setBusy(false);
   };
 
+  const fetchWhereUsed = async (id: number) => {
+    setWhereUsedLoading(true);
+    try {
+      const { data } = await apiClient.get(`/v1/planning/production-bom/${id}/where-used`);
+      setWhereUsedRows(Array.isArray(data) ? data : data.content ?? []);
+    } catch (e) { toast(getApiErrorMessage(e, 'Failed to load where-used data.'), 'error'); }
+    setWhereUsedLoading(false);
+  };
+
+  const fetchVersionCompare = async (id: number) => {
+    setVersionLoading(true);
+    try {
+      const { data } = await apiClient.get(`/v1/planning/production-bom/${id}/version-compare`);
+      setVersionRows(Array.isArray(data) ? data : data.content ?? []);
+    } catch (e) { toast(getApiErrorMessage(e, 'Failed to load version compare data.'), 'error'); }
+    setVersionLoading(false);
+  };
+
+  const openFormTab = (tab: 'details' | 'where-used' | 'version-compare') => {
+    setFormTab(tab);
+    if (tab === 'where-used' && editId) fetchWhereUsed(editId);
+    if (tab === 'version-compare' && editId) fetchVersionCompare(editId);
+  };
+
   if (viewMode === 'FORM') {
     return (
       <>
@@ -168,11 +214,20 @@ export default function BomMasterScreen() {
           <p>{editId ? `Editing ${bom.bomNumber || 'BOM'}` : 'Create a new Bill of Material'}</p>
         </div>
 
-        <div className="panel">
-          <div className="sec-head">
-            <span className="material-symbols-rounded" style={{ fontSize: '1.2rem' }}>info</span>
-            BOM Header
+        {editId && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <button type="button" className={`btn btn-sm ${formTab === 'details' ? 'btn-p' : ''}`} onClick={() => openFormTab('details')}>Details</button>
+            <button type="button" className={`btn btn-sm ${formTab === 'where-used' ? 'btn-p' : ''}`} onClick={() => openFormTab('where-used')}>Where-Used</button>
+            <button type="button" className={`btn btn-sm ${formTab === 'version-compare' ? 'btn-p' : ''}`} onClick={() => openFormTab('version-compare')}>Version Compare</button>
           </div>
+        )}
+
+        {formTab === 'details' && (
+          <div className="panel">
+            <div className="sec-head">
+              <span className="material-symbols-rounded" style={{ fontSize: '1.2rem' }}>info</span>
+              BOM Header
+            </div>
           <div className="fgrid sec-body">
             <label className="fld"><span>Item Code *</span><input className="in" value={bom.itemCode} onChange={(e) => setField('itemCode', e.target.value)} /></label>
             <label className="fld"><span>Description</span><input className="in" value={bom.description} onChange={(e) => setField('description', e.target.value)} /></label>
@@ -243,6 +298,79 @@ export default function BomMasterScreen() {
             <div className="empty" style={{ padding: 16 }}>No components added. Click "Add Line" to start.</div>
           )}
         </div>
+        )}
+
+        {formTab === 'where-used' && (
+          <div className="panel">
+            <div className="sec-head">
+              <span className="material-symbols-rounded" style={{ fontSize: '1.2rem' }}>search</span>
+              Where-Used — Items referencing this BOM
+            </div>
+            {whereUsedLoading ? <div className="empty" style={{ padding: 16 }}>Loading...</div> : (
+              whereUsedRows.length > 0 ? (
+                <table className="tbl" style={{ marginTop: 8 }}>
+                  <thead>
+                    <tr>
+                      <th>Type</th>
+                      <th>Reference</th>
+                      <th>Item Code</th>
+                      <th>Status</th>
+                      <th>Quantity</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {whereUsedRows.map((r, i) => (
+                      <tr key={i}>
+                        <td>{r.type}</td>
+                        <td>{r.reference}</td>
+                        <td>{r.itemCode}</td>
+                        <td><StatusBadge status={r.status} /></td>
+                        <td>{r.quantity}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="empty" style={{ padding: 16 }}>No references found for this BOM.</div>
+              )
+            )}
+          </div>
+        )}
+
+        {formTab === 'version-compare' && (
+          <div className="panel">
+            <div className="sec-head">
+              <span className="material-symbols-rounded" style={{ fontSize: '1.2rem' }}>compare</span>
+              Version Compare
+            </div>
+            {versionLoading ? <div className="empty" style={{ padding: 16 }}>Loading...</div> : (
+              versionRows.length > 0 ? (
+                <table className="tbl" style={{ marginTop: 8 }}>
+                  <thead>
+                    <tr>
+                      <th>Current Version</th>
+                      <th>Previous Version</th>
+                      <th>Component Count</th>
+                      <th>Changed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {versionRows.map((r, i) => (
+                      <tr key={i}>
+                        <td>{r.currentVersion}</td>
+                        <td>{r.previousVersion}</td>
+                        <td>{r.componentCount}</td>
+                        <td>{r.changed ? 'Yes' : 'No'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="empty" style={{ padding: 16 }}>No version comparison data available.</div>
+              )
+            )}
+          </div>
+        )}
 
         <div className="actbar">
           <button className="btn" onClick={() => setViewMode('LIST')}>

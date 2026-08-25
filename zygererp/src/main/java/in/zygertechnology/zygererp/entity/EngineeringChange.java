@@ -115,6 +115,10 @@ public class EngineeringChange {
     @Column(name = "approved_by", length = 100)
     String approvedBy;
 
+    /** FRS §3.8: gate - existing open orders evaluated before ECO release */
+    @Column(name = "existing_orders_evaluated")
+    Boolean existingOrdersEvaluated = false;
+
     @Column(length = 500)
     String remarks;
 
