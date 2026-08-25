@@ -20,6 +20,9 @@ import AuditHistoryDrawer from '../../../components/common/AuditHistoryDrawer';
 import { auditEntityTypeFor } from '../../../utils/auditEntity';
 import apiClient from '../../../api/axiosClient';
 import { exportToCsv } from '../../../utils/csvExport';
+import { useFormKeyboard } from '../../../hooks/useFormKeyboard';
+import { useUnsavedWarning } from '../../../hooks/useUnsavedWarning';
+import { useFormValidation } from '../../../hooks/useFormValidation';
 
 const PAGE_SIZE = 8;
 const config = WORK_ORDER_CONFIG;
@@ -136,16 +139,13 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
   };
 
   const validate = () => {
-    const errors: string[] = [];
-    for (const field of config.fields) {
-      if (field.required && !String(form[field.key] ?? '').trim()) errors.push(`${field.label.replace(' *', '')} is required.`);
-    }
-    return errors;
+    const errs = validateFields(config.fields, form);
+    if (errs.length > 0) toast(errs[0].message, 'error');
+    return errs.length === 0;
   };
 
   const handleCreate = async () => {
-    const errors = validate();
-    if (errors.length > 0) { toast(errors[0], 'error'); return; }
+    if (!validate()) return;
     try {
       const created = await createMutation.mutateAsync(buildPayload());
       toast(`Work Order ${created.woNumber ?? created.docNo ?? ''} created as draft.`);
@@ -272,6 +272,16 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
     </div>
   );
 
+  const isDirty = JSON.stringify(form) !== JSON.stringify(documentQuery.data ?? {}) || ops.length > 0 || mats.length > 0;
+  const { validate: validateFields, hasError: isFieldError } = useFormValidation();
+  useUnsavedWarning(isDirty && !!documentId);
+  useFormKeyboard({
+    enabled: mode === 'form',
+    onSave: editable ? handleSave : undefined,
+    onSubmit: !documentId ? handleCreate : undefined,
+    onBack: backToList,
+  });
+
   const filteredRows = useMemo(() => {
     if (!priority) return rows;
     return rows.filter((r: Record<string, unknown>) => String(r.priority ?? '').toUpperCase() === priority);
@@ -366,14 +376,26 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
         <div className="panel">
           <div className="panel-h"><h2><span className="material-symbols-rounded">description</span> Header</h2>
             {documentId && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                {/* FRS §6.4: Workflow actions in header */}
+                {genericStatus === 'DRAFT' && can('planning', 'Edit') && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'submit', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">send</span> Submit</button>}
+                {genericStatus === 'SUBMITTED' && can('planning', 'Approve') && <button type="button" className="btn btn-sm btn-g" onClick={() => setActionModal({ action: 'approve', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">thumb_up</span> Approve</button>}
+                {genericStatus === 'SUBMITTED' && can('planning', 'Reject') && <button type="button" className="btn btn-sm btn-d" onClick={() => setActionModal({ action: 'reject', danger: true })} disabled={isBusy}><span className="material-symbols-rounded">thumb_down</span> Reject</button>}
+                {genericStatus === 'APPROVED' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'release', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">rocket_launch</span> Release</button>}
+                {genericStatus === 'RELEASED' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'start', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">play_arrow</span> Start</button>}
+                {genericStatus === 'RELEASED' && <button type="button" className="btn btn-sm" onClick={() => setActionModal({ action: 'hold', danger: true, title: 'Hold' })} disabled={isBusy}><span className="material-symbols-rounded">pause</span> Hold</button>}
+                {genericStatus === 'IN_PROCESS' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'complete', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">check_circle</span> Complete</button>}
+                {genericStatus === 'IN_PROCESS' && <button type="button" className="btn btn-sm" onClick={() => setActionModal({ action: 'hold', danger: true, title: 'Hold' })} disabled={isBusy}><span className="material-symbols-rounded">pause</span> Hold</button>}
+                {genericStatus === 'ON_HOLD' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'start', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">play_arrow</span> Resume</button>}
+                {genericStatus === 'COMPLETED' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'close', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">lock</span> Close</button>}
+                {['DRAFT', 'SUBMITTED', 'APPROVED'].includes(genericStatus) && can('planning', 'Cancel') && <button type="button" className="btn btn-sm btn-d" onClick={() => setActionModal({ action: 'cancel', danger: true })} disabled={isBusy}><span className="material-symbols-rounded">block</span> Cancel</button>}
                 <button type="button" className="btn btn-sm" title="Status History" onClick={fetchStatusHistory}>
                   <span className="material-symbols-rounded">timeline</span> History
                 </button>
                 <button type="button" className="btn btn-sm" title="Audit Trail" onClick={() => setAuditOpen(true)}>
                   <span className="material-symbols-rounded">history</span> Audit
                 </button>
-                <span style={{ display: 'inline-block', padding: '4px 12px', borderRadius: '4px', fontSize: '13px', fontWeight: 600, color: '#fff', background: STATUS_COLORS[genericStatus] ?? '#6b7280' }}>{genericStatus.replace('_', ' ')}</span>
+                <StatusBadge status={genericStatus} />
               </div>
             )}
           </div>
@@ -395,7 +417,7 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
                   ? routeList.map((r) => `${r.routeNumber} \u2014 ${r.itemCode}`)
                   : pickerOptions;
               return (
-                <label key={field.key} className={`fld ${field.span2 ? 'span2' : ''}`}>
+                <label key={field.key} className={`fld ${field.span2 ? 'span2' : ''} ${isFieldError(field.key) ? 'invalid' : ''}`}>
                   <span>{field.label}</span>
                   {field.type === 'textarea' ? (
                     <textarea className="in" rows={2} readOnly={!editable} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))} />
@@ -453,39 +475,16 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
 
         <div className="panel">
           <div className="actbar">
-            <span className="lft"><span className="material-symbols-rounded">lock</span>{documentId ? 'Audited document' : 'New document'}</span>
-            <button type="button" className="btn" onClick={backToList} disabled={isBusy}><span className="material-symbols-rounded">arrow_back</span> Back</button>
-            {documentId && <button type="button" className="btn" onClick={handlePrint} disabled={isBusy}><span className="material-symbols-rounded">print</span> Print</button>}
-            {!documentId && <button type="button" className="btn btn-p" onClick={handleCreate} disabled={isBusy}><span className="material-symbols-rounded">save</span> Create Draft</button>}
-            {documentId && editable && (
-              <>
-                <button type="button" className="btn" onClick={handleSave} disabled={isBusy}><span className="material-symbols-rounded">save</span> Save</button>
-              </>
-            )}
-            {/* FRS §6.4: Status-based action buttons */}
-            {documentId && !isViewOnly && genericStatus === 'DRAFT' && can('planning', 'Edit') && <button type="button" className="btn btn-p" onClick={() => setActionModal({ action: 'submit', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">send</span> Submit</button>}
-            {documentId && !isViewOnly && genericStatus === 'SUBMITTED' && (
-              <>
-                {can('planning', 'Approve') && <button type="button" className="btn btn-g" onClick={() => setActionModal({ action: 'approve', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">thumb_up</span> Approve</button>}
-                {can('planning', 'Reject') && <button type="button" className="btn btn-d" onClick={() => setActionModal({ action: 'reject', danger: true })} disabled={isBusy}><span className="material-symbols-rounded">thumb_down</span> Reject</button>}
-              </>
-            )}
-            {documentId && !isViewOnly && genericStatus === 'APPROVED' && <button type="button" className="btn btn-p" onClick={() => setActionModal({ action: 'release', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">rocket_launch</span> Release</button>}
-            {documentId && !isViewOnly && genericStatus === 'RELEASED' && (
-              <>
-                <button type="button" className="btn btn-p" onClick={() => setActionModal({ action: 'start', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">play_arrow</span> Start</button>
-                <button type="button" className="btn" onClick={() => setActionModal({ action: 'hold', danger: true, title: 'Hold' })} disabled={isBusy}><span className="material-symbols-rounded">pause</span> Hold</button>
-              </>
-            )}
-            {documentId && !isViewOnly && genericStatus === 'IN_PROCESS' && (
-              <>
-                <button type="button" className="btn btn-p" onClick={() => setActionModal({ action: 'complete', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">check_circle</span> Complete</button>
-                <button type="button" className="btn" onClick={() => setActionModal({ action: 'hold', danger: true, title: 'Hold' })} disabled={isBusy}><span className="material-symbols-rounded">pause</span> Hold</button>
-              </>
-            )}
-            {documentId && !isViewOnly && genericStatus === 'ON_HOLD' && <button type="button" className="btn btn-p" onClick={() => setActionModal({ action: 'start', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">play_arrow</span> Resume</button>}
-            {documentId && !isViewOnly && genericStatus === 'COMPLETED' && <button type="button" className="btn btn-p" onClick={() => setActionModal({ action: 'close', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">lock</span> Close</button>}
-            {documentId && !isViewOnly && ['DRAFT', 'SUBMITTED', 'APPROVED'].includes(genericStatus) && can('planning', 'Cancel') && <button type="button" className="btn btn-d" onClick={() => setActionModal({ action: 'cancel', danger: true })} disabled={isBusy}><span className="material-symbols-rounded">block</span> Cancel</button>}
+            <div className="lft">
+              <button type="button" className="btn btn-sm" onClick={backToList} disabled={isBusy}><span className="material-symbols-rounded">arrow_back</span> Back</button>
+              <span className="material-symbols-rounded">lock</span>{documentId ? 'Audited document' : 'New document'}
+            </div>
+            <div className="rgt">
+              <span className="kbd-hint"><kbd className="kbd">Ctrl+S</kbd> Save</span>
+              {documentId && <button type="button" className="btn btn-sm" onClick={handlePrint} disabled={isBusy}><span className="material-symbols-rounded">print</span> Print</button>}
+              {!documentId && <button type="button" className="btn btn-sm btn-p" onClick={handleCreate} disabled={isBusy}><span className="material-symbols-rounded">save</span> Create Draft</button>}
+              {documentId && editable && <button type="button" className="btn btn-sm" onClick={handleSave} disabled={isBusy}><span className="material-symbols-rounded">save</span> Save</button>}
+            </div>
           </div>
         </div>
       </form>

@@ -8,6 +8,7 @@ import StatusBadge from '../../../components/common/StatusBadge';
 import { exportToCsv } from '../../../utils/csvExport';
 import { enqueue } from '../../../utils/offlineQueue';
 import { usePendingSyncCount } from '../../../hooks/usePendingSyncCount';
+import { useTabs } from '../../../contexts/TabsContext';
 
 interface IdleTime {
   id: number;
@@ -38,6 +39,8 @@ export default function IdleTimeScreen() {
   const { toast } = useToast();
   const { can } = useAuth();
   const pendingCount = usePendingSyncCount();
+  const { closeTab } = useTabs();
+  const backToList = () => closeTab('idle-time');
   const [rows, setRows] = useState<IdleTime[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<Record<string, unknown>>({});
@@ -179,9 +182,13 @@ export default function IdleTimeScreen() {
             <label className="fld"><span>Remarks</span><input className="in" value={String(form.remarks ?? '')} onChange={(e) => set('remarks', e.target.value)} /></label>
           </div>
           <div className="actbar">
-            <span className="lft">{editId && <button className="btn" onClick={() => { setForm({}); setEditId(null); setTab('list'); }} disabled={busy}>Cancel</button>}</span>
-            <button className="btn" onClick={() => { setForm({}); setEditId(null); setTab('list'); }}>Back</button>
-            <button className="btn btn-p" onClick={save} disabled={busy || !can('production', 'Edit')}>{editId ? 'Update' : 'Create'}</button>
+            <div className="lft">
+              <button className="btn btn-sm" onClick={backToList} disabled={busy}><span className="material-symbols-rounded">arrow_back</span> Back</button>
+            </div>
+            <div className="rgt">
+              {editId && <button className="btn btn-sm" onClick={() => { setForm({}); setEditId(null); setTab('list'); }} disabled={busy}>Cancel</button>}
+              <button className="btn btn-sm btn-p" onClick={save} disabled={busy || !can('production', 'Edit')}>{editId ? 'Update' : 'Create'}</button>
+            </div>
           </div>
         </div>
       )}

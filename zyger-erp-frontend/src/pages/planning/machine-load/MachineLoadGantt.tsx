@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import apiClient from '../../../api/axiosClient';
 import { useToast } from '../../../contexts/ToastContext';
+import { useTabs } from '../../../contexts/TabsContext';
 import { getApiErrorMessage } from '../../../utils/apiError';
+
+const SCREEN_ID = 'machine-load-gantt';
 
 interface MachineLoadLine {
   id: number;
@@ -60,6 +63,7 @@ function parseTime(dateStr: string, timeStr?: string): number {
 
 export default function MachineLoadGantt() {
   const { toast } = useToast();
+  const { closeTab } = useTabs();
   const containerRef = useRef<HTMLDivElement>(null);
   const [plans, setPlans] = useState<MachineLoadPlan[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
@@ -147,6 +151,7 @@ export default function MachineLoadGantt() {
       </div>
 
       <div className="toolbar" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <button type="button" className="btn btn-sm" onClick={() => closeTab(SCREEN_ID)}><span className="material-symbols-rounded">arrow_back</span> Back</button>
         <select className="in" value={selectedPlanId ?? ''} onChange={(e) => selectPlan(Number(e.target.value))} style={{ width: 260 }}>
           {plans.map((p) => <option key={p.id} value={p.id}>{p.planNumber} ({p.status})</option>)}
         </select>

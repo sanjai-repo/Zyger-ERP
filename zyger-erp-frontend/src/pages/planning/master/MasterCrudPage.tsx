@@ -99,9 +99,14 @@ export default function MasterCrudPage({ title, subtitle, apiMethod, fields }: M
             </label>
           ))}
         </div>
-        <div className="actbar" style={{ justifyContent: 'flex-end' }}>
-          {editId && <button className="btn" onClick={() => { setForm({}); setEditId(null); }} disabled={busy}>Cancel</button>}
-          <button className="btn btn-p" onClick={save} disabled={busy}>{editId ? 'Update' : 'Create'}</button>
+        <div className="actbar">
+          <div className="lft">
+            <span className="material-symbols-rounded">lock</span>{editId ? 'Editing existing record' : 'Creating new record'}
+          </div>
+          <div className="rgt">
+            {editId && <button className="btn btn-sm" onClick={() => { setForm({}); setEditId(null); }} disabled={busy}><span className="material-symbols-rounded">close</span> Cancel</button>}
+            <button className="btn btn-sm btn-p" onClick={save} disabled={busy}><span className="material-symbols-rounded">save</span> {editId ? 'Update' : 'Create'}</button>
+          </div>
         </div>
       </div>
       <div className="panel">

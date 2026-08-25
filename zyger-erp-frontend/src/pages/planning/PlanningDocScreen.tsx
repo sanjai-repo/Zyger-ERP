@@ -8,7 +8,7 @@ import {
   usePlanningDocNextNumber,
   usePlanningDocUpdate,
 } from '../../hooks/usePlanningDocs';
-import type { DocScreenConfig, FieldDef } from './planningDocConfigs';
+import type { DocScreenConfig } from './planningDocConfigs';
 import { formatDate, formatNumber, toOptionalNumber } from '../../utils/format';
 import { getApiErrorMessage } from '../../utils/apiError';
 import { useToast } from '../../contexts/ToastContext';
@@ -17,6 +17,9 @@ import ConfirmActionModal from '../../components/common/ConfirmActionModal';
 import AuditHistoryDrawer from '../../components/common/AuditHistoryDrawer';
 import { auditEntityTypeFor } from '../../utils/auditEntity';
 import { exportToCsv } from '../../utils/csvExport';
+import { useFormKeyboard } from '../../hooks/useFormKeyboard';
+import { useUnsavedWarning } from '../../hooks/useUnsavedWarning';
+import { useFormValidation } from '../../hooks/useFormValidation';
 
 const PAGE_SIZE = 8;
 
@@ -109,8 +112,6 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
 
   const backToList = () => { setDocumentId(null); setInitializedForId(''); setIsViewOnly(false); setMode('list'); };
 
-  const fieldLabel = (field: FieldDef) => field.label.replace(' *', '');
-
   const buildPayload = () => {
     const payload: Record<string, unknown> = {};
     for (const field of config.fields) {
@@ -128,16 +129,13 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
   };
 
   const validate = () => {
-    const errors: string[] = [];
-    for (const field of config.fields) {
-      if (field.required && !String(form[field.key] ?? '').trim()) errors.push(`${fieldLabel(field)} is required.`);
-    }
-    return errors;
+    const errs = validateFields(config.fields, form);
+    if (errs.length > 0) toast(errs[0].message, 'error');
+    return errs.length === 0;
   };
 
   const handleCreate = async () => {
-    const errors = validate();
-    if (errors.length > 0) { toast(errors[0], 'error'); return; }
+    if (!validate()) return;
     try {
       const created = await createMutation.mutateAsync(buildPayload());
       toast(`${created.docNo ?? docType} created as draft.`);
@@ -164,6 +162,16 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
       toast(`${updated.docNo ?? docType} \u2022 ${action} completed.`);
     } catch (e) { toast(getApiErrorMessage(e, `${action} failed.`), 'error'); }
   };
+
+  const isDirty = JSON.stringify(form) !== JSON.stringify(documentQuery.data ?? {}) || lines.length > 0;
+  const { validate: validateFields, hasError: isFieldError } = useFormValidation();
+  useUnsavedWarning(isDirty && !!documentId);
+  useFormKeyboard({
+    enabled: mode === 'form',
+    onSave: editable ? handleSave : undefined,
+    onSubmit: !documentId ? handleCreate : undefined,
+    onBack: backToList,
+  });
 
   const cellValue = (row: Record<string, unknown>, field: string): string => {
     const raw = row[field];
@@ -279,6 +287,11 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
           <div className="panel-h"><h2><span className="material-symbols-rounded">description</span> Header</h2>
             {documentId && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {documentId && !isViewOnly && genericStatus === 'DRAFT' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'submit', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">send</span> Submit</button>}
+                {documentId && !isViewOnly && genericStatus === 'SUBMITTED' && <button type="button" className="btn btn-sm btn-g" onClick={() => setActionModal({ action: 'approve', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">thumb_up</span> Approve</button>}
+                {documentId && !isViewOnly && genericStatus === 'SUBMITTED' && <button type="button" className="btn btn-sm btn-d" onClick={() => setActionModal({ action: 'reject', danger: true })} disabled={isBusy}><span className="material-symbols-rounded">thumb_down</span> Reject</button>}
+                {documentId && editable && genericStatus !== 'DRAFT' && <button type="button" className="btn btn-sm" onClick={() => runAction('reopen')} disabled={isBusy}><span className="material-symbols-rounded">restart_alt</span> Reopen</button>}
+                {documentId && !isViewOnly && ['DRAFT', 'SUBMITTED', 'APPROVED'].includes(genericStatus) && <button type="button" className="btn btn-sm btn-d" onClick={() => setActionModal({ action: 'cancel', danger: true })} disabled={isBusy}><span className="material-symbols-rounded">block</span> Cancel</button>}
                 <button type="button" className="btn btn-sm" title="Audit History" onClick={() => setAuditOpen(true)}>
                   <span className="material-symbols-rounded">history</span> Audit
                 </button>
@@ -292,7 +305,7 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
               <input className="in" value={docNo} readOnly tabIndex={-1} style={{ fontWeight: 600, background: '#f9fafb' }} />
             </label>
             {config.fields.map((field) => (
-              <label key={field.key} className={`fld ${field.span2 ? 'span2' : ''}`}>
+              <label key={field.key} className={`fld ${field.span2 ? 'span2' : ''} ${isFieldError(field.key) ? 'invalid' : ''}`}>
                 <span>{field.label}</span>
                 {field.type === 'textarea' ? (
                   <textarea className="in" rows={2} readOnly={!editable} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))} />
@@ -361,23 +374,17 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
 
         <div className="panel">
           <div className="actbar">
-            <span className="lft"><span className="material-symbols-rounded">lock</span>{documentId ? 'Audited document' : 'New document'}</span>
-            <button type="button" className="btn" onClick={backToList} disabled={isBusy}><span className="material-symbols-rounded">arrow_back</span> Back</button>
-            {!documentId && <button type="button" className="btn btn-p" onClick={handleCreate} disabled={isBusy}><span className="material-symbols-rounded">save</span> Create Draft</button>}
-            {documentId && editable && (
-              <>
-                <button type="button" className="btn" onClick={handleSave} disabled={isBusy}><span className="material-symbols-rounded">save</span> Save</button>
-                {genericStatus !== 'DRAFT' && <button type="button" className="btn" onClick={() => runAction('reopen')} disabled={isBusy}><span className="material-symbols-rounded">restart_alt</span> Reopen to Draft</button>}
-              </>
-            )}
-            {documentId && !isViewOnly && genericStatus === 'DRAFT' && <button type="button" className="btn btn-p" onClick={() => setActionModal({ action: 'submit', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">send</span> Submit</button>}
-            {documentId && !isViewOnly && genericStatus === 'SUBMITTED' && (
-              <>
-                <button type="button" className="btn btn-g" onClick={() => setActionModal({ action: 'approve', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">thumb_up</span> Approve</button>
-                <button type="button" className="btn btn-d" onClick={() => setActionModal({ action: 'reject', danger: true })} disabled={isBusy}><span className="material-symbols-rounded">thumb_down</span> Reject</button>
-              </>
-            )}
-            {documentId && !isViewOnly && ['DRAFT', 'SUBMITTED', 'APPROVED'].includes(genericStatus) && <button type="button" className="btn btn-d" onClick={() => setActionModal({ action: 'cancel', danger: true })} disabled={isBusy}><span className="material-symbols-rounded">block</span> Cancel</button>}
+            <div className="lft">
+              <button type="button" className="btn btn-sm" onClick={backToList} disabled={isBusy}><span className="material-symbols-rounded">arrow_back</span> Back</button>
+              <span className="material-symbols-rounded">lock</span>{documentId ? 'Audited document' : 'New document'}
+            </div>
+            <div className="rgt">
+              <span className="kbd-hint"><kbd className="kbd">Ctrl+S</kbd> Save</span>
+              {documentId && editable && (
+                <button type="button" className="btn btn-sm" onClick={handleSave} disabled={isBusy}><span className="material-symbols-rounded">save</span> Save</button>
+              )}
+              {!documentId && <button type="button" className="btn btn-sm btn-p" onClick={handleCreate} disabled={isBusy}><span className="material-symbols-rounded">save</span> Create Draft</button>}
+            </div>
           </div>
         </div>
       </form>

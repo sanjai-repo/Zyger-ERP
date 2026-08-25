@@ -10,6 +10,7 @@ import { printDocument as printDoc } from '../../../utils/printDocument';
 import { exportToCsv } from '../../../utils/csvExport';
 import { enqueue } from '../../../utils/offlineQueue';
 import { usePendingSyncCount } from '../../../hooks/usePendingSyncCount';
+import { useTabs } from '../../../contexts/TabsContext';
 
 interface ProductionEntry {
   id: number;
@@ -54,6 +55,8 @@ export default function ProductionEntryScreen() {
   const { toast } = useToast();
   const { can } = useAuth();
   const pendingCount = usePendingSyncCount();
+  const { closeTab } = useTabs();
+  const backToList = () => closeTab('production-entry');
   const [rows, setRows] = useState<ProductionEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<Record<string, unknown>>({});
@@ -293,9 +296,13 @@ export default function ProductionEntryScreen() {
           )}
 
           <div className="actbar">
-            <span className="lft">{editId && <button className="btn" onClick={() => { setForm({}); setEditId(null); setTab('list'); }} disabled={busy}>Cancel</button>}</span>
-            <button className="btn" onClick={() => { setForm({}); setEditId(null); setTab('list'); }}>Back</button>
-            {can('production', 'Edit') && <button className="btn btn-p" onClick={save} disabled={busy}>{editId ? 'Update' : 'Create'}</button>}
+            <div className="lft">
+              <button className="btn btn-sm" onClick={backToList} disabled={busy}><span className="material-symbols-rounded">arrow_back</span> Back</button>
+            </div>
+            <div className="rgt">
+              {editId && <button className="btn btn-sm" onClick={() => { setForm({}); setEditId(null); setTab('list'); }} disabled={busy}>Cancel</button>}
+              {can('production', 'Edit') && <button className="btn btn-sm btn-p" onClick={save} disabled={busy}>{editId ? 'Update' : 'Create'}</button>}
+            </div>
           </div>
         </div>
       )}

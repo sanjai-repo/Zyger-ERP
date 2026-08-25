@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import apiClient from '../../../api/axiosClient';
 import { useToast } from '../../../contexts/ToastContext';
+import { useTabs } from '../../../contexts/TabsContext';
 import { getApiErrorMessage } from '../../../utils/apiError';
 import ConfirmActionModal from '../../../components/common/ConfirmActionModal';
+
+const SCREEN_ID = 'cost-estimation';
 
 interface ReconcileResult {
   estimationNumber: string;
@@ -83,6 +86,7 @@ const fmt = (v?: number) => v != null ? `$${v.toLocaleString('en-IN', { minimumF
 
 export default function CostEstimationScreen() {
   const { toast } = useToast();
+  const { closeTab } = useTabs();
   const [rows, setRows] = useState<CostEstimation[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -296,10 +300,14 @@ export default function CostEstimationScreen() {
           </label>
         </div>
         <div className="actbar">
-          <span className="lft">
-            {editId && <button className="btn" onClick={() => { setForm({}); setEditId(null); }} disabled={busy}>Cancel</button>}
-          </span>
-          <button className="btn btn-p" onClick={save} disabled={busy}>{editId ? 'Update' : 'Create'}</button>
+          <div className="lft">
+            <button type="button" className="btn btn-sm" onClick={() => closeTab(SCREEN_ID)} disabled={busy}><span className="material-symbols-rounded">arrow_back</span> Back</button>
+            <span className="material-symbols-rounded">lock</span>{'Cost Estimations'}
+          </div>
+          <div className="rgt">
+            {editId && <button type="button" className="btn btn-sm" onClick={() => { setForm({}); setEditId(null); }} disabled={busy}>Cancel</button>}
+            <button type="button" className="btn btn-sm btn-p" onClick={save} disabled={busy}><span className="material-symbols-rounded">save</span> {editId ? 'Update' : 'Create'}</button>
+          </div>
         </div>
       </div>
 
@@ -436,9 +444,9 @@ export default function CostEstimationScreen() {
         </div>
         {total > PAGE_SIZE && (
           <div className="pager">
-            <button className="btn" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>Prev</button>
+            <button className="btn btn-sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>Prev</button>
             <span className="sp">Page {page + 1} of {Math.ceil(total / PAGE_SIZE)}</span>
-            <button className="btn" disabled={(page + 1) * PAGE_SIZE >= total} onClick={() => setPage((p) => p + 1)}>Next</button>
+            <button className="btn btn-sm" disabled={(page + 1) * PAGE_SIZE >= total} onClick={() => setPage((p) => p + 1)}>Next</button>
           </div>
         )}
       </div>

@@ -32,11 +32,8 @@ export default class ErrorBoundary extends Component<Props, State> {
           <h2>Something went wrong</h2>
           <p style={{ color: '#888' }}>{this.state.error?.message}</p>
           <button
+            className="btn btn-sm"
             onClick={() => this.setState({ hasError: false, error: null })}
-            style={{
-              marginTop: 16, padding: '8px 24px', cursor: 'pointer',
-              border: '1px solid #ccc', borderRadius: 6, background: '#fff',
-            }}
           >
             Try Again
           </button>

@@ -100,9 +100,9 @@ export default function QRScanInput({ label, placeholder = 'Scan QR or type code
         />
       </div>
       {value && (
-        <button onClick={submit} className="btn primary" style={{ padding: '6px 14px', fontSize: 13 }}>Go</button>
+        <button onClick={submit} className="btn btn-sm btn-p">Go</button>
       )}
-      <button onClick={startCamera} className="btn" style={{ padding: '6px 10px', fontSize: 13 }} title="Scan with camera">
+      <button onClick={startCamera} className="btn btn-sm" title="Scan with camera">
         <span className="material-symbols-rounded" style={{ fontSize: 18 }}>photo_camera</span>
       </button>
     </div>

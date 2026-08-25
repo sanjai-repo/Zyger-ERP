@@ -8,6 +8,7 @@ import StatusBadge from '../../../components/common/StatusBadge';
 import AuditHistoryDrawer from '../../../components/common/AuditHistoryDrawer';
 import { printDocument as printDoc } from '../../../utils/printDocument';
 import { exportToCsv } from '../../../utils/csvExport';
+import { useTabs } from '../../../contexts/TabsContext';
 
 interface JobCard {
   id: number;
@@ -76,6 +77,8 @@ const SC: Record<string, { color: string; bg: string }> = {
 export default function JobCardScreen({ initialSearch }: { initialSearch?: string }) {
   const { toast } = useToast();
   const { can } = useAuth();
+  const { closeTab } = useTabs();
+  const backToList = () => closeTab('job-card');
   const [rows, setRows] = useState<JobCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<Record<string, unknown>>({});
@@ -277,7 +280,11 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
               </button>
             </div>
           </div>
-          <div className="actbar"><button className="btn" onClick={() => setTab('list')}>Back to List</button></div>
+          <div className="actbar">
+            <div className="lft">
+              <button className="btn btn-sm" onClick={backToList}><span className="material-symbols-rounded">arrow_back</span> Back</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -317,9 +324,13 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
             <label className="fld"><span>Remarks</span><input className="in" value={String(form.remarks ?? '')} onChange={(e) => set('remarks', e.target.value)} /></label>
           </div>
           <div className="actbar">
-            <span className="lft">{editId && <button className="btn" onClick={() => { setForm({}); setEditId(null); setTab('list'); }} disabled={busy}>Cancel</button>}</span>
-            <button className="btn" onClick={() => { setForm({}); setEditId(null); setTab('list'); }}>Back</button>
-            <button className="btn btn-p" onClick={save} disabled={busy}>{editId ? 'Update' : 'Create'}</button>
+            <div className="lft">
+              <button className="btn btn-sm" onClick={backToList} disabled={busy}><span className="material-symbols-rounded">arrow_back</span> Back</button>
+            </div>
+            <div className="rgt">
+              {editId && <button className="btn btn-sm" onClick={() => { setForm({}); setEditId(null); setTab('list'); }} disabled={busy}>Cancel</button>}
+              <button className="btn btn-sm btn-p" onClick={save} disabled={busy}>{editId ? 'Update' : 'Create'}</button>
+            </div>
           </div>
         </div>
       )}
@@ -500,8 +511,12 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
             <label className="fld"><span>Remarks</span><input className="in" value={String(subForm.remarks ?? '')} onChange={(e) => setSub('remarks', e.target.value)} /></label>
           </div>
           <div className="actbar">
-            <span className="lft">{editSubId && <button className="btn" onClick={() => { setSubForm({}); setEditSubId(null); }} disabled={busy}>Cancel</button>}</span>
-            <button className="btn btn-p" onClick={saveSub} disabled={busy}>{editSubId ? 'Update' : 'Add'}</button>
+            <div className="lft">
+              {editSubId && <button className="btn btn-sm" onClick={() => { setSubForm({}); setEditSubId(null); }} disabled={busy}><span className="material-symbols-rounded">arrow_back</span> Cancel</button>}
+            </div>
+            <div className="rgt">
+              <button className="btn btn-sm btn-p" onClick={saveSub} disabled={busy}>{editSubId ? 'Update' : 'Add'}</button>
+            </div>
           </div>
         </div>
       )}

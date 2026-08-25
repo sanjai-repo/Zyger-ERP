@@ -7,6 +7,7 @@ import ConfirmActionModal from '../../../components/common/ConfirmActionModal';
 import StatusBadge from '../../../components/common/StatusBadge';
 import { printDocument as printDoc } from '../../../utils/printDocument';
 import { exportToCsv } from '../../../utils/csvExport';
+import { useTabs } from '../../../contexts/TabsContext';
 
 interface ProductionReturn {
   id: number;
@@ -37,6 +38,8 @@ const SC: Record<string, { color: string; bg: string }> = {
 export default function ProductionReturnScreen() {
   const { toast } = useToast();
   const { can } = useAuth();
+  const { closeTab } = useTabs();
+  const backToList = () => closeTab('production-return');
   const [rows, setRows] = useState<ProductionReturn[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<Record<string, unknown>>({});
@@ -178,9 +181,13 @@ export default function ProductionReturnScreen() {
             <label className="fld"><span>Remarks</span><input className="in" value={String(form.remarks ?? '')} onChange={(e) => set('remarks', e.target.value)} /></label>
           </div>
           <div className="actbar">
-            <span className="lft">{editId && <button className="btn" onClick={() => { setForm({}); setEditId(null); setTab('list'); }} disabled={busy}>Cancel</button>}</span>
-            <button className="btn" onClick={() => { setForm({}); setEditId(null); setTab('list'); }}>Back</button>
-            <button className="btn btn-p" onClick={save} disabled={busy || !can('production', 'Edit')}>{editId ? 'Update' : 'Create'}</button>
+            <div className="lft">
+              <button className="btn btn-sm" onClick={backToList} disabled={busy}><span className="material-symbols-rounded">arrow_back</span> Back</button>
+            </div>
+            <div className="rgt">
+              {editId && <button className="btn btn-sm" onClick={() => { setForm({}); setEditId(null); setTab('list'); }} disabled={busy}>Cancel</button>}
+              <button className="btn btn-sm btn-p" onClick={save} disabled={busy || !can('production', 'Edit')}>{editId ? 'Update' : 'Create'}</button>
+            </div>
           </div>
         </div>
       )}

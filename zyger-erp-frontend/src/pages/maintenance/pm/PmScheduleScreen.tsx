@@ -90,6 +90,7 @@ export default function PmScheduleScreen() {
     catch (e) { toast(getApiErrorMessage(e, 'Action failed.'), 'error'); }
   };
 
+  const backToList = () => { setForm({}); setEditId(null); setTab('list'); };
   const set = (k: string, v: unknown) => setForm((c) => ({ ...c, [k]: v }));
 
   const handlePlanSelect = (val: string) => {
@@ -129,9 +130,11 @@ export default function PmScheduleScreen() {
             <label className="fld"><span>Remarks</span><input className="in" value={String(form.remarks ?? '')} onChange={(e) => set('remarks', e.target.value)} /></label>
           </div>
           <div className="actbar">
-            <span className="lft">{editId && <button className="btn" onClick={() => { setForm({}); setEditId(null); setTab('list'); }} disabled={busy}>Cancel</button>}</span>
-            <button className="btn" onClick={() => { setForm({}); setEditId(null); setTab('list'); }}>Back</button>
-            <button className="btn btn-p" onClick={save} disabled={busy}>{editId ? 'Update' : 'Create'}</button>
+            <span className="lft"><button className="btn btn-sm" onClick={backToList}><span className="material-symbols-rounded">arrow_back</span> Back</button></span>
+            <span className="rgt">
+              {editId && <button className="btn btn-sm" onClick={backToList}>Cancel</button>}
+              <button className="btn btn-sm btn-p" onClick={save} disabled={busy}>{editId ? 'Update' : 'Create'}</button>
+            </span>
           </div>
         </div>
       )}
