@@ -473,23 +473,108 @@ export default function BomMasterScreen() {
 
   /* ── Tree View ── */
 
-  const fetchTree = async (id: number) => {
+  const fetchTree = async (_id?: number) => {
     setTreeLoading(true);
     setTreeOpen(true);
     try {
-      const { data } = await apiClient.get(`/v1/planning/production-bom/${id}/tree`);
-      setTreeData(data);
-      // Expand first two levels by default
-      const expanded = new Set<string>();
-      const expandLevel = (node: TreeNode, maxDepth: number) => {
-        if (node.level < maxDepth && node.children) {
-          for (const child of node.children) {
-            expanded.add(child.levelPath);
-            expandLevel(child, maxDepth);
+      // Build tree client-side from flat BOM lines
+      const itemMap = new Map(items.map((i) => [i.code, i]));
+      const activeLines = bom.lines.filter((l) => l.componentItemCode);
+      const root: TreeNode = {
+        itemCode: bom.itemCode || '',
+        description: itemMap.get(bom.itemCode || '')?.name || '',
+        quantityPer: bom.baseQuantity || 1,
+        weightPerQty: itemMap.get(bom.itemCode || '')?.weight || 0,
+        totalWeight: bom.weight || 0,
+        level: 1,
+        levelPath: '1',
+        children: [],
+      };
+
+      let seq = 1;
+      let lastSemiFg: TreeNode | null = null;
+
+      for (const line of activeLines) {
+        const item = itemMap.get(line.componentItemCode);
+        const level = line.bomLevel || item?.itemType || 'RAW_MATERIAL';
+        const path = seq === 0 ? '1' : '';
+
+        if (level === 'SEMI_FG' || level === 'SFG') {
+          const node: TreeNode = {
+            componentItemCode: line.componentItemCode,
+            description: item?.name || line.description || '',
+            quantityPer: line.quantityPer,
+            weightPerQty: line.weightPerQty || item?.weight || 0,
+            totalWeight: line.totalWeight || 0,
+            level: 2,
+            levelPath: `${root.levelPath}.${seq}`,
+            children: [],
+          };
+          root.children!.push(node);
+          lastSemiFg = node;
+          seq++;
+        } else if (level === 'FG') {
+          const node: TreeNode = {
+            componentItemCode: line.componentItemCode,
+            description: item?.name || line.description || '',
+            quantityPer: line.quantityPer,
+            weightPerQty: line.weightPerQty || item?.weight || 0,
+            totalWeight: line.totalWeight || 0,
+            level: 2,
+            levelPath: `${root.levelPath}.${seq}`,
+            children: [],
+          };
+          root.children!.push(node);
+          lastSemiFg = null;
+          seq++;
+        } else {
+          // RAW_MATERIAL — child of last Semi-FG or direct child of root
+          if (lastSemiFg && lastSemiFg.children) {
+            const childSeq = lastSemiFg.children.length + 1;
+            lastSemiFg.children.push({
+              componentItemCode: line.componentItemCode,
+              description: item?.name || line.description || '',
+              quantityPer: line.quantityPer,
+              weightPerQty: line.weightPerQty || item?.weight || 0,
+              totalWeight: line.totalWeight || 0,
+              level: 3,
+              levelPath: `${lastSemiFg.levelPath}.${childSeq}`,
+            });
+          } else {
+            const node: TreeNode = {
+              componentItemCode: line.componentItemCode,
+              description: item?.name || line.description || '',
+              quantityPer: line.quantityPer,
+              weightPerQty: line.weightPerQty || item?.weight || 0,
+              totalWeight: line.totalWeight || 0,
+              level: 2,
+              levelPath: `${root.levelPath}.${seq}`,
+              children: [],
+            };
+            root.children!.push(node);
+            seq++;
           }
         }
+      }
+
+      // Fix levelPaths after building
+      root.children?.forEach((child, i) => {
+        child.levelPath = `${root.levelPath}.${i + 1}`;
+        child.children?.forEach((grandchild, j) => {
+          grandchild.levelPath = `${child.levelPath}.${j + 1}`;
+        });
+      });
+
+      setTreeData(root);
+      // Expand all levels by default
+      const expanded = new Set<string>();
+      const expandAll = (node: TreeNode) => {
+        if (node.children && node.children.length > 0) {
+          expanded.add(node.levelPath);
+          for (const child of node.children) expandAll(child);
+        }
       };
-      expandLevel(data, 2);
+      expandAll(root);
       setExpandedNodes(expanded);
     } catch { toast('Failed to load BOM tree.', 'error'); }
     setTreeLoading(false);
