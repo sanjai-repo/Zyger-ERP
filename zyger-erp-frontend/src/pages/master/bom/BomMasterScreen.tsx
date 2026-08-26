@@ -481,12 +481,16 @@ export default function BomMasterScreen() {
       // Build tree client-side from flat BOM lines
       const itemMap = new Map(items.map((i) => [i.code, i]));
       const activeLines = bom.lines.filter((l) => l.componentItemCode);
+      // First line is the BOM Item itself — use its data for root
+      const firstLine = activeLines.length > 0 ? activeLines[0] : null;
+      const rootItem = itemMap.get(bom.itemCode || '');
       const root: TreeNode = {
         itemCode: bom.itemCode || '',
-        description: itemMap.get(bom.itemCode || '')?.name || '',
-        quantityPer: bom.baseQuantity || 1,
-        weightPerQty: itemMap.get(bom.itemCode || '')?.weight || 0,
-        totalWeight: bom.weight || 0,
+        description: rootItem?.name || firstLine?.description || '',
+        quantityPer: firstLine?.quantityPer || bom.baseQuantity || 1,
+        weightPerQty: firstLine?.weightPerQty || rootItem?.weight || 0,
+        totalWeight: firstLine?.totalWeight || bom.weight || 0,
+        remarks: firstLine?.remarks || '',
         level: 1,
         levelPath: '1',
         children: [],
@@ -495,7 +499,10 @@ export default function BomMasterScreen() {
       let seq = 1;
       let lastSemiFg: TreeNode | null = null;
 
-      for (const line of activeLines) {
+      // Start from line 1 (skip first which is the root item itself)
+      const childLines = activeLines.slice(1);
+
+      for (const line of childLines) {
         const item = itemMap.get(line.componentItemCode);
         const level = line.bomLevel || item?.itemType || 'RAW_MATERIAL';
         const path = seq === 0 ? '1' : '';
