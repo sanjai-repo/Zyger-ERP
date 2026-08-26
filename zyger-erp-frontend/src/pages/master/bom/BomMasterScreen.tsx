@@ -665,6 +665,12 @@ export default function BomMasterScreen() {
                   if (item) {
                     setField('baseUom', item.uom || 'PCS');
                   }
+                  // Auto-add selected item as first component row
+                  if (code && bom.lines.length === 0) {
+                    const levelMap: Record<string, string> = { FG: 'FG', SEMI_FG: 'SEMI_FG', RAW_MATERIAL: 'RAW_MATERIAL' };
+                    const bomLevel = levelMap[item?.itemType || ''] || 'FG';
+                    setBom((p) => ({ ...p, lines: [{ ...emptyLine(1), bomLevel, componentItemCode: code, quantityPer: 1, weightPerQty: item?.weight || 0, totalWeight: item?.weight || 0 }] }));
+                  }
                 }} disabled={!isEditable && !!editId} required>
                   <option value="">\u2014 Select Item \u2014</option>
                   {filteredItems.map((i) => <option key={i.id} value={i.code}>{i.code} - {i.name}{i.weight ? ` (${i.weight} kg)` : ''}</option>)}
