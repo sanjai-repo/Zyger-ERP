@@ -717,22 +717,6 @@ export default function BomMasterScreen() {
                 </select>
               </label>
 
-              <label className="fld"><span>Version</span>
-                <input className="in" value={bom.bomVersion} onChange={(e) => setField('bomVersion', e.target.value)} disabled={!isEditable && !!editId} />
-              </label>
-
-              <label className="fld"><span>Revision</span>
-                <input className="in" value={String(bom.revisionNo ?? 0)} readOnly tabIndex={-1} style={{ background: '#f9fafb' }} />
-              </label>
-
-              <label className="fld"><span>Effective From</span>
-                <input className="in" type="date" value={bom.effectiveFrom} onChange={(e) => setField('effectiveFrom', e.target.value)} disabled={!isEditable && !!editId} />
-              </label>
-
-              <label className="fld"><span>Effective To</span>
-                <input className="in" type="date" value={bom.effectiveTo} onChange={(e) => setField('effectiveTo', e.target.value)} disabled={!isEditable && !!editId} />
-              </label>
-
               <label className="fld" style={{ gridColumn: 'span 2' }}><span>Specifications</span>
                 <textarea className="in" rows={2} value={bom.specifications || ''} onChange={(e) => setField('specifications', e.target.value)} disabled={!isEditable && !!editId} />
               </label>
