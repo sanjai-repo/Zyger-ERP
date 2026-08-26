@@ -262,7 +262,8 @@ export default function BomMasterScreen() {
   const addLine = () => {
     const n = bom.lines.length + 1;
     const parentLevel = '1';
-    setBom((p) => ({ ...p, lines: [...p.lines, { ...emptyLine(n), bomLevel: parentLevel }] }));
+    const qty = bom.baseQuantity || 1;
+    setBom((p) => ({ ...p, lines: [...p.lines, { ...emptyLine(n), bomLevel: parentLevel, quantityPer: qty }] }));
   };
 
   const removeLine = (idx: number) => setBom((p) => ({
@@ -280,11 +281,11 @@ export default function BomMasterScreen() {
         ...lines[idx],
         componentItemCode: itemCode,
         description: item?.name ?? '',
-        quantityPer: lines[idx].quantityPer || 1,
+        quantityPer: lines[idx].quantityPer || bom.baseQuantity || 1,
         weightPerQty: item?.weight ?? 0,
         uom: item?.uom || 'PCS',
         componentType: item?.itemType === 'FG' ? 'FINISHED_GOOD' : item?.itemType === 'SEMI_FG' ? 'SEMI_FG' : 'RAW_MATERIAL',
-        totalWeight: (item?.weight ?? 0) * (lines[idx].quantityPer || 1),
+        totalWeight: (item?.weight ?? 0) * (lines[idx].quantityPer || bom.baseQuantity || 1),
       };
       const totalWt = lines.reduce((s, l) => s + (l.totalWeight || 0), 0);
       return { ...p, lines, weight: totalWt };
