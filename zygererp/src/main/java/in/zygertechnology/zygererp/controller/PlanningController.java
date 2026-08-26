@@ -51,6 +51,7 @@ public class PlanningController {
     }
 
     @PostMapping("/{type}")
+    @RequirePermission(module = "PLANNING", screen = "*", action = "CREATE")
     Map<String, Object> create(@PathVariable String type, @RequestBody Map<String, Object> b, Principal p) {
         return svc.toRow(planning.create(key(type), b, principalName(p)));
     }
@@ -62,12 +63,14 @@ public class PlanningController {
     }
 
     @PutMapping("/{type}/{id}")
+    @RequirePermission(module = "PLANNING", screen = "*", action = "EDIT")
     Map<String, Object> update(@PathVariable String type, @PathVariable Long id,
                                @RequestBody Map<String, Object> b, Principal p) {
         return svc.toRow(planning.update(key(type), id, b, principalName(p)));
     }
 
     @DeleteMapping("/{type}/{id}")
+    @RequirePermission(module = "PLANNING", screen = "*", action = "DELETE")
     void del(@PathVariable String type, @PathVariable Long id, Principal p) {
         if ("production-bom".equals(type)) {
             planning.validateBomCanBeDeleted(id);
@@ -81,6 +84,7 @@ public class PlanningController {
     }
 
     @PostMapping("/{type}/{id}/actions/{action}")
+    @RequirePermission(module = "PLANNING", screen = "*", action = "APPROVE")
     Map<String, Object> act(@PathVariable String type, @PathVariable Long id, @PathVariable String action,
                             @RequestBody(required = false) Map<String, String> b, Principal p) {
         return svc.toRow(planning.action(key(type), id, action,
