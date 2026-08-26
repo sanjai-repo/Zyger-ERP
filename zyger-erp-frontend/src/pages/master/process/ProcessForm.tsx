@@ -62,7 +62,7 @@ export default function ProcessForm({ processId, viewOnly = false, onBack, onSav
     if (id) {
       const res = resources.find((r) => r.id === id);
       if (res) {
-        setForm((c) => ({ ...c, requiredResource: id, resourceName: res.resourceName, resourceType: res.resourceType }));
+        setForm((c) => ({ ...c, requiredResource: id, resourceName: res.resourceName, resourceType: res.resourceType, ...(res.resourceType === 'Vendor' ? { processType: 'Outsource' } : {}) }));
         return;
       }
     }

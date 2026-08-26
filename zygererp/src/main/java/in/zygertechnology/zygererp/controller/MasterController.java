@@ -34,6 +34,7 @@ public class MasterController {
     private final DocNumberService docNumbers;
     private final ItemBomComponentRepository bomRepo;
     private final ItemSupplierRepository itemSupplierRepo;
+    private final jakarta.persistence.EntityManager em;
 
 
     private String principalName(Principal p) { return p != null ? p.getName() : "system"; }
@@ -762,7 +763,14 @@ public class MasterController {
         deriveResourceFields(merged);
         return processMasters.save(merged);
     }
-    @DeleteMapping("/api/master/processes/{id}") void delProcess(@PathVariable Long id){ processMasters.findById(id).ifPresent(p -> { p.setActive(false); processMasters.save(p); }); }
+    @DeleteMapping("/api/master/processes/{id}") void delProcess(@PathVariable Long id){
+        Long count = em.createQuery("SELECT COUNT(ro) FROM RouteOperation ro WHERE ro.process.id = :processId", Long.class)
+                .setParameter("processId", id).getSingleResult();
+        if (count > 0) {
+            throw new IllegalStateException("This Process is referenced in existing Route Operations and cannot be deleted.");
+        }
+        processMasters.findById(id).ifPresent(p -> { p.setActive(false); processMasters.save(p); });
+    }
 
     /** FRS §4.2: Server-side auto-derive — selecting resource auto-fills resourceName, resourceType; Vendor → outsource. */
     private void deriveResourceFields(ProcessMaster p) {
@@ -1106,6 +1114,16 @@ public class MasterController {
 
     @DeleteMapping("/api/master/resources/{id}")
     void deleteResource(@PathVariable Long id) {
+        Long processCount = em.createQuery("SELECT COUNT(pm) FROM ProcessMaster pm WHERE pm.requiredResource.id = :resourceId", Long.class)
+                .setParameter("resourceId", id).getSingleResult();
+        if (processCount > 0) {
+            throw new IllegalStateException("This Resource is referenced in existing Processes and cannot be deleted.");
+        }
+        Long routeCount = em.createQuery("SELECT COUNT(ro) FROM RouteOperation ro WHERE ro.resource.id = :resourceId", Long.class)
+                .setParameter("resourceId", id).getSingleResult();
+        if (routeCount > 0) {
+            throw new IllegalStateException("This Resource is referenced in existing Route Operations and cannot be deleted.");
+        }
         resourceMasters.findById(id).ifPresent(r -> {
             r.setActive(false);
             r.setStatus("Inactive");

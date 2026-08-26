@@ -32,7 +32,7 @@ interface PlanningDocScreenProps {
   defaultType?: string;
 }
 
-type ActionModal = { action: 'submit' | 'approve' | 'reject' | 'reopen' | 'cancel'; danger: boolean };
+type ActionModal = { action: 'submit' | 'approve' | 'reject' | 'reopen' | 'cancel' | 'revise'; danger: boolean };
 
 export default function PlanningDocScreen({ config, initialDocId, viewOnly = false, defaultType }: PlanningDocScreenProps) {
   const { toast } = useToast();
@@ -56,6 +56,16 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
   const [auditOpen, setAuditOpen] = useState(false);
   const [selectedLineIdx, setSelectedLineIdx] = useState<number | null>(null);
   const [childGridData, setChildGridData] = useState<Record<string, unknown>[]>([]);
+  const [includeInactive, setIncludeInactive] = useState(false);
+  const [processes, setProcesses] = useState<Array<Record<string, unknown>>>([]);
+
+  useEffect(() => {
+    apiClient.get('/master/processes').then((r) => {
+      const data = r.data as { content?: unknown[] } | unknown[];
+      const list = Array.isArray(data) ? data : (data?.content ?? []);
+      setProcesses(list as Array<Record<string, unknown>>);
+    }).catch(() => {});
+  }, []);
 
   const listQuery = usePlanningDocList(docType, {
     page,
@@ -121,12 +131,31 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
     if (childGridQuery.data) setChildGridData(childGridQuery.data as Record<string, unknown>[]);
   }, [childGridQuery.data]);
 
+  useEffect(() => {
+    if (config.docType === 'production-bom' && editable && lines.length > 0) {
+      const updatedLines = lines.map((line) => {
+        const wPerQty = Number(line.weightPerQty ?? 0);
+        const qtyPer = Number(line.quantityPer ?? 0);
+        const computedTotal = wPerQty * qtyPer;
+        return { ...line, totalWeight: computedTotal > 0 ? String(computedTotal) : line.totalWeight };
+      });
+      const totalWeightSum = updatedLines.reduce((sum, l) => sum + Number(l.totalWeight ?? 0), 0);
+      if (JSON.stringify(updatedLines) !== JSON.stringify(lines)) {
+        setLines(updatedLines);
+      }
+      if (totalWeightSum > 0 && Number(form.weight ?? 0) !== totalWeightSum) {
+        setForm((c) => ({ ...c, weight: String(totalWeightSum) }));
+      }
+    }
+  }, [lines.map((l) => `${l.weightPerQty}-${l.quantityPer}`).join(','), config.docType, editable]);
+
   const doc = documentQuery.data;
   const genericStatus = String(doc?.status ?? 'DRAFT');
   const isRouteSheet = config.docType === 'route-sheet';
   const editable = !isViewOnly && (!documentId || (isRouteSheet
     ? ['DRAFT'].includes(genericStatus)
     : ['DRAFT', 'REJECTED'].includes(genericStatus)));
+  const remarksEditable = !isViewOnly && (isRouteSheet || editable);
   const isBusy = createMutation.isPending || updateMutation.isPending || actionMutation.isPending || deleteMutation.isPending;
   const rows = listQuery.data?.content ?? [];
   const totalElements = listQuery.data?.totalElements ?? 0;
@@ -251,6 +280,12 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
               {config.typeFilter.options.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           )}
+          {config.docType === 'production-bom' && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8em' }}>
+              <input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} />
+              Show Inactive
+            </label>
+          )}
           <div className="sp" />
           <button className="btn btn-p" onClick={() => openForm(null, false)}>
             <span className="material-symbols-rounded">add</span> Add
@@ -323,6 +358,7 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
                 {documentId && !isViewOnly && genericStatus === 'SUBMITTED' && <button type="button" className="btn btn-sm btn-d" onClick={() => setActionModal({ action: 'reject', danger: true })} disabled={isBusy}><span className="material-symbols-rounded">thumb_down</span> Reject</button>}
                 {isRouteSheet && documentId && !isViewOnly && genericStatus === 'DRAFT' && <button type="button" className="btn btn-sm btn-g" onClick={() => runAction('release')} disabled={isBusy}><span className="material-symbols-rounded">rocket_launch</span> Release</button>}
                 {isRouteSheet && documentId && !isViewOnly && (genericStatus === 'RELEASED' || genericStatus === 'UNDER_REVISION') && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'revise', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">edit_note</span> Revise</button>}
+                {!isRouteSheet && config.docType === 'production-bom' && documentId && !isViewOnly && genericStatus === 'APPROVED' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'revise', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">edit_note</span> Revise</button>}
                 {isRouteSheet && documentId && !isViewOnly && (genericStatus === 'RELEASED' || genericStatus === 'UNDER_REVISION') && <button type="button" className="btn btn-sm btn-d" onClick={() => runAction('obsolete')} disabled={isBusy}><span className="material-symbols-rounded">archive</span> Obsolete</button>}
                 {documentId && editable && genericStatus !== 'DRAFT' && <button type="button" className="btn btn-sm" onClick={() => runAction('reopen')} disabled={isBusy}><span className="material-symbols-rounded">restart_alt</span> Reopen</button>}
                 {documentId && !isViewOnly && ['DRAFT', 'SUBMITTED', 'APPROVED'].includes(genericStatus) && <button type="button" className="btn btn-sm btn-d" onClick={() => setActionModal({ action: 'cancel', danger: true })} disabled={isBusy}><span className="material-symbols-rounded">block</span> Cancel</button>}
@@ -352,7 +388,7 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
               <label key={field.key} className={`fld ${field.span2 ? 'span2' : ''} ${isFieldError(field.key) ? 'invalid' : ''}`}>
                 <span>{field.label}</span>
                 {field.type === 'textarea' ? (
-                  <textarea className="in" rows={2} readOnly={!editable} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))} />
+                  <textarea className="in" rows={2} readOnly={field.key === 'remarks' ? !remarksEditable : !editable} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))} />
                 ) : field.type === 'select' ? (
                   <select className="in" disabled={!editable} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))}>
                     <option value="">\u2014 Select \u2014</option>
@@ -381,13 +417,29 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
                     <tr key={index} onClick={() => config.childGrids && setSelectedLineIdx(selectedLineIdx === index ? null : index)} style={config.childGrids ? { cursor: 'pointer' } : undefined} className={selectedLineIdx === index ? 'selected-row' : ''}>
                       {config.lines!.fields.map((f) => (
                         <td key={f.key}>
-                          {f.type === 'select' ? (
+                          {docType === 'route-sheet' && f.key === 'processId' ? (
+                            <select className="in" value={String(line[f.key] ?? '')} onChange={(e) => {
+                              const selectedId = e.target.value;
+                              const proc = processes.find((p) => String(p.id) === selectedId);
+                              setLines((c) => c.map((l, i) => i === index ? {
+                                ...l,
+                                processId: selectedId || '',
+                                processType: proc?.processType ?? '',
+                                resourceId: proc?.resourceId ?? '',
+                                resourceName: proc?.resourceName ?? '',
+                                resourceType: proc?.resourceType ?? '',
+                              } : l));
+                            }}>
+                              <option value="">— Select Process —</option>
+                              {processes.map((p) => <option key={String(p.id)} value={String(p.id)}>{String(p.code || p.name)}{p.active === false ? ' (inactive)' : ''}</option>)}
+                            </select>
+                          ) : f.type === 'select' ? (
                             <select className="in" value={String(line[f.key] ?? '')} onChange={(e) => setLines((c) => c.map((l, i) => (i === index ? { ...l, [f.key]: e.target.value } : l)))}>
                               <option value="">\u2014</option>
                               {(f.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
                             </select>
                           ) : (
-                            <input className="in" type={f.type ?? 'text'} readOnly={f.readonly || !editable} value={String(line[f.key] ?? '')} onChange={(e) => setLines((c) => c.map((l, i) => (i === index ? { ...l, [f.key]: e.target.value } : l)))} />
+                            <input className="in" type={f.type ?? 'text'} readOnly={f.readonly || !editable || (docType === 'route-sheet' && ['processType', 'resourceName', 'resourceType', 'resourceId'].includes(f.key))} value={String(line[f.key] ?? '')} onChange={(e) => setLines((c) => c.map((l, i) => (i === index ? { ...l, [f.key]: e.target.value } : l)))} />
                           )}
                         </td>
                       ))}
@@ -453,7 +505,7 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
           </div>
         </div>
       </form>
-      <ConfirmActionModal open={Boolean(actionModal)} title={`${actionModal?.action ?? ''} ${docNo}`} body={actionModal?.action === 'approve' ? 'Approving records the action with your user in the audit trail.' : actionModal?.action === 'reject' ? 'Reason for rejection:' : actionModal?.action === 'cancel' ? 'This cancels the record with an audit trail.' : 'Submit this record for review?'} okLabel={actionModal ? actionModal.action.charAt(0).toUpperCase() + actionModal.action.slice(1) : 'Confirm'} danger={actionModal?.danger} busy={actionMutation.isPending} onClose={() => setActionModal(null)} onConfirm={(note) => actionModal && runAction(actionModal.action, note)} />
+      <ConfirmActionModal open={Boolean(actionModal)} title={`${actionModal?.action ?? ''} ${docNo}`} body={actionModal?.action === 'approve' ? 'Approving records the action with your user in the audit trail.' : actionModal?.action === 'reject' ? 'Reason for rejection:' : actionModal?.action === 'revise' ? 'Remarks for new revision (required):' : actionModal?.action === 'cancel' ? 'This cancels the record with an audit trail.' : 'Submit this record for review?'} okLabel={actionModal ? actionModal.action.charAt(0).toUpperCase() + actionModal.action.slice(1) : 'Confirm'} danger={actionModal?.danger} busy={actionMutation.isPending} onClose={() => setActionModal(null)} onConfirm={(note) => actionModal && runAction(actionModal.action, note)} />
       <AuditHistoryDrawer open={auditOpen} entityType={auditEntityTypeFor(docType)} entityId={documentId ?? undefined} onClose={() => setAuditOpen(false)} />
     </>
   );

@@ -43,6 +43,7 @@ export interface DocScreenConfig {
     seed?: Record<string, string>[];
   };
   childGrids?: ChildGridConfig[];
+  includeInactive?: boolean;
 }
 
 export const PRODUCTION_BOM_CONFIG: DocScreenConfig = {
@@ -149,7 +150,7 @@ export const ROUTE_SHEET_CONFIG: DocScreenConfig = {
       { key: 'workCenterCode', label: 'Work Center', type: 'text' },
       { key: 'machineCode', label: 'Machine', type: 'text' },
       { key: 'alternateMachineCode', label: 'Alt Machine', type: 'text' },
-      { key: 'processId', label: 'Process (FK)', type: 'number' },
+      { key: 'processId', label: 'Process *', type: 'text' },
       { key: 'resourceId', label: 'Resource (FK)', type: 'number' },
       { key: 'processType', label: 'Process Type', type: 'text' },
       { key: 'resourceName', label: 'Resource Name', type: 'text' },

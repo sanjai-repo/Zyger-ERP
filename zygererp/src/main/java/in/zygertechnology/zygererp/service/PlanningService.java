@@ -306,6 +306,12 @@ public class PlanningService {
                 validateSequenceUniqueness(rs);
                 // V-R4: validate setup/cycle times >= 0
                 validateOperationTimes(rs);
+                // V-R5: validate all referenced processes are active
+                for (RouteOperation op : rs.getOperations()) {
+                    if (op.getProcess() != null && !op.getProcess().isActive()) {
+                        throw new IllegalStateException("Process is not active: " + op.getProcess().getName());
+                    }
+                }
                 next = "RELEASED";
                 rs.setApprovedBy(user);
                 rs.setApprovedAt(Instant.now());
@@ -437,6 +443,14 @@ public class PlanningService {
         for (ProductionBOMLine line : activeLines) {
             if (bom.getItemCode().equals(line.getComponentItemCode())) {
                 throw new IllegalStateException("Parent item and component item cannot be same.");
+            }
+        }
+        // V-09: no duplicate components
+        Set<String> seenComponents = new HashSet<>();
+        for (ProductionBOMLine line : activeLines) {
+            String compCode = line.getComponentItemCode();
+            if (compCode != null && !seenComponents.add(compCode)) {
+                throw new IllegalArgumentException("Duplicate component item is not allowed: " + compCode);
             }
         }
         // Validate quantities > 0
@@ -1160,6 +1174,15 @@ public class PlanningService {
         Object total = page.get("totalElements");
         if (total instanceof Number n) return n.longValue();
         return 0;
+    }
+
+    public void validateBomCanBeDeleted(Long id) {
+        Long count = em.createQuery("SELECT COUNT(wo) FROM WorkOrder wo WHERE wo.bomId = :bomId", Long.class)
+                .setParameter("bomId", id)
+                .getSingleResult();
+        if (count > 0) {
+            throw new IllegalStateException("This BOM is referenced in an existing Work Order and cannot be deleted.");
+        }
     }
 
     // ── FRS §19.3: Status History ──

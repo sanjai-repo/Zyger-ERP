@@ -61,6 +61,9 @@ public class PlanningController {
 
     @DeleteMapping("/{type}/{id}")
     void del(@PathVariable String type, @PathVariable Long id, Principal p) {
+        if ("production-bom".equals(type)) {
+            planning.validateBomCanBeDeleted(id);
+        }
         svc.remove(key(type), id, principalName(p));
     }
 
