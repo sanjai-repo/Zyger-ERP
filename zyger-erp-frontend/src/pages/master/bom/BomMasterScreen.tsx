@@ -171,6 +171,9 @@ export default function BomMasterScreen() {
   const [treeLoading, setTreeLoading] = useState(false);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
 
+  // Next BOM number
+  const [nextBomNumber, setNextBomNumber] = useState('');
+
   // Modals
   const [deleteTarget, setDeleteTarget] = useState<BomDoc | null>(null);
   const [reviseModal, setReviseModal] = useState(false);
@@ -214,7 +217,14 @@ export default function BomMasterScreen() {
     } catch { /* silent */ }
   }, []);
 
-  useEffect(() => { loadBoms(); loadItems(); loadSalesOrders(); }, [loadBoms, loadItems, loadSalesOrders]);
+  const loadNextNumber = useCallback(async () => {
+    try {
+      const { data } = await apiClient.get('/v1/planning/production-bom/next-number');
+      setNextBomNumber(data.nextNumber || '');
+    } catch { /* silent */ }
+  }, []);
+
+  useEffect(() => { loadBoms(); loadItems(); loadSalesOrders(); loadNextNumber(); }, [loadBoms, loadItems, loadSalesOrders, loadNextNumber]);
 
   /* ── Derived ── */
 
@@ -346,6 +356,7 @@ export default function BomMasterScreen() {
         toast('BOM created. BOM Code: ' + (data.bomNumber || data.docNo));
       }
       loadBoms();
+      loadNextNumber();
     } catch (e) { toast(getApiErrorMessage(e, 'Save failed.'), 'error'); }
     setBusy(false);
   };
@@ -635,7 +646,7 @@ export default function BomMasterScreen() {
             <div className="panel-h"><h2><span className="material-symbols-rounded">description</span> BOM Header</h2></div>
             <div className="fgrid">
               <label className="fld"><span>BOM Code</span>
-                <input className="in" value={bom.bomNumber || bom.docNo || (editId ? '\u2014 (auto-generated on save) \u2014' : '\u2014 (generated on first save) \u2014')} readOnly tabIndex={-1} style={{ background: '#f9fafb', fontWeight: 600 }} />
+                <input className="in" value={bom.bomNumber || bom.docNo || nextBomNumber || (editId ? '\u2014' : '\u2014')} readOnly tabIndex={-1} style={{ background: '#f9fafb', fontWeight: 600 }} />
               </label>
 
               <label className="fld"><span>Sales Order No</span>
