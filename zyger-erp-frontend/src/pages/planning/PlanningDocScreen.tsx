@@ -131,6 +131,15 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
     if (childGridQuery.data) setChildGridData(childGridQuery.data as Record<string, unknown>[]);
   }, [childGridQuery.data]);
 
+  const doc = documentQuery.data;
+  const genericStatus = String(doc?.status ?? 'DRAFT');
+  const isRouteSheet = config.docType === 'route-sheet';
+  const editable = !isViewOnly && (!documentId || (isRouteSheet
+    ? ['DRAFT'].includes(genericStatus)
+    : ['DRAFT', 'REJECTED'].includes(genericStatus)));
+  const remarksEditable = !isViewOnly && (isRouteSheet || editable);
+  const isBusy = createMutation.isPending || updateMutation.isPending || actionMutation.isPending || deleteMutation.isPending;
+
   useEffect(() => {
     if (config.docType === 'production-bom' && editable && lines.length > 0) {
       const updatedLines = lines.map((line) => {
@@ -148,15 +157,6 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
       }
     }
   }, [lines.map((l) => `${l.weightPerQty}-${l.quantityPer}`).join(','), config.docType, editable]);
-
-  const doc = documentQuery.data;
-  const genericStatus = String(doc?.status ?? 'DRAFT');
-  const isRouteSheet = config.docType === 'route-sheet';
-  const editable = !isViewOnly && (!documentId || (isRouteSheet
-    ? ['DRAFT'].includes(genericStatus)
-    : ['DRAFT', 'REJECTED'].includes(genericStatus)));
-  const remarksEditable = !isViewOnly && (isRouteSheet || editable);
-  const isBusy = createMutation.isPending || updateMutation.isPending || actionMutation.isPending || deleteMutation.isPending;
   const rows = listQuery.data?.content ?? [];
   const totalElements = listQuery.data?.totalElements ?? 0;
   const totalPages = listQuery.data?.totalPages ?? 1;
