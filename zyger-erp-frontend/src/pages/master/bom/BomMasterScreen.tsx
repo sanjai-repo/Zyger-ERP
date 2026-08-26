@@ -280,10 +280,11 @@ export default function BomMasterScreen() {
         ...lines[idx],
         componentItemCode: itemCode,
         description: item?.name ?? '',
+        quantityPer: lines[idx].quantityPer || 1,
         weightPerQty: item?.weight ?? 0,
         uom: item?.uom || 'PCS',
         componentType: item?.itemType === 'FG' ? 'FINISHED_GOOD' : item?.itemType === 'SEMI_FG' ? 'SEMI_FG' : 'RAW_MATERIAL',
-        totalWeight: (item?.weight ?? 0) * (lines[idx].quantityPer || 0),
+        totalWeight: (item?.weight ?? 0) * (lines[idx].quantityPer || 1),
       };
       const totalWt = lines.reduce((s, l) => s + (l.totalWeight || 0), 0);
       return { ...p, lines, weight: totalWt };
@@ -753,7 +754,9 @@ export default function BomMasterScreen() {
                   if (code && bom.lines.length === 0) {
                     const levelMap: Record<string, string> = { FG: 'FG', SEMI_FG: 'SEMI_FG', RAW_MATERIAL: 'RAW_MATERIAL' };
                     const bomLevel = levelMap[item?.itemType || ''] || 'FG';
-                    setBom((p) => ({ ...p, lines: [{ ...emptyLine(1), bomLevel, componentItemCode: code, quantityPer: 1, weightPerQty: item?.weight || 0, totalWeight: item?.weight || 0 }] }));
+                    const qty = bom.baseQuantity || 1;
+                    const wt = item?.weight || 0;
+                    setBom((p) => ({ ...p, lines: [{ ...emptyLine(1), bomLevel, componentItemCode: code, quantityPer: qty, weightPerQty: wt, totalWeight: wt * qty }] }));
                   }
                 }} disabled={!isEditable && !!editId} required>
                   <option value="">\u2014 Select Item \u2014</option>
