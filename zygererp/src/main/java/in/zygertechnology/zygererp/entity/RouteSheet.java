@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 public class RouteSheet extends BaseDoc implements DocEntity {
     @Column(name = "route_number", unique = true) String routeNumber;
     @Column(name = "item_code", nullable = false, length = 60) String itemCode;
+    @Column(name = "item_type", length = 30) String itemType;
     @Column(name = "item_revision", length = 30) String itemRevision;
     @Column(name = "route_version", length = 30) String routeVersion;
     @Column(length = 200) String description;
@@ -19,6 +20,8 @@ public class RouteSheet extends BaseDoc implements DocEntity {
     @Column(name = "base_quantity") BigDecimal baseQuantity;
     @Column(name = "base_uom", length = 20) String baseUom;
     @Column(name = "approved_by", length = 60) String approvedBy;
+    /** FRS §3.3: integer revision number, auto-increments on Revise */
+    @Column(name = "revision_no") Integer revisionNo;
     /** FRS §3.3: AUTO-FILL sum of detail setup times */
     @Column(name = "total_setup_time", precision = 14, scale = 2) BigDecimal totalSetupTime;
     /** FRS §3.3: AUTO-FILL sum of detail cycle times */

@@ -11,6 +11,8 @@ public class ProductionBOMLine extends BaseLine implements LineEntity {
     ProductionBOM doc;
 
     @Column(name = "line_no") Integer lineNo;
+    /** FRS §3.4: soft-delete flag; deleted rows excluded from weight calc */
+    @Column(name = "is_deleted") Boolean isDeleted = Boolean.FALSE;
     @Column(name = "component_item_code", nullable = false, length = 60) String componentItemCode;
     @Column(name = "component_revision", length = 30) String componentRevision;
     String description;

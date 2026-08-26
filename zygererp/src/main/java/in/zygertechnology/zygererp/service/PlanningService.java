@@ -23,6 +23,7 @@ public class PlanningService {
     private final DocumentFacade docs;
     private final ProductionBOMRepository bomRepo;
     private final RouteSheetRepository routeRepo;
+    private final BomRevisionHistoryRepository bomRevisionHistoryRepo;
     private final jakarta.persistence.EntityManager em;
     private final in.zygertechnology.zygererp.repo.WorkOrderStatusHistoryRepository woStatusHistoryRepo;
 
@@ -172,6 +173,12 @@ public class PlanningService {
         if ("work-order".equals(key)) {
             return workOrderAction(id, action, note, user);
         }
+        if ("route-sheet".equals(key)) {
+            return routeSheetAction(id, action, note, user);
+        }
+        if ("production-bom".equals(key) && "release".equals(action)) {
+            return bomReleaseAction(id, note, user);
+        }
         DocEntity e = docs.action(key, id, action, note, user);
         postActionHook(key, e, action, user);
         return e;
@@ -271,6 +278,181 @@ public class PlanningService {
         recordStatusHistory(wo, previousStatus, next, note, user);
 
         return wo;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // FRS Route Sheet Action Handler
+    // ═══════════════════════════════════════════════════════════════
+
+    @Transactional
+    public DocEntity routeSheetAction(Long id, String action, String note, String user) {
+        RouteSheet rs = (RouteSheet) docs.get("route-sheet", id);
+        String current = rs.getStatus();
+        String next;
+
+        switch (action) {
+            case "release" -> {
+                requireStatus(current, "DRAFT");
+                // V-R3: at least one detail row before release
+                if (rs.getOperations() == null || rs.getOperations().isEmpty()) {
+                    throw new IllegalStateException("At least one detail row is required before releasing.");
+                }
+                // V-R1: one released per item
+                long releasedCount = routeRepo.countByItemCodeAndStatus(rs.getItemCode(), "RELEASED");
+                if (releasedCount > 0) {
+                    throw new IllegalStateException("A Released Route Sheet already exists for item: " + rs.getItemCode());
+                }
+                // V-R2: validate sequence uniqueness
+                validateSequenceUniqueness(rs);
+                // V-R4: validate setup/cycle times >= 0
+                validateOperationTimes(rs);
+                next = "RELEASED";
+                rs.setApprovedBy(user);
+                rs.setApprovedAt(Instant.now());
+            }
+            case "revise" -> {
+                requireStatus(current, "RELEASED");
+                if (note == null || note.isBlank()) {
+                    throw new IllegalArgumentException("Remarks are mandatory for a new revision.");
+                }
+                // Create new revision: clone header + lines
+                RouteSheet newRs = createRouteSheetRevision(rs, note, user);
+                // Mark old as UNDER_REVISION
+                rs.setStatus("UNDER_REVISION");
+                rs.setUpdatedAt(Instant.now());
+                return newRs;
+            }
+            case "obsolete" -> {
+                requireStatus(current, "RELEASED", "UNDER_REVISION");
+                next = "OBSOLETE";
+            }
+            default -> throw new IllegalArgumentException("Unknown route-sheet action: " + action);
+        }
+
+        String previousStatus = rs.getStatus();
+        rs.setStatus(next);
+        rs.setUpdatedAt(Instant.now());
+        return rs;
+    }
+
+    private void validateSequenceUniqueness(RouteSheet rs) {
+        if (rs.getOperations() == null) return;
+        java.util.Set<Integer> seqs = new java.util.HashSet<>();
+        for (RouteOperation op : rs.getOperations()) {
+            if (op.getSequenceNo() == null) continue;
+            if (!seqs.add(op.getSequenceNo())) {
+                throw new IllegalArgumentException("Duplicate sequence number: " + op.getSequenceNo());
+            }
+        }
+    }
+
+    private void validateOperationTimes(RouteSheet rs) {
+        if (rs.getOperations() == null) return;
+        for (RouteOperation op : rs.getOperations()) {
+            if (op.getSetupTime() != null && op.getSetupTime().compareTo(BigDecimal.ZERO) < 0) {
+                throw new IllegalArgumentException("Setup time cannot be negative at sequence " + op.getSequenceNo());
+            }
+            if (op.getCycleTime() != null && op.getCycleTime().compareTo(BigDecimal.ZERO) < 0) {
+                throw new IllegalArgumentException("Cycle time cannot be negative at sequence " + op.getSequenceNo());
+            }
+        }
+    }
+
+    private RouteSheet createRouteSheetRevision(RouteSheet source, String remarks, String user) {
+        RouteSheet newRs = new RouteSheet();
+        newRs.setItemCode(source.getItemCode());
+        newRs.setItemType(source.getItemType());
+        newRs.setDescription(source.getDescription());
+        newRs.setBaseQuantity(source.getBaseQuantity());
+        newRs.setBaseUom(source.getBaseUom());
+        newRs.setEffectiveFrom(LocalDate.now());
+        // Bump revision
+        int newRev = (source.getRevisionNo() != null ? source.getRevisionNo() : 0) + 1;
+        newRs.setRevisionNo(newRev);
+        newRs.setRouteVersion("Rev " + newRev);
+        newRs.setRemarks(remarks);
+        newRs.setCreatedBy(user);
+        newRs.setCreatedAt(Instant.now());
+        // Save first to get ID
+        routeRepo.save(newRs);
+        routeRepo.flush();
+        // Clone operations
+        if (source.getOperations() != null) {
+            for (RouteOperation srcOp : source.getOperations()) {
+                RouteOperation newOp = new RouteOperation();
+                newOp.setDoc(newRs);
+                newOp.setSequenceNo(srcOp.getSequenceNo());
+                newOp.setProcess(srcOp.getProcess());
+                newOp.setProcessCode(srcOp.getProcessCode());
+                newOp.setResource(srcOp.getResource());
+                newOp.setResourceName(srcOp.getResourceName());
+                newOp.setResourceType(srcOp.getResourceType());
+                newOp.setProcessType(srcOp.getProcessType());
+                newOp.setSetupTime(srcOp.getSetupTime());
+                newOp.setCycleTime(srcOp.getCycleTime());
+                newOp.setInspectionRequired(srcOp.isInspectionRequired());
+                newOp.setRemarks(srcOp.getRemarks());
+                newRs.getOperations().add(newOp);
+            }
+        }
+        routeRepo.save(newRs);
+        return newRs;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // FRS BOM Release Action
+    // ═══════════════════════════════════════════════════════════════
+
+    @Transactional
+    public DocEntity bomReleaseAction(Long id, String note, String user) {
+        ProductionBOM bom = (ProductionBOM) docs.get("production-bom", id);
+        String current = bom.getStatus();
+        requireStatus(current, "DRAFT");
+        // V-06/V-21: one active standard BOM per item (non-SO)
+        if (bom.getSalesOrderId() == null) {
+            List<ProductionBOM> activeBoms = bomRepo.findByItemCodeAndIsActiveTrue(bom.getItemCode());
+            for (ProductionBOM existing : activeBoms) {
+                if (!existing.getId().equals(id) && !"INACTIVE".equals(existing.getStatus())) {
+                    throw new IllegalStateException("Active BOM already exists for the selected item.");
+                }
+            }
+        } else {
+            // V-22: one active BOM per (SO, Item)
+            List<ProductionBOM> soBoms = bomRepo.findByItemCodeAndSalesOrderIdAndIsActiveTrue(bom.getItemCode(), bom.getSalesOrderId());
+            for (ProductionBOM existing : soBoms) {
+                if (!existing.getId().equals(id)) {
+                    throw new IllegalStateException("BOM already exists for the selected Sales Order and Item.");
+                }
+            }
+        }
+        // V-20: at least one component required
+        List<ProductionBOMLine> activeLines = bom.getLines().stream()
+            .filter(l -> !Boolean.TRUE.equals(l.getIsDeleted()))
+            .toList();
+        if (activeLines.isEmpty()) {
+            throw new IllegalStateException("At least one component is required.");
+        }
+        // V-07/V-16: no self-references
+        for (ProductionBOMLine line : activeLines) {
+            if (bom.getItemCode().equals(line.getComponentItemCode())) {
+                throw new IllegalStateException("Parent item and component item cannot be same.");
+            }
+        }
+        // Validate quantities > 0
+        if (bom.getBaseQuantity() != null && bom.getBaseQuantity().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Quantity should be greater than zero.");
+        }
+        for (ProductionBOMLine line : activeLines) {
+            if (line.getQuantityPer() != null && line.getQuantityPer().compareTo(BigDecimal.ZERO) <= 0) {
+                throw new IllegalArgumentException("Component quantity must be greater than zero.");
+            }
+        }
+        bom.setStatus("APPROVED");
+        bom.setIsActive(true);
+        bom.setApprovedBy(user);
+        bom.setUpdatedAt(Instant.now());
+        recomputeBomWeights(bom);
+        return bom;
     }
 
     /** FRS §10.6/§11.5: Snapshot BOM and Route revision on release */
@@ -450,6 +632,8 @@ public class PlanningService {
             if (op.getProcess() != null) {
                 ProcessMaster pm = em.find(ProcessMaster.class, op.getProcess().getId());
                 if (pm != null) {
+                    // FRS §3.3: derived process_code from ProcessMaster
+                    op.setProcessCode(pm.getCode());
                     if (pm.getResourceName() != null) op.setResourceName(pm.getResourceName());
                     if (pm.getResourceType() != null) op.setResourceType(pm.getResourceType());
                     if (pm.getProcessType() != null) op.setProcessType(pm.getProcessType());
@@ -566,16 +750,29 @@ public class PlanningService {
 
     /** FRS §4.4: Create new BOM revision from existing. */
     @Transactional
-    public ProductionBOM createBomRevision(Long sourceBomId, String newVersion, String user) {
+    public ProductionBOM createBomRevision(Long sourceBomId, String newVersion, String remarks, String user) {
         ProductionBOM source = (ProductionBOM) docs.get("production-bom", sourceBomId);
         if (source == null) throw new IllegalArgumentException("Source BOM not found: " + sourceBomId);
 
+        // V-27: remarks mandatory for new revision
+        if (remarks == null || remarks.isBlank()) {
+            throw new IllegalArgumentException("Remarks are mandatory for a new revision.");
+        }
+
+        // Deactivate old revision
+        source.setIsActive(false);
+        source.setUpdatedAt(Instant.now());
+        bomRepo.save(source);
+
         ProductionBOM newBom = new ProductionBOM();
-        newBom.setBomNumber("BOM-REV-" + System.currentTimeMillis());
+        // FRS §3.4: bom_code carries revision suffix
+        String baseCode = source.getBomNumber() != null ? source.getBomNumber() : "BOM-NEW";
+        newBom.setBomNumber(baseCode + "/R" + (source.getRevisionNo() != null ? source.getRevisionNo() + 1 : 1));
         newBom.setItemCode(source.getItemCode());
         newBom.setItemRevision(source.getItemRevision());
         newBom.setBomVersion(newVersion);
         newBom.setDescription(source.getDescription());
+        newBom.setSpecifications(source.getSpecifications());
         newBom.setBaseQuantity(source.getBaseQuantity());
         newBom.setBaseUom(source.getBaseUom());
         newBom.setItemType(source.getItemType());
@@ -588,11 +785,120 @@ public class PlanningService {
         newBom.setCreatedBy(user);
         newBom.setPlantId(source.getPlantId());
         newBom.setDocDate(source.getDocDate());
+        newBom.setRemarks(remarks);
+        // FRS §3.4: auto-increment revision_no
+        int newRev = (source.getRevisionNo() != null ? source.getRevisionNo() : 0) + 1;
+        newBom.setRevisionNo(newRev);
 
         List<ProductionBOMLine> newLines = new ArrayList<>();
         if (source.getLines() != null) {
             int lineNo = 1;
             for (ProductionBOMLine srcLine : source.getLines()) {
+                if (Boolean.TRUE.equals(srcLine.getIsDeleted())) continue;
+                ProductionBOMLine newLine = new ProductionBOMLine();
+                newLine.setLineNo(lineNo++);
+                newLine.setComponentItemCode(srcLine.getComponentItemCode());
+                newLine.setComponentRevision(srcLine.getComponentRevision());
+                newLine.setDescription(srcLine.getDescription());
+                newLine.setQuantityPer(srcLine.getQuantityPer());
+                newLine.setUom(srcLine.getUom());
+                newLine.setScrapPercentage(srcLine.getScrapPercentage());
+                newLine.setYieldPercentage(srcLine.getYieldPercentage());
+                newLine.setOperationSequenceLink(srcLine.getOperationSequenceLink());
+                newLine.setIssueMethod(srcLine.getIssueMethod());
+                newLine.setSupplyType(srcLine.getSupplyType());
+                newLine.setWarehouse(srcLine.getWarehouse());
+                newLine.setChildBomId(srcLine.getChildBomId());
+                newLine.setWeightPerQty(srcLine.getWeightPerQty());
+                newLine.setComponentType(srcLine.getComponentType());
+                newLines.add(newLine);
+            }
+        }
+        newBom.setLines(newLines);
+
+        ProductionBOM saved = bomRepo.save(newBom);
+        recomputeBomWeights(saved);
+        saved = bomRepo.save(saved);
+
+        // FRS §3.4: Record revision history
+        bomRevisionHistoryRepo.save(BomRevisionHistory.builder()
+            .bomId(saved.getId())
+            .revisionNo(newRev)
+            .bomVersion(newVersion)
+            .createdBy(user)
+            .remarks(remarks)
+            .previousRevisionId(sourceBomId)
+            .build());
+        // Also record the original as first revision if not already recorded
+        if (source.getRevisionNo() == null || source.getRevisionNo() == 0) {
+            bomRevisionHistoryRepo.save(BomRevisionHistory.builder()
+                .bomId(source.getId())
+                .revisionNo(0)
+                .bomVersion(source.getBomVersion())
+                .createdBy(source.getCreatedBy())
+                .remarks("Initial revision")
+                .build());
+        }
+
+        return saved;
+    }
+
+    /** FRS §3.4: Get revision history for a BOM */
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getBomRevisionHistory(Long bomId) {
+        List<BomRevisionHistory> history = bomRevisionHistoryRepo.findByBomIdOrderByRevisionNoDesc(bomId);
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (BomRevisionHistory h : history) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", h.getId());
+            row.put("revisionNo", h.getRevisionNo());
+            row.put("bomVersion", h.getBomVersion());
+            row.put("createdAt", h.getCreatedAt());
+            row.put("createdBy", h.getCreatedBy());
+            row.put("remarks", h.getRemarks());
+            row.put("previousRevisionId", h.getPreviousRevisionId());
+            result.add(row);
+        }
+        return result;
+    }
+
+    /** FRS §5.1 FR-04: Copy a BOM from source_bom_code */
+    @Transactional
+    public ProductionBOM copyBom(String sourceBomCode, Map<String, Object> overrides, String user) {
+        ProductionBOM source = bomRepo.findByBomNumber(sourceBomCode);
+        if (source == null) throw new IllegalArgumentException("Source BOM not found: " + sourceBomCode);
+
+        ProductionBOM newBom = new ProductionBOM();
+        // Generate new BOM number via doc numbering
+        String newBomNumber = docs.nextNumber("production-bom");
+        newBom.setBomNumber(newBomNumber);
+        newBom.setItemCode(overrides.containsKey("itemCode") ? String.valueOf(overrides.get("itemCode")) : source.getItemCode());
+        newBom.setItemRevision(source.getItemRevision());
+        newBom.setBomVersion("1.0");
+        newBom.setDescription(source.getDescription());
+        newBom.setSpecifications(source.getSpecifications());
+        newBom.setBaseQuantity(overrides.containsKey("baseQuantity")
+            ? new BigDecimal(String.valueOf(overrides.get("baseQuantity")))
+            : source.getBaseQuantity());
+        newBom.setBaseUom(source.getBaseUom());
+        newBom.setItemType(source.getItemType());
+        newBom.setSalesOrderId(overrides.containsKey("salesOrderId") && overrides.get("salesOrderId") != null
+            ? Long.parseLong(String.valueOf(overrides.get("salesOrderId")))
+            : null);
+        newBom.setBomType(source.getBomType());
+        newBom.setIsActive(true);
+        newBom.setEffectiveFrom(LocalDate.now());
+        newBom.setStatus("DRAFT");
+        newBom.setCreatedBy(user);
+        newBom.setPlantId(source.getPlantId());
+        newBom.setDocDate(LocalDate.now());
+        newBom.setRevisionNo(0);
+
+        List<ProductionBOMLine> newLines = new ArrayList<>();
+        if (source.getLines() != null) {
+            int lineNo = 1;
+            for (ProductionBOMLine srcLine : source.getLines()) {
+                if (Boolean.TRUE.equals(srcLine.getIsDeleted())) continue;
                 ProductionBOMLine newLine = new ProductionBOMLine();
                 newLine.setLineNo(lineNo++);
                 newLine.setComponentItemCode(srcLine.getComponentItemCode());

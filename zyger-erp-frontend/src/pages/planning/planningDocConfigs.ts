@@ -213,7 +213,7 @@ export const WORK_ORDER_CONFIG: DocScreenConfig = {
     { label: 'Status', field: 'status' },
   ],
   statusField: 'status',
-  statusOptions: ['DRAFT', 'SUBMITTED', 'APPROVED', 'RELEASED', 'IN_PROCESS', 'COMPLETED', 'CLOSED', 'REJECTED', 'CANCELLED', 'ON_HOLD'],
+  statusOptions: ['DRAFT', 'RELEASED', 'UNDER_REVISION', 'OBSOLETE'],
   fields: [
     { key: 'itemCode', label: 'Item Code *', type: 'text', required: true },
     { key: 'itemDescription', label: 'Item Description', type: 'text' },

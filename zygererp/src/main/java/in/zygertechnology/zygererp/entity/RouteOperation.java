@@ -21,6 +21,8 @@ public class RouteOperation implements LineEntity {
     /** FRS §4.7: FK to ProcessMaster */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "process_id") ProcessMaster process;
+    /** FRS §3.3: derived read-only */
+    @Column(name = "process_code", length = 60) String processCode;
     /** FRS §4.7: FK to ResourceMaster */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "resource_id") ResourceMaster resource;

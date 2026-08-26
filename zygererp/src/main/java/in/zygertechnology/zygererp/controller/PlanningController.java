@@ -105,7 +105,20 @@ public class PlanningController {
     @PostMapping("/production-bom/{id}/revise")
     Map<String, Object> reviseBom(@PathVariable Long id, @RequestBody Map<String, String> body, Principal p) {
         String newVersion = body.getOrDefault("newVersion", "2.0");
-        in.zygertechnology.zygererp.entity.ProductionBOM newBom = planning.createBomRevision(id, newVersion, principalName(p));
+        String remarks = body.getOrDefault("remarks", "");
+        in.zygertechnology.zygererp.entity.ProductionBOM newBom = planning.createBomRevision(id, newVersion, remarks, principalName(p));
+        return svc.toRow(newBom);
+    }
+
+    @GetMapping("/production-bom/{id}/revisions")
+    List<Map<String, Object>> bomRevisions(@PathVariable Long id) {
+        return planning.getBomRevisionHistory(id);
+    }
+
+    @PostMapping("/production-bom/copy")
+    Map<String, Object> copyBom(@RequestBody Map<String, Object> body, Principal p) {
+        String sourceBomCode = (String) body.get("sourceBomCode");
+        in.zygertechnology.zygererp.entity.ProductionBOM newBom = planning.copyBom(sourceBomCode, body, principalName(p));
         return svc.toRow(newBom);
     }
 

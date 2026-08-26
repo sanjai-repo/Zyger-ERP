@@ -7,4 +7,6 @@ import java.util.List;
 @Repository
 public interface RouteSheetRepository extends BaseDocRepository<RouteSheet> {
     List<RouteSheet> findByItemCode(String itemCode);
+    List<RouteSheet> findByItemCodeAndStatus(String itemCode, String status);
+    long countByItemCodeAndStatus(String itemCode, String status);
 }

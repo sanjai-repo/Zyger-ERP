@@ -6,7 +6,7 @@ import { defaultForm } from './processTypes';
 
 interface Resource { id: number; resourceName: string; resourceCode: string; resourceType: string; }
 
-const PROCESS_TYPES = ['', 'MACHINING', 'ASSEMBLY', 'SURFACE_TREATMENT', 'HEAT_TREATMENT', 'INSPECTION', 'PACKING', 'SUBCONTRACTING', 'OTHER'];
+const PROCESS_TYPES = ['', 'Insource', 'Outsource'];
 
 interface Props {
   processId: number | null;

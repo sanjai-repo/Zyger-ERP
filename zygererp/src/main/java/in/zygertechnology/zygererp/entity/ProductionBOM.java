@@ -35,6 +35,10 @@ public class ProductionBOM extends BaseDoc implements DocEntity {
     @Column(name = "is_active") Boolean isActive;
     /** FRS §3.2: rolled-up total material cost from components */
     @Column(name = "total_material_cost", precision = 18, scale = 4) BigDecimal totalMaterialCost;
+    /** FRS §3.4: free-text specifications */
+    @Column(columnDefinition = "TEXT") String specifications;
+    /** FRS §3.4: integer revision number, auto-increments on Revise */
+    @Column(name = "revision_no") Integer revisionNo;
 
     @OneToMany(mappedBy = "doc", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     List<ProductionBOMLine> lines = new ArrayList<>();

@@ -7,5 +7,6 @@ import java.util.*;
 public interface ProcessMasterRepository extends JpaRepository<ProcessMaster, Long> {
     Optional<ProcessMaster> findByCode(String code);
     boolean existsByCode(String code);
+    boolean existsByNameIgnoreCase(String name);
     List<ProcessMaster> findByActiveTrue();
 }
