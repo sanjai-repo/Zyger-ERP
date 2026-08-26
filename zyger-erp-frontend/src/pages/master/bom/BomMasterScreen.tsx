@@ -91,6 +91,7 @@ interface TreeNode {
   quantityPer: number;
   weightPerQty?: number;
   totalWeight?: number;
+  remarks?: string;
   level: number;
   levelPath: string;
   children?: TreeNode[];
@@ -506,6 +507,7 @@ export default function BomMasterScreen() {
             quantityPer: line.quantityPer,
             weightPerQty: line.weightPerQty || item?.weight || 0,
             totalWeight: line.totalWeight || 0,
+            remarks: line.remarks || '',
             level: 2,
             levelPath: `${root.levelPath}.${seq}`,
             children: [],
@@ -520,6 +522,7 @@ export default function BomMasterScreen() {
             quantityPer: line.quantityPer,
             weightPerQty: line.weightPerQty || item?.weight || 0,
             totalWeight: line.totalWeight || 0,
+            remarks: line.remarks || '',
             level: 2,
             levelPath: `${root.levelPath}.${seq}`,
             children: [],
@@ -537,6 +540,7 @@ export default function BomMasterScreen() {
               quantityPer: line.quantityPer,
               weightPerQty: line.weightPerQty || item?.weight || 0,
               totalWeight: line.totalWeight || 0,
+              remarks: line.remarks || '',
               level: 3,
               levelPath: `${lastSemiFg.levelPath}.${childSeq}`,
             });
@@ -547,6 +551,7 @@ export default function BomMasterScreen() {
               quantityPer: line.quantityPer,
               weightPerQty: line.weightPerQty || item?.weight || 0,
               totalWeight: line.totalWeight || 0,
+              remarks: line.remarks || '',
               level: 2,
               levelPath: `${root.levelPath}.${seq}`,
               children: [],
@@ -1044,6 +1049,7 @@ function renderTreeRows(node: TreeNode, expanded: Set<string>, toggle: (path: st
   const qty = node.quantityPer || 0;
   const wt = node.weightPerQty && node.weightPerQty > 0 ? node.weightPerQty.toFixed(4) : '';
   const totalWt = node.totalWeight && node.totalWeight > 0 ? node.totalWeight.toFixed(4) : '';
+  const rmk = node.remarks || '';
 
   const bg = depth % 2 === 0 ? 'rgba(99,102,241,0.04)' : 'transparent';
 
@@ -1080,6 +1086,7 @@ function renderTreeRows(node: TreeNode, expanded: Set<string>, toggle: (path: st
       <span style={{ textAlign: 'right', minWidth: 50, color: '#475569' }}>{qty}</span>
       <span style={{ textAlign: 'right', minWidth: 80, color: '#475569' }}>{wt || '\u2014'}</span>
       <span style={{ textAlign: 'right', minWidth: 80, fontWeight: 600, color: '#1e293b' }}>{totalWt || '\u2014'}</span>
+      {rmk && <span style={{ color: '#94a3b8', fontSize: '0.85em', fontStyle: 'italic', marginLeft: 8 }}>({rmk})</span>}
     </div>
   );
 
