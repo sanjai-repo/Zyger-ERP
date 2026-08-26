@@ -752,7 +752,13 @@ export default function BomMasterScreen() {
                     {bom.lines.map((line, idx) => (
                       <tr key={idx}>
                         <td>{line.lineNo}</td>
-                        <td>{line.bomLevel || '1'}</td>
+                        <td>
+                          <select className="in" value={line.bomLevel || 'FG'} onChange={(e) => setLine(idx, 'bomLevel', e.target.value)} disabled={!isEditable}>
+                            <option value="FG">FG</option>
+                            <option value="SEMI_FG">Semi FG</option>
+                            <option value="RAW_MATERIAL">RM</option>
+                          </select>
+                        </td>
                         <td>
                           <select className="in" value={line.componentItemCode} onChange={(e) => onComponentItemSelect(idx, e.target.value)} disabled={!isEditable}>
                             <option value="">\u2014 Select Item \u2014</option>
