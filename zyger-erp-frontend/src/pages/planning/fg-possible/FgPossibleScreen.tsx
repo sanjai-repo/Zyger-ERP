@@ -42,7 +42,6 @@ export default function FgPossibleScreen() {
   const [orderQty, setOrderQty] = useState<number | ''>('');
   const [decisionAction, setDecisionAction] = useState('');
   const [decisionRemarks, setDecisionRemarks] = useState('');
-  const [savingDecision, setSavingDecision] = useState(false);
 
   const checkFeasibility = async () => {
     if (!itemCode.trim()) { toast('Item code is required.', 'error'); return; }

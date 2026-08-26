@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { useTabs } from '../../contexts/TabsContext';
 
 interface FormActionsProps {

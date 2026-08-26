@@ -3,6 +3,7 @@ import apiClient from '../../../api/axiosClient';
 import { useToast } from '../../../contexts/ToastContext';
 import { getApiErrorMessage } from '../../../utils/apiError';
 import { useTabs } from '../../../contexts/TabsContext';
+import { getScreenComponent } from '../../../config/screenRegistry';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 interface PlanningDashboardData {
@@ -172,7 +173,7 @@ export default function PlanningDashboard() {
                             <td style={{ padding: '8px 12px', color: '#6b7280' }}>{createdBy}</td>
                             <td style={{ padding: '8px 12px', color: '#6b7280' }}>{createdAt}</td>
                             <td style={{ padding: '8px 12px' }}>
-                              <button type="button" className="btn btn-sm btn-p" onClick={() => openTab(tabKey, { initialDocId: doc.id })} style={{ fontSize: 11, padding: '2px 8px' }}>
+                              <button type="button" className="btn btn-sm btn-p" onClick={() => openTab({ id: tabKey, label: typeLabel, icon: 'article', component: getScreenComponent(tabKey), props: { initialDocId: doc.id } })} style={{ fontSize: 11, padding: '2px 8px' }}>
                                 Review
                               </button>
                             </td>

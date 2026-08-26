@@ -4,7 +4,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import { getApiErrorMessage } from '../../../utils/apiError';
 import { defaultForm } from './processTypes';
 
-interface Resource { id: number; resourceName: string; resourceCode: string; resourceType: string; }
+interface Resource { id: number; resourceName: string; resourceCode: string; resourceType: string; active?: boolean; }
 
 interface Props {
   processId: number | null;

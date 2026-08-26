@@ -109,6 +109,7 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
   const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
   const [soList, setSoList] = useState<Array<Record<string, unknown>>>([]);
   const [conflictState, setConflictState] = useState<{ serverData: Record<string, unknown> | null; localData: Record<string, unknown> | null }>({ serverData: null, localData: null });
+  const [conflictBusy, setConflictBusy] = useState(false);
 
   const fetchPickers = useCallback(async () => {
     try {
@@ -773,7 +774,7 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
                         <div style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
                           {String(h.fromStatus ?? '').replace('_', ' ')} <span style={{ color: '#9ca3af' }}>&#8594;</span> <span style={{ color: STATUS_COLORS[String(h.toStatus ?? '')] ?? '#374151' }}>{String(h.toStatus ?? '').replace('_', ' ')}</span>
                         </div>
-                        {h.reason && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>{String(h.reason)}</div>}
+                        {h.reason ? <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>{String(h.reason)}</div> : null}
                         <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>{String(h.createdBy ?? '')} &#8226; {String(h.createdAt ?? '').replace('T', ' ').slice(0, 19)}</div>
                       </div>
                     ))}
@@ -851,7 +852,7 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
                     <div style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
                       {String(h.fromStatus ?? '').replace('_', ' ')} <span style={{ color: '#9ca3af' }}>\u2192</span> <span style={{ color: STATUS_COLORS[String(h.toStatus ?? '')] ?? '#374151' }}>{String(h.toStatus ?? '').replace('_', ' ')}</span>
                     </div>
-                    {h.reason && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>{String(h.reason)}</div>}
+                    {h.reason ? <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>{String(h.reason)}</div> : null}
                     <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>{String(h.createdBy ?? '')} \u2022 {String(h.createdAt ?? '').replace('T', ' ').slice(0, 19)}</div>
                   </div>
                 ))}
@@ -865,29 +866,29 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
         open={Boolean(conflictState.serverData)}
         serverData={conflictState.serverData}
         localData={conflictState.localData}
-        busy={isBusy}
+        busy={conflictBusy}
         onCancel={() => setConflictState({ serverData: null, localData: null })}
         onOverwrite={async () => {
           if (!documentId || !conflictState.localData) return;
-          setIsBusy(true);
+          setConflictBusy(true);
           try {
             const { data } = await apiClient.put(`/v1/planning/work-order/${documentId}`, { ...conflictState.localData, forceOverwrite: true });
             setForm({ ...data });
             setConflictState({ serverData: null, localData: null });
             toast('Overwritten successfully.', 'success');
           } catch (e) { toast(getApiErrorMessage(e, 'Overwrite failed.'), 'error'); }
-          setIsBusy(false);
+          setConflictBusy(false);
         }}
         onMerge={async (merged) => {
           if (!documentId) return;
-          setIsBusy(true);
+          setConflictBusy(true);
           try {
             const { data } = await apiClient.put(`/v1/planning/work-order/${documentId}`, { ...merged, forceOverwrite: true });
             setForm({ ...data });
             setConflictState({ serverData: null, localData: null });
             toast('Merged and saved successfully.', 'success');
           } catch (e) { toast(getApiErrorMessage(e, 'Merge save failed.'), 'error'); }
-          setIsBusy(false);
+          setConflictBusy(false);
         }}
       />
     </>

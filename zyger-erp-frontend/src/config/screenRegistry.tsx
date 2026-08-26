@@ -75,7 +75,6 @@ import CapaPage from '../pages/quality/capa/CapaPage';
 import EightDPage from '../pages/quality/eight-d/EightDPage';
 import TraceabilityPage from '../pages/quality/traceability/TraceabilityPage';
 import SpcPage from '../pages/quality/SpcPage';
-import BomPage from '../pages/planning/bom/BomPage';
 import RouteSheetPage from '../pages/planning/route/RouteSheetPage';
 import WorkOrderPage from '../pages/planning/workorder/WorkOrderPage';
 import WorkOrderReportsScreen from '../pages/planning/workorder/WorkOrderReportsScreen';

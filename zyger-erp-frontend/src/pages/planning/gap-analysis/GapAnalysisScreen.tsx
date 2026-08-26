@@ -345,22 +345,21 @@ export default function GapAnalysisScreen() {
         )}
       </div>
 
-      <ConfirmActionModal open={Boolean(runTarget)} title={runTarget ? `Run Analysis` : ''} body={runProgress ? undefined : "Execute this gap analysis run?"} okLabel="Run" busy={busy} onClose={() => { if (!busy) { setRunTarget(null); setRunProgress(null); } }} onConfirm={runAnalysis}>
-        {runProgress && (
-          <div style={{ padding: '12px 0' }}>
-            <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
-              {runProgress.steps.map((step, i) => (
-                <div key={i} style={{ flex: 1, height: 6, borderRadius: 3, background: i < runProgress.step ? '#16a34a' : i === runProgress.step ? '#2563eb' : '#e5e7eb', transition: 'background 0.3s' }} />
-              ))}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span className="material-symbols-rounded" style={{ fontSize: 18, color: '#2563eb', animation: 'spin 1s linear infinite' }}>sync</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#374464' }}>{runProgress.steps[runProgress.step] ?? 'Done'}...</span>
-            </div>
-            <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+      <ConfirmActionModal open={Boolean(runTarget)} title={runTarget ? `Run Analysis` : ''} body={runProgress ? "Analyzing..." : "Execute this gap analysis run?"} okLabel="Run" busy={busy} onClose={() => { if (!busy) { setRunTarget(null); setRunProgress(null); } }} onConfirm={runAnalysis} />
+      {runProgress && (
+        <div className="panel" style={{ padding: 20 }}>
+          <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
+            {runProgress.steps.map((_step, i) => (
+              <div key={i} style={{ flex: 1, height: 6, borderRadius: 3, background: i < runProgress.step ? '#16a34a' : i === runProgress.step ? '#2563eb' : '#e5e7eb', transition: 'background 0.3s' }} />
+            ))}
           </div>
-        )}
-      </ConfirmActionModal>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="material-symbols-rounded" style={{ fontSize: 18, color: '#2563eb', animation: 'spin 1s linear infinite' }}>sync</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#374464' }}>{runProgress.steps[runProgress.step] ?? 'Done'}...</span>
+          </div>
+          <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+        </div>
+      )}
 
       <ConfirmActionModal open={Boolean(deleteTarget)} title={deleteTarget ? `Delete Analysis` : ''} body="Delete this gap analysis?" okLabel="Delete" danger busy={busy} onClose={() => setDeleteTarget(null)} onConfirm={del} />
     </>

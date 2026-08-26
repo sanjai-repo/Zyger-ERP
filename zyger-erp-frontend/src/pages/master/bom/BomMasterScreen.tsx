@@ -505,10 +505,10 @@ export default function BomMasterScreen() {
       for (const line of childLines) {
         const item = itemMap.get(line.componentItemCode);
         const level = line.bomLevel || item?.itemType || 'RAW_MATERIAL';
-        const path = seq === 0 ? '1' : '';
 
         if (level === 'SEMI_FG' || level === 'SFG') {
           const node: TreeNode = {
+            itemCode: line.componentItemCode,
             componentItemCode: line.componentItemCode,
             description: item?.name || line.description || '',
             quantityPer: line.quantityPer,
@@ -524,6 +524,7 @@ export default function BomMasterScreen() {
           seq++;
         } else if (level === 'FG') {
           const node: TreeNode = {
+            itemCode: line.componentItemCode,
             componentItemCode: line.componentItemCode,
             description: item?.name || line.description || '',
             quantityPer: line.quantityPer,
@@ -542,6 +543,7 @@ export default function BomMasterScreen() {
           if (lastSemiFg && lastSemiFg.children) {
             const childSeq = lastSemiFg.children.length + 1;
             lastSemiFg.children.push({
+              itemCode: line.componentItemCode,
               componentItemCode: line.componentItemCode,
               description: item?.name || line.description || '',
               quantityPer: line.quantityPer,
@@ -553,6 +555,7 @@ export default function BomMasterScreen() {
             });
           } else {
             const node: TreeNode = {
+              itemCode: line.componentItemCode,
               componentItemCode: line.componentItemCode,
               description: item?.name || line.description || '',
               quantityPer: line.quantityPer,
@@ -613,7 +616,7 @@ export default function BomMasterScreen() {
     setFormTab('details');
     setViewMode('FORM');
     if (!r.isActive && r.status !== 'DRAFT') {
-      toast('This revision is inactive. Opening in read-only mode.', 'info');
+      toast('This revision is inactive. Opening in read-only mode.', 'success');
     }
   };
 

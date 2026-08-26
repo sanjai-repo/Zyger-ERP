@@ -48,7 +48,7 @@ export default function ShopFloorPage({ initialDocId }: { initialDocId?: string 
   const canPost = !documentId || genericStatus === 'APPROVED';
 
   useUnsavedWarning(mode === 'form' && editable && Object.keys(form).length > 0);
-  useFormKeyboard({ onSave: handleSave, onEscape: () => setMode('list') });
+  useFormKeyboard({ onSave: handleSave, onBack: () => setMode('list') });
 
   const loadWorkOrders = useCallback(async () => {
     try {
@@ -132,7 +132,7 @@ export default function ShopFloorPage({ initialDocId }: { initialDocId?: string 
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
             {entries.map((e) => (
-              <div key={e.id} onClick={() => { setDocumentId(String(e.id)); setMode('form'); }}
+              <div key={String(e.id)} onClick={() => { setDocumentId(String(e.id)); setMode('form'); }}
                 style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, cursor: 'pointer', transition: 'box-shadow 0.15s' }}
                 onMouseEnter={(ev) => (ev.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)')}
                 onMouseLeave={(ev) => (ev.currentTarget.style.boxShadow = 'none')}>
@@ -164,7 +164,7 @@ export default function ShopFloorPage({ initialDocId }: { initialDocId?: string 
                 value={String(form.workOrderNo ?? '')} onChange={(e) => updateField('workOrderNo', e.target.value)}>
                 <option value="">— Select Work Order —</option>
                 {workOrders.map((wo) => (
-                  <option key={wo.id} value={String(wo.woNumber ?? '')}>{String(wo.woNumber ?? '')} — {String(wo.itemCode ?? '')}</option>
+                  <option key={String(wo.id)} value={String(wo.woNumber ?? '')}>{String(wo.woNumber ?? '')} — {String(wo.itemCode ?? '')}</option>
                 ))}
               </select>
             </label>
