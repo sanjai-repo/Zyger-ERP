@@ -1052,7 +1052,7 @@ export default function BomMasterScreen() {
               <span style={{ flex: 1, minWidth: 200 }}>Item · Name</span>
               <span style={{ width: 120, flexShrink: 0, textAlign: 'right' }}>Qty</span>
               <span style={{ width: 140, flexShrink: 0, textAlign: 'right' }}>Wt/Unit</span>
-              <span style={{ width: 140, flexShrink: 0, textAlign: 'right' }}>Total Wt</span>
+              <span style={{ width: 140, flexShrink: 0, textAlign: 'right', marginRight: 32 }}>Total Wt</span>
               <span style={{ flex: 0.5, minWidth: 200 }}>Remarks</span>
             </div>
 
@@ -1177,7 +1177,7 @@ function renderTreeRows(node: TreeNode, expanded: Set<string>, toggle: (path: st
       </span>
 
       {/* Total Wt */}
-      <span style={{ width: 140, flexShrink: 0, textAlign: 'right', fontWeight: 600, color: '#1e293b', fontSize: '0.875rem' }}>
+      <span style={{ width: 140, flexShrink: 0, textAlign: 'right', fontWeight: 600, color: '#1e293b', fontSize: '0.875rem', marginRight: 32 }}>
         {totalWt ? `${totalWt} kg` : '\u2014'}
       </span>
 
