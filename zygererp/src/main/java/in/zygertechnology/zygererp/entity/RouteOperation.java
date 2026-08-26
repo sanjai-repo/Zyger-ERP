@@ -2,11 +2,13 @@ package in.zygertechnology.zygererp.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import in.zygertechnology.zygererp.config.AuditEntityListener;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
 @Entity @Table(name = "route_operation") @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+@EntityListeners(AuditEntityListener.class)
 public class RouteOperation implements LineEntity {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY) Long id;
     @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "doc_id")
@@ -20,12 +22,16 @@ public class RouteOperation implements LineEntity {
     @Column(name = "machine_code", length = 60) String machineCode;
     /** FRS §4.7: FK to ProcessMaster */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "process_id") ProcessMaster process;
+    @JoinColumn(name = "process_id")
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    ProcessMaster process;
     /** FRS §3.3: derived read-only */
     @Column(name = "process_code", length = 60) String processCode;
     /** FRS §4.7: FK to ResourceMaster */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "resource_id") ResourceMaster resource;
+    @JoinColumn(name = "resource_id")
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    ResourceMaster resource;
     @Column(name = "resource_name", length = 200) String resourceName;
     @Column(name = "resource_type", length = 30) String resourceType;
     @Column(name = "process_type", length = 30) String processType;
@@ -60,6 +66,7 @@ public class RouteOperation implements LineEntity {
 
     /** FRS §3.3: inspection parameters for this operation */
     @OneToMany(mappedBy = "routeOperation", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties("routeOperation")
     @Builder.Default
     List<RouteOperationInspection> inspections = new ArrayList<>();
 
@@ -68,4 +75,10 @@ public class RouteOperation implements LineEntity {
     @Override public String getBatchNo() { return null; }
     @Override public String getHeatNo() { return null; }
     @Override public BigDecimal getQty() { return BigDecimal.ZERO; }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("processId")
+    public String getProcessIdJson() { return process != null && process.getId() != null ? String.valueOf(process.getId()) : null; }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("resourceId")
+    public String getResourceIdJson() { return resource != null && resource.getId() != null ? String.valueOf(resource.getId()) : null; }
 }

@@ -1,5 +1,6 @@
 package in.zygertechnology.zygererp.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -17,6 +18,7 @@ public class RouteOperationInspection {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "route_operation_id", nullable = false)
+    @JsonIgnore
     RouteOperation routeOperation;
 
     @Column(name = "parameter_name", nullable = false, length = 200)
