@@ -406,15 +406,15 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
           <div className="panel-h"><h2><span className="material-symbols-rounded">description</span> Header</h2>
             {documentId && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {documentId && !isViewOnly && genericStatus === 'DRAFT' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'submit', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">send</span> Submit</button>}
+                {!isRouteSheet && documentId && !isViewOnly && genericStatus === 'DRAFT' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'submit', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">send</span> Submit</button>}
                 {documentId && !isViewOnly && genericStatus === 'SUBMITTED' && <button type="button" className="btn btn-sm btn-g" onClick={() => setActionModal({ action: 'approve', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">thumb_up</span> Approve</button>}
                 {documentId && !isViewOnly && genericStatus === 'SUBMITTED' && <button type="button" className="btn btn-sm btn-d" onClick={() => setActionModal({ action: 'reject', danger: true })} disabled={isBusy}><span className="material-symbols-rounded">thumb_down</span> Reject</button>}
                 {isRouteSheet && documentId && !isViewOnly && genericStatus === 'DRAFT' && <button type="button" className="btn btn-sm btn-g" onClick={() => { if (lines.length === 0) { toast('V-03: At least one operation row is required before Release.', 'error'); return; } setActionModal({ action: 'release', danger: false }); }} disabled={isBusy}><span className="material-symbols-rounded">rocket_launch</span> Release</button>}
-                {isRouteSheet && documentId && !isViewOnly && (genericStatus === 'RELEASED' || genericStatus === 'UNDER_REVISION') && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'revise', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">edit_note</span> Revise</button>}
+                {isRouteSheet && documentId && !isViewOnly && genericStatus === 'RELEASED' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'revise', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">edit_note</span> Revise</button>}
                 {!isRouteSheet && config.docType === 'production-bom' && documentId && !isViewOnly && genericStatus === 'APPROVED' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'revise', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">edit_note</span> Revise</button>}
                 {isRouteSheet && documentId && !isViewOnly && (genericStatus === 'RELEASED' || genericStatus === 'UNDER_REVISION') && <button type="button" className="btn btn-sm btn-d" onClick={() => runAction('obsolete')} disabled={isBusy}><span className="material-symbols-rounded">archive</span> Obsolete</button>}
-                {documentId && editable && genericStatus !== 'DRAFT' && <button type="button" className="btn btn-sm" onClick={() => runAction('reopen')} disabled={isBusy}><span className="material-symbols-rounded">restart_alt</span> Reopen</button>}
-                {documentId && !isViewOnly && ['DRAFT', 'SUBMITTED', 'APPROVED'].includes(genericStatus) && <button type="button" className="btn btn-sm btn-d" onClick={() => setActionModal({ action: 'cancel', danger: true })} disabled={isBusy}><span className="material-symbols-rounded">block</span> Cancel</button>}
+                {!isRouteSheet && documentId && editable && genericStatus !== 'DRAFT' && <button type="button" className="btn btn-sm" onClick={() => runAction('reopen')} disabled={isBusy}><span className="material-symbols-rounded">restart_alt</span> Reopen</button>}
+                {!isRouteSheet && documentId && !isViewOnly && ['DRAFT', 'SUBMITTED', 'APPROVED'].includes(genericStatus) && <button type="button" className="btn btn-sm btn-d" onClick={() => setActionModal({ action: 'cancel', danger: true })} disabled={isBusy}><span className="material-symbols-rounded">block</span> Cancel</button>}
                 <button type="button" className="btn btn-sm" title="Audit History" onClick={() => setAuditOpen(true)}>
                   <span className="material-symbols-rounded">history</span> Audit
                 </button>
@@ -510,14 +510,16 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
                             <select className="in" value={String(line[f.key] ?? '')} onChange={(e) => {
                               const selectedId = e.target.value;
                               const proc = processes.find((p) => String(p.id) === selectedId);
+                              const reqResId = proc?.requiredResource != null ? String(proc.requiredResource) : (proc?.resourceId != null ? String(proc.resourceId) : '');
+                              const reqRes = resources.find((r) => String(r.id) === reqResId);
                               setLines((c) => c.map((l, i) => i === index ? {
                                 ...l,
                                 processId: selectedId || '',
                                 processCode: proc?.code ?? '',
-                                processType: proc?.processType ?? '',
-                                resourceId: proc?.resourceId ?? l.resourceId,
-                                resourceName: proc?.resourceName ?? l.resourceName,
-                                resourceType: proc?.resourceType ?? l.resourceType,
+                                processType: proc?.processType ?? (reqRes?.resourceType === 'Vendor' ? 'Outsource' : 'Insource'),
+                                resourceId: reqResId || l.resourceId || '',
+                                resourceName: reqRes?.resourceName ?? proc?.resourceName ?? l.resourceName ?? '',
+                                resourceType: reqRes?.resourceType ?? proc?.resourceType ?? l.resourceType ?? '',
                               } : l));
                             }}>
                               <option value="">— Select Process —</option>
@@ -532,7 +534,7 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
                                 resourceId: selectedResId || '',
                                 resourceName: res?.resourceName ?? '',
                                 resourceType: res?.resourceType ?? '',
-                                processType: res?.resourceType === 'Vendor' ? 'Outsource' : l.processType,
+                                processType: res?.resourceType === 'Vendor' ? 'Outsource' : (l.processType || 'Insource'),
                               } : l));
                             }}>
                               <option value="">— Default from Process —</option>
@@ -588,7 +590,21 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
                 <thead><tr>{config.lines.fields.map((f) => <th key={f.key}>{f.label}</th>)}</tr></thead>
                 <tbody>
                   {(form.lines as Array<Record<string, unknown>>).map((line, index) => (
-                    <tr key={index} onClick={() => config.childGrids && setSelectedLineIdx(selectedLineIdx === index ? null : index)} style={config.childGrids ? { cursor: 'pointer' } : undefined} className={selectedLineIdx === index ? 'selected-row' : ''}>{config.lines!.fields.map((f) => <td key={f.key}>{line[f.key] == null ? '\u2014' : String(line[f.key])}</td>)}</tr>
+                    <tr key={index} onClick={() => config.childGrids && setSelectedLineIdx(selectedLineIdx === index ? null : index)} style={config.childGrids ? { cursor: 'pointer' } : undefined} className={selectedLineIdx === index ? 'selected-row' : ''}>
+                      {config.lines!.fields.map((f) => {
+                        let displayVal = line[f.key] == null ? '—' : String(line[f.key]);
+                        if (docType === 'route-sheet') {
+                          if (f.key === 'processId') {
+                            displayVal = String(line.processCode || (processes.find(p => String(p.id) === String(line.processId))?.code) || displayVal);
+                          } else if (f.key === 'resourceId') {
+                            displayVal = String(line.resourceName || (resources.find(r => String(r.id) === String(line.resourceId))?.resourceName) || displayVal);
+                          } else if (f.key === 'inspectionRequired') {
+                            displayVal = line.inspectionRequired === true || line.inspectionRequired === 'Yes' ? 'Yes' : 'No';
+                          }
+                        }
+                        return <td key={f.key}>{displayVal}</td>;
+                      })}
+                    </tr>
                   ))}
                 </tbody>
               </table>
