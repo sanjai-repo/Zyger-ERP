@@ -406,15 +406,17 @@ export default function BomMasterScreen() {
 
   /* ── Copy BOM ── */
 
-  const copyBom = async () => {
-    if (!copyBomId) { toast('Select a BOM to copy.', 'error'); return; }
+  const copyBom = async (id?: string) => {
+    const bomId = id || copyBomId;
+    if (!bomId) return;
     setBusy(true);
     try {
-      const source = allBoms.find((b) => String(b.id) === copyBomId);
+      const source = allBoms.find((b) => String(b.id) === bomId);
       if (!source) { toast('Source BOM not found.', 'error'); setBusy(false); return; }
       const { data } = await apiClient.get(`/v1/planning/production-bom/${source.id}`);
       setBom((p) => ({
         ...p,
+        itemCode: data.itemCode || p.itemCode,
         lines: (data.lines || []).map((l: BomLine, i: number) => ({ ...l, lineNo: i + 1 })),
       }));
       setCopyBomId('');
@@ -828,11 +830,10 @@ export default function BomMasterScreen() {
 
               <label className="fld" style={{ gridColumn: 'span 2' }}><span>Copy BOM</span>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <select className="in" value={copyBomId} onChange={(e) => setCopyBomId(e.target.value)} style={{ flex: 1 }}>
+                  <select className="in" value={copyBomId} onChange={(e) => { const v = e.target.value; setCopyBomId(v); if (v) copyBom(v); }} style={{ flex: 1 }}>
                     <option value="">\u2014 Select BOM to Copy \u2014</option>
                     {allBoms.filter((b) => b.id !== editId).map((b) => <option key={b.id} value={String(b.id)}>{b.bomNumber || b.docNo} - {b.itemCode} ({b.bomVersion})</option>)}
                   </select>
-                  <button type="button" className="btn btn-sm btn-p" onClick={copyBom} disabled={busy || !copyBomId}><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>content_copy</span> Copy</button>
                 </div>
               </label>
 
