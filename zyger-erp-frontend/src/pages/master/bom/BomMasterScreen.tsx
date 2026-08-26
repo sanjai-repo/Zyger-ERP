@@ -1046,15 +1046,14 @@ export default function BomMasterScreen() {
             </div>
 
             {/* Column Headers */}
-            <div style={{ display: 'grid', gridTemplateColumns: '50px 60px 1fr 200px 80px 100px 100px 140px', gap: 0, padding: '10px 24px', background: '#f8fafc', borderBottom: '2px solid #e2e8f0', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              <span></span>
-              <span>Level</span>
-              <span>Item</span>
-              <span>Description</span>
-              <span style={{ textAlign: 'right' }}>Qty</span>
-              <span style={{ textAlign: 'right' }}>Wt/Unit</span>
-              <span style={{ textAlign: 'right' }}>Total Wt</span>
-              <span>Remarks</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: '10px 24px', background: '#f8fafc', borderBottom: '2px solid #e2e8f0', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <span style={{ width: 36, flexShrink: 0 }}></span>
+              <span style={{ width: 56, flexShrink: 0 }}>Level</span>
+              <span style={{ flex: 1, minWidth: 200 }}>Item \u00B7 Description</span>
+              <span style={{ width: 80, flexShrink: 0, textAlign: 'right' }}>Qty</span>
+              <span style={{ width: 100, flexShrink: 0, textAlign: 'right' }}>Wt/Unit</span>
+              <span style={{ width: 110, flexShrink: 0, textAlign: 'right' }}>Total Wt</span>
+              <span style={{ width: 160, flexShrink: 0 }}>Remarks</span>
             </div>
 
             {/* Body */}
@@ -1100,11 +1099,11 @@ function renderTreeRows(node: TreeNode, expanded: Set<string>, toggle: (path: st
   const totalWt = node.totalWeight && node.totalWeight > 0 ? node.totalWeight.toFixed(4) : '';
   const rmk = node.remarks || '';
 
-  const levelColors: Record<number, { bg: string; badge: string; line: string }> = {
-    0: { bg: 'linear-gradient(135deg, #eef2ff 0%, #f5f3ff 100%)', badge: '#6366f1', line: '#6366f1' },
-    1: { bg: 'linear-gradient(135deg, #eff6ff 0%, #eef2ff 100%)', badge: '#3b82f6', line: '#93c5fd' },
-    2: { bg: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)', badge: '#22c55e', line: '#86efac' },
-    3: { bg: 'transparent', badge: '#f59e0b', line: '#fde68a' },
+  const levelColors: Record<number, { bg: string; badge: string }> = {
+    0: { bg: 'linear-gradient(135deg, #eef2ff 0%, #f5f3ff 100%)', badge: '#6366f1' },
+    1: { bg: 'linear-gradient(135deg, #eff6ff 0%, #eef2ff 100%)', badge: '#3b82f6' },
+    2: { bg: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)', badge: '#22c55e' },
+    3: { bg: 'transparent', badge: '#f59e0b' },
   };
   const style = levelColors[depth] || levelColors[3];
 
@@ -1118,9 +1117,8 @@ function renderTreeRows(node: TreeNode, expanded: Set<string>, toggle: (path: st
       key={path}
       onClick={() => !isLeaf && toggle(path)}
       style={{
-        display: 'grid', gridTemplateColumns: '50px 60px 1fr 200px 80px 100px 100px 140px',
-        alignItems: 'center', gap: 0,
-        padding: '10px 0',
+        display: 'flex', alignItems: 'center', gap: 0,
+        padding: '10px 24px',
         marginLeft: indent,
         cursor: isLeaf ? 'default' : 'pointer',
         borderBottom: '1px solid #f1f5f9',
@@ -1129,13 +1127,13 @@ function renderTreeRows(node: TreeNode, expanded: Set<string>, toggle: (path: st
         transition: 'all 0.15s ease',
         marginTop: isRoot ? 8 : 0,
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = isRoot ? style.bg : `rgba(99,102,241,0.04)`; e.currentTarget.style.transform = 'translateX(2px)'; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = style.bg; e.currentTarget.style.transform = 'translateX(0)'; }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = isRoot ? style.bg : 'rgba(99,102,241,0.04)'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = style.bg; }}
     >
       {/* Expand/Collapse icon */}
-      <span style={{ paddingLeft: 4 }}>
+      <span style={{ width: 36, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {!isLeaf ? (
-          <span className="material-symbols-rounded" style={{ fontSize: '1.1rem', color: style.badge, transition: 'transform 0.2s', display: 'inline-block', transform: isExpanded ? 'rotate(0deg)' : 'rotate(0deg)' }}>
+          <span className="material-symbols-rounded" style={{ fontSize: '1.1rem', color: style.badge }}>
             {isExpanded ? 'expand_more' : 'chevron_right'}
           </span>
         ) : (
@@ -1144,44 +1142,47 @@ function renderTreeRows(node: TreeNode, expanded: Set<string>, toggle: (path: st
       </span>
 
       {/* Level path */}
-      <span style={{ fontWeight: isRoot ? 700 : 500, color: style.badge, fontSize: '0.85rem', fontFamily: 'monospace' }}>
+      <span style={{ width: 56, flexShrink: 0, fontWeight: isRoot ? 700 : 500, color: style.badge, fontSize: '0.85rem', fontFamily: 'monospace' }}>
         {path}
       </span>
 
-      {/* Item Code + Type Badge */}
-      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      {/* Item Code + Type Badge + Description (combined) */}
+      <span style={{ flex: 1, minWidth: 200, display: 'flex', alignItems: 'center', gap: 10, marginRight: 16 }}>
         <span style={{
-          display: 'inline-block', padding: '2px 8px', borderRadius: 6, fontSize: '0.65rem', fontWeight: 700,
+          display: 'inline-flex', padding: '3px 10px', borderRadius: 6, fontSize: '0.65rem', fontWeight: 700,
           background: `${typeColor}15`, color: typeColor, border: `1px solid ${typeColor}30`,
           letterSpacing: '0.03em', flexShrink: 0,
         }}>{typeLabel}</span>
-        <span style={{ fontWeight: isRoot ? 700 : 600, color: '#1e293b', fontSize: isRoot ? '0.95rem' : '0.875rem' }}>
+        <span style={{ fontWeight: isRoot ? 700 : 600, color: '#1e293b', fontSize: isRoot ? '0.95rem' : '0.875rem', flexShrink: 0 }}>
           {code}
         </span>
-      </span>
-
-      {/* Description */}
-      <span style={{ color: '#475569', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {desc || '\u2014'}
+        {desc && (
+          <>
+            <span style={{ color: '#cbd5e1', flexShrink: 0 }}>\u2014</span>
+            <span style={{ color: '#64748b', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {desc}
+            </span>
+          </>
+        )}
       </span>
 
       {/* Qty */}
-      <span style={{ textAlign: 'right', color: '#334155', fontWeight: 500, fontSize: '0.875rem' }}>
+      <span style={{ width: 80, flexShrink: 0, textAlign: 'right', color: '#334155', fontWeight: 500, fontSize: '0.875rem', paddingRight: 8 }}>
         {qty}
       </span>
 
       {/* Wt/Unit */}
-      <span style={{ textAlign: 'right', color: '#64748b', fontSize: '0.85rem' }}>
+      <span style={{ width: 100, flexShrink: 0, textAlign: 'right', color: '#64748b', fontSize: '0.85rem', paddingRight: 8 }}>
         {wt || '\u2014'}
       </span>
 
       {/* Total Wt */}
-      <span style={{ textAlign: 'right', fontWeight: 600, color: '#1e293b', fontSize: '0.875rem' }}>
+      <span style={{ width: 110, flexShrink: 0, textAlign: 'right', fontWeight: 600, color: '#1e293b', fontSize: '0.875rem', paddingRight: 8 }}>
         {totalWt ? `${totalWt} kg` : '\u2014'}
       </span>
 
       {/* Remarks */}
-      <span style={{ color: '#94a3b8', fontSize: '0.8rem', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span style={{ width: 160, flexShrink: 0, color: '#94a3b8', fontSize: '0.8rem', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {rmk || '\u2014'}
       </span>
     </div>
