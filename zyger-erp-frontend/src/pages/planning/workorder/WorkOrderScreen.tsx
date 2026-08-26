@@ -107,17 +107,19 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
   const [workCenters, setWorkCenters] = useState<Array<{ code: string; name: string }>>([]);
   const [operators, setOperators] = useState<Array<{ username: string; fullName: string }>>([]);
   const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
+  const [soList, setSoList] = useState<Array<Record<string, unknown>>>([]);
   const [conflictState, setConflictState] = useState<{ serverData: Record<string, unknown> | null; localData: Record<string, unknown> | null }>({ serverData: null, localData: null });
 
   const fetchPickers = useCallback(async () => {
     try {
-      const [bRes, rRes, mRes, wRes, oRes, iRes] = await Promise.allSettled([
+      const [bRes, rRes, mRes, wRes, oRes, iRes, soRes] = await Promise.allSettled([
         apiClient.get('/v1/planning/bom', { params: { size: 500 } }),
         apiClient.get('/v1/planning/route-sheet', { params: { size: 500 } }),
         apiClient.get('/master/machines', { params: { size: 200 } }),
         apiClient.get('/master/work-centers', { params: { size: 200 } }),
         apiClient.get('/master/users', { params: { size: 200 } }),
         apiClient.get('/master/items', { params: { size: 500 } }),
+        apiClient.get('/v1/planning/work-order/so-list'),
       ]);
       if (bRes.status === 'fulfilled') setBomList((bRes.value.data?.content ?? bRes.value.data ?? []).map((b: any) => ({ id: b.id, bomNumber: b.bomNumber || b.docNo || `BOM-${b.id}`, itemCode: b.itemCode ?? '' })));
       if (rRes.status === 'fulfilled') setRouteList((rRes.value.data?.content ?? rRes.value.data ?? []).map((r: any) => ({ id: r.id, routeNumber: r.routeNumber || r.docNo || `RT-${r.id}`, itemCode: r.itemCode ?? '' })));
@@ -128,6 +130,7 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
         const data = iRes.value.data as { content?: unknown[] } | unknown[];
         setItems(Array.isArray(data) ? data as Array<Record<string, unknown>> : (data?.content ?? []) as Array<Record<string, unknown>>);
       }
+      if (soRes.status === 'fulfilled') setSoList(Array.isArray(soRes.value.data) ? soRes.value.data : (soRes.value.data?.content ?? []) as Array<Record<string, unknown>>);
     } catch { /* ignore */ }
   }, []);
 
@@ -184,8 +187,24 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
 
   const validate = () => {
     const errs = validateFields(config.fields, form);
-    if (errs.length > 0) toast(errs[0].message, 'error');
-    return errs.length === 0;
+    if (errs.length > 0) { toast(errs[0].message, 'error'); return false; }
+    // FRD §7.0 V1: Sales Order is mandatory
+    if (!form.salesOrderId && !form.sourceDocNo) {
+      toast('Sales Order is mandatory.', 'error'); return false;
+    }
+    // FRD §7.0 V3: Production Qty must not exceed Pending Qty
+    const prodQty = Number(form.productionQty ?? 0);
+    const pendingQty = Number(form.pendingQty ?? 0);
+    if (pendingQty > 0 && prodQty > pendingQty) {
+      toast('Production Quantity exceeds Pending Quantity.', 'error'); return false;
+    }
+    // FRD §7.0 V6: Planned End Date > Start Date
+    const sd = String(form.plannedStartDate ?? '');
+    const ed = String(form.plannedEndDate ?? '');
+    if (sd && ed && ed <= sd) {
+      toast('Planned End Date should be greater than Planned Start Date.', 'error'); return false;
+    }
+    return true;
   };
 
   const handleCreate = async () => {
@@ -333,6 +352,68 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
       }
       return { ...c, productionQty: val };
     });
+  };
+
+  /** FRD §5.0: On SO selection → auto-fetch item, pending qty, delivery date, customer. Then auto-link BOM + Route + populate lines. */
+  const handleSoSelect = async (soIdStr: string) => {
+    if (!soIdStr) {
+      setForm((c) => ({ ...c, salesOrderId: null, salesOrderNo: '', customerCode: '', customer: '', pendingQty: null, promisedDeliveryDate: null, itemCode: '', itemDescription: '', drawingNumber: '', drawingRev: '', uom: '', orderQuantity: null }));
+      return;
+    }
+    const soId = Number(soIdStr);
+    const so = soList.find((s) => Number(s.id) === soId);
+    if (!so) return;
+    const soLines = (so.lines ?? []) as Array<Record<string, unknown>>;
+    const firstLine = soLines.length > 0 ? soLines[0] : null;
+    const deliveryDate = so.customerRequiredDate ?? so.deliveryDate ?? null;
+    const pendingQty = firstLine ? Number(firstLine.pendingQty ?? 0) : Number(so.pendingQty ?? 0);
+
+    const updates: Record<string, unknown> = {
+      salesOrderId: soId,
+      salesOrderNo: so.docNo ?? '',
+      customerCode: so.customerCode ?? '',
+      customer: so.customer ?? '',
+      pendingQty,
+      promisedDeliveryDate: deliveryDate,
+      sourceType: 'Sales Order',
+      sourceDocNo: so.docNo ?? '',
+    };
+    if (firstLine) {
+      updates.itemCode = firstLine.itemName ?? '';
+      updates.itemDescription = firstLine.description ?? '';
+      updates.drawingNumber = firstLine.drawingNumber ?? '';
+      updates.drawingRev = firstLine.drawingRevision ?? '';
+      updates.uom = firstLine.uom ?? '';
+      updates.orderQuantity = firstLine.pendingQty ?? firstLine.orderQty ?? 0;
+      updates.productionQty = firstLine.pendingQty ?? firstLine.orderQty ?? 0;
+    }
+    setForm((c) => ({ ...c, ...updates }));
+
+    // Auto-link BOM + Route for the selected item
+    if (firstLine?.itemName) {
+      try {
+        const { data: bomRoute } = await apiClient.get('/v1/planning/work-order/active-bom-route', { params: { itemCode: firstLine.itemName } });
+        setForm((c) => ({ ...c, ...bomRoute }));
+
+        // Auto-populate material + process lines if both BOM and Route linked
+        if (bomRoute.bomId && bomRoute.routeId) {
+          setTimeout(async () => {
+            if (!documentId) {
+              // For new WO: manually populate after create
+              return;
+            }
+            try {
+              const res = await apiClient.post(`/v1/planning/work-order/${documentId}/populate`);
+              const updated = res.data;
+              setForm((f) => ({ ...f, ...updated }));
+              setOps(Array.isArray(updated.lines) ? (updated.lines as Array<Record<string, unknown>>).map((l) => ({ ...l })) : []);
+              setMats(Array.isArray(updated.materialLines) ? (updated.materialLines as Array<Record<string, unknown>>).map((l) => ({ ...l })) : []);
+              toast('BOM and Route linked. Material and process lines populated.');
+            } catch { /* populate will be manual */ }
+          }, 500);
+        }
+      } catch { /* BOM/Route auto-link failed — user can pick manually */ }
+    }
   };
 
   const renderLineTable = (lineFields: MaterialLineDef[], data: Array<Record<string, unknown>>, setData: React.Dispatch<React.SetStateAction<Array<Record<string, unknown>>>>, editableLines: boolean) => (
@@ -579,6 +660,17 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
                             </select>
                           ) : field.type === 'textarea' ? (
                             <textarea className="in" rows={2} readOnly={!editable || isFieldReadonly} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))} />
+                          ) : field.key === 'salesOrderNo' && editable ? (
+                            /* FRD §6.1: SO dropdown with auto-fetch on select */
+                            <select className="in" value={String(form.salesOrderId ?? '')}
+                              onChange={(e) => handleSoSelect(e.target.value)}>
+                              <option value="">{'\u2014 Select Sales Order \u2014'}</option>
+                              {soList.map((so) => (
+                                <option key={String(so.id)} value={String(so.id)}>
+                                  {String(so.docNo ?? '')} — {String(so.customer ?? so.customerCode ?? '')} (Pending: {String(so.pendingQty ?? '')})
+                                </option>
+                              ))}
+                            </select>
                           ) : (field.type === 'select' || isBomOrRoute) ? (
                             <select className="in" disabled={!editable || isFieldReadonly} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))}>
                               <option value="">\u2014 Select \u2014</option>
@@ -628,13 +720,13 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
             </div>
             {activeTab === 'operations' && (
               <>
-                {editable && !documentId && <div style={{ padding: '8px 16px' }}><button type="button" className="btn btn-sm" disabled={isBusy} onClick={() => setOps((c) => [...c, {}])}><span className="material-symbols-rounded">add</span> Add Operation</button></div>}
+                {editable && !documentId && <div style={{ padding: '8px 16px' }}><button type="button" className="btn btn-sm" disabled={isBusy || ops.length >= 200} onClick={() => { if (ops.length >= 200) { toast('Maximum 200 process lines reached (NFR-03).', 'error'); return; } setOps((c) => [...c, {}]); }}><span className="material-symbols-rounded">add</span> Add Operation</button></div>}
                 {renderLineTable(config.lines!.fields, ops, setOps, editable && !documentId)}
               </>
             )}
             {activeTab === 'materials' && (
               <>
-                {editable && !documentId && <div style={{ padding: '8px 16px' }}><button type="button" className="btn btn-sm" disabled={isBusy} onClick={() => setMats((c) => [...c, {}])}><span className="material-symbols-rounded">add</span> Add Material</button></div>}
+                {editable && !documentId && <div style={{ padding: '8px 16px' }}><button type="button" className="btn btn-sm" disabled={isBusy || mats.length >= 500} onClick={() => { if (mats.length >= 500) { toast('Maximum 500 material lines reached (NFR-02).', 'error'); return; } setMats((c) => [...c, {}]); }}><span className="material-symbols-rounded">add</span> Add Material</button></div>}
                 {renderLineTable(WORK_ORDER_MATERIAL_FIELDS, mats, setMats, editable && !documentId)}
               </>
             )}
@@ -695,7 +787,7 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
         {!documentId && (
           <div className="panel">
             <div className="panel-h"><h2><span className="material-symbols-rounded">table_view</span> Operations</h2>
-              <button type="button" className="btn btn-sm" disabled={isBusy} onClick={() => setOps((c) => [...c, {}])}><span className="material-symbols-rounded">add</span> Add Operation</button>
+              <button type="button" className="btn btn-sm" disabled={isBusy || ops.length >= 200} onClick={() => { if (ops.length >= 200) { toast('Maximum 200 process lines reached (NFR-03).', 'error'); return; } setOps((c) => [...c, {}]); }}><span className="material-symbols-rounded">add</span> Add Operation</button>
             </div>
             {renderLineTable(config.lines!.fields, ops, setOps, true)}
           </div>

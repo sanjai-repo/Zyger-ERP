@@ -58,4 +58,8 @@ export const planningApi = {
   getCompanyInfo: () => apiClient.get('/master/company-info').then(r => r.data),
   updateCompanyInfo: (data: Record<string, unknown>) => apiClient.put('/master/company-info', data).then(r => r.data),
   getMasterDashboard: () => apiClient.get('/master/dashboard').then(r => r.data),
+
+  // Route Sheet Reports (FRD §7)
+  getResourceUtilizationReport: (params?: Record<string, string>) => apiClient.get('/v1/planning/route-sheet/reports/resource-utilization', { params }).then(r => r.data),
+  getOutsourceProcessReport: (params?: Record<string, string>) => apiClient.get('/v1/planning/route-sheet/reports/outsource-processes', { params }).then(r => r.data),
 };

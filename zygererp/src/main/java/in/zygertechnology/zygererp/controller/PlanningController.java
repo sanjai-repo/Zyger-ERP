@@ -246,4 +246,28 @@ public class PlanningController {
     Map<String, Object> openWorkOrders(@RequestParam Map<String, String> q) {
         return planning.getOpenWorkOrders(q);
     }
+
+    /** FRD §6.1: Active Sales Orders for the WO SO picker */
+    @GetMapping("/work-order/so-list")
+    List<Map<String, Object>> soListForWO() {
+        return planning.getActiveSOsForWO();
+    }
+
+    /** FRD §6.1: Active BOM + Route Sheet for an item */
+    @GetMapping("/work-order/active-bom-route")
+    Map<String, Object> activeBomRoute(@RequestParam String itemCode) {
+        return planning.getActiveBomAndRoute(itemCode);
+    }
+
+    // ── FRS §7: Route Sheet Reports ──
+
+    @GetMapping("/route-sheet/reports/resource-utilization")
+    Map<String, Object> resourceUtilizationReport(@RequestParam Map<String, String> q) {
+        return planning.getRouteSheetResourceUtilizationReport(q);
+    }
+
+    @GetMapping("/route-sheet/reports/outsource-processes")
+    Map<String, Object> outsourceProcessReport(@RequestParam Map<String, String> q) {
+        return planning.getRouteSheetOutsourceReport(q);
+    }
 }

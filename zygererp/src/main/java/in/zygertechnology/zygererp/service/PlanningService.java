@@ -90,6 +90,32 @@ public class PlanningService {
                 validateParentNotCyclic(parentId);
             }
         }
+        if ("work-order".equals(key)) {
+            // FRD §7.0: SO is mandatory on update too (cannot remove SO from WO)
+            if (body.containsKey("salesOrderId") && body.get("salesOrderId") == null
+                    && body.get("sourceDocNo") == null) {
+                throw new IllegalArgumentException("Sales Order is mandatory.");
+            }
+            // FRD §7.0: Prod Qty must not exceed Pending Qty on update
+            WorkOrder wo = (WorkOrder) docs.get("work-order", id);
+            BigDecimal prodQty = body.containsKey("productionQty") && body.get("productionQty") != null
+                ? new BigDecimal(String.valueOf(body.get("productionQty"))) : wo.getProductionQty();
+            BigDecimal pendingQty = body.containsKey("pendingQty") && body.get("pendingQty") != null
+                ? new BigDecimal(String.valueOf(body.get("pendingQty"))) : wo.getPendingQty();
+            if (prodQty != null && pendingQty != null && prodQty.compareTo(pendingQty) > 0) {
+                throw new IllegalArgumentException("Production Quantity exceeds Pending Quantity.");
+            }
+            // FRD §7.0: Planned End Date > Start Date on update
+            String sd = body.containsKey("plannedStartDate") ? String.valueOf(body.getOrDefault("plannedStartDate", "")) : String.valueOf(wo.getPlannedStartDate() != null ? wo.getPlannedStartDate() : "");
+            String ed = body.containsKey("plannedEndDate") ? String.valueOf(body.getOrDefault("plannedEndDate", "")) : String.valueOf(wo.getPlannedEndDate() != null ? wo.getPlannedEndDate() : "");
+            if (!sd.isEmpty() && sd.length() >= 10 && !ed.isEmpty() && ed.length() >= 10) {
+                LocalDate startDate = LocalDate.parse(sd.substring(0, 10));
+                LocalDate endDate = LocalDate.parse(ed.substring(0, 10));
+                if (!endDate.isAfter(startDate)) {
+                    throw new IllegalArgumentException("Planned End Date should be greater than Planned Start Date.");
+                }
+            }
+        }
     }
 
     private void validateBeforeCreate(String key, Map<String, Object> body) {
@@ -192,11 +218,28 @@ public class PlanningService {
     private void resolveRouteRefs(RouteSheet route) {
         if (route.getOperations() == null) return;
         for (RouteOperation op : route.getOperations()) {
-            if (op.getResource() != null && (op.getResourceType() == null || op.getResourceType().isBlank())) {
-                op.setResourceType(op.getResource().getResourceType());
+            if (op.getProcess() != null) {
+                if (op.getProcessCode() == null || op.getProcessCode().isBlank()) {
+                    op.setProcessCode(op.getProcess().getCode());
+                }
+                if (op.getResource() == null && op.getProcess().getRequiredResource() != null) {
+                    op.setResource(op.getProcess().getRequiredResource());
+                }
             }
-            if (op.getProcess() != null && (op.getProcessType() == null || op.getProcessType().isBlank())) {
-                op.setProcessType(op.getProcess().getProcessType());
+            if (op.getResource() != null) {
+                if (op.getResourceName() == null || op.getResourceName().isBlank()) {
+                    op.setResourceName(op.getResource().getResourceName());
+                }
+                if (op.getResourceType() == null || op.getResourceType().isBlank()) {
+                    op.setResourceType(op.getResource().getResourceType());
+                }
+            }
+            if (op.getProcess() != null) {
+                if (op.getResource() != null && "Vendor".equalsIgnoreCase(op.getResource().getResourceType())) {
+                    op.setProcessType("Outsource");
+                } else if (op.getProcessType() == null || op.getProcessType().isBlank()) {
+                    op.setProcessType(op.getProcess().getProcessType() != null ? op.getProcess().getProcessType() : "Insource");
+                }
             }
         }
     }
@@ -212,14 +255,32 @@ public class PlanningService {
             if (processIdVal != null && !String.valueOf(processIdVal).isBlank()) {
                 try {
                     Optional<ProcessMaster> p = processRepo.findById(Long.parseLong(String.valueOf(processIdVal)));
-                    p.ifPresent(pm -> line.put("process", pm));
+                    p.ifPresent(pm -> {
+                        line.put("process", pm);
+                        line.put("processCode", pm.getCode());
+                        if (line.get("resource") == null && pm.getRequiredResource() != null) {
+                            line.put("resource", pm.getRequiredResource());
+                            line.put("resourceName", pm.getRequiredResource().getResourceName());
+                            line.put("resourceType", pm.getRequiredResource().getResourceType());
+                        }
+                        if (line.get("processType") == null || String.valueOf(line.get("processType")).isBlank()) {
+                            line.put("processType", pm.getProcessType());
+                        }
+                    });
                 } catch (Exception ignored) {}
             }
             Object resourceIdVal = line.remove("resourceId");
             if (resourceIdVal != null && !String.valueOf(resourceIdVal).isBlank()) {
                 try {
                     Optional<ResourceMaster> r = resourceRepo.findById(Long.parseLong(String.valueOf(resourceIdVal)));
-                    r.ifPresent(rm -> line.put("resource", rm));
+                    r.ifPresent(rm -> {
+                        line.put("resource", rm);
+                        line.put("resourceName", rm.getResourceName());
+                        line.put("resourceType", rm.getResourceType());
+                        if ("Vendor".equalsIgnoreCase(rm.getResourceType())) {
+                            line.put("processType", "Outsource");
+                        }
+                    });
                 } catch (Exception ignored) {}
             }
         }
@@ -664,7 +725,7 @@ public class PlanningService {
     private void validateWorkOrderBeforeCreate(Map<String, Object> body) {
         // V1: Sales Order is mandatory
         if (body.get("salesOrderId") == null && body.get("sourceDocNo") == null) {
-            // Soft enforcement — allow for backward compat but warn
+            throw new IllegalArgumentException("Sales Order is mandatory.");
         }
         // V2: Production Qty is mandatory
         BigDecimal prodQty = body.containsKey("productionQty") && body.get("productionQty") != null
@@ -710,10 +771,10 @@ public class PlanningService {
                 throw new IllegalStateException("BOM must be APPROVED before releasing Work Order.");
             }
         }
-        // V5: Active Route Sheet must exist for item_code
+        // V5: Active Route Sheet must exist for item_code (route sheets use RELEASED status)
         if (wo.getRouteId() == null && wo.getItemCode() != null) {
             List<?> activeRoutes = em.createQuery(
-                "SELECT r.id FROM RouteSheet r WHERE r.itemCode = :itemCode AND r.status = 'APPROVED'")
+                "SELECT r.id FROM RouteSheet r WHERE r.itemCode = :itemCode AND r.status = 'RELEASED'")
                 .setParameter("itemCode", wo.getItemCode()).setMaxResults(1).getResultList();
             if (activeRoutes.isEmpty()) {
                 throw new IllegalStateException("Active Route Sheet not found for item: " + wo.getItemCode());
@@ -721,8 +782,8 @@ public class PlanningService {
         }
         if (wo.getRouteId() != null) {
             Optional<RouteSheet> route = routeRepo.findById(wo.getRouteId());
-            if (route.isPresent() && !"APPROVED".equals(route.get().getStatus())) {
-                throw new IllegalStateException("Route Sheet must be APPROVED before releasing Work Order.");
+            if (route.isPresent() && !"RELEASED".equals(route.get().getStatus())) {
+                throw new IllegalStateException("Route Sheet must be RELEASED before releasing Work Order.");
             }
         }
     }
@@ -1540,6 +1601,88 @@ public class PlanningService {
         return toReportMap(results);
     }
 
+    @Transactional(readOnly = true)
+    public Map<String, Object> getRouteSheetResourceUtilizationReport(Map<String, String> q) {
+        List<ResourceMaster> activeResources = resourceRepo.findByActiveTrue();
+        List<RouteSheet> routes = routeRepo.findAll();
+
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (ResourceMaster res : activeResources) {
+            long assignedOpsCount = 0;
+            BigDecimal totalSetup = BigDecimal.ZERO;
+            BigDecimal totalCycle = BigDecimal.ZERO;
+
+            for (RouteSheet rs : routes) {
+                if (rs.getOperations() != null) {
+                    for (RouteOperation op : rs.getOperations()) {
+                        if (op.getResource() != null && op.getResource().getId().equals(res.getId())) {
+                            assignedOpsCount++;
+                            if (op.getSetupTime() != null) totalSetup = totalSetup.add(op.getSetupTime());
+                            if (op.getCycleTime() != null) totalCycle = totalCycle.add(op.getCycleTime());
+                        }
+                    }
+                }
+            }
+
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("resourceId", res.getId());
+            row.put("resourceCode", res.getResourceCode());
+            row.put("resourceName", res.getResourceName());
+            row.put("resourceType", res.getResourceType());
+            row.put("department", res.getDepartment());
+            row.put("capacity", res.getCapacity());
+            row.put("capacityUom", res.getCapacityUom());
+            row.put("assignedOperationsCount", assignedOpsCount);
+            row.put("totalSetupTimeMin", totalSetup);
+            row.put("totalCycleTimeMin", totalCycle);
+            row.put("totalTimeMin", totalSetup.add(totalCycle));
+            row.put("status", res.getStatus());
+            rows.add(row);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("content", rows);
+        result.put("totalElements", rows.size());
+        return result;
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> getRouteSheetOutsourceReport(Map<String, String> q) {
+        List<RouteSheet> routes = routeRepo.findAll();
+        List<Map<String, Object>> rows = new ArrayList<>();
+
+        for (RouteSheet rs : routes) {
+            if (rs.getOperations() == null) continue;
+            for (RouteOperation op : rs.getOperations()) {
+                boolean isOutsource = "Outsource".equalsIgnoreCase(op.getProcessType())
+                        || op.isSubcontractFlag()
+                        || (op.getResource() != null && "Vendor".equalsIgnoreCase(op.getResource().getResourceType()));
+                if (isOutsource) {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("routeId", rs.getId());
+                    row.put("routeNumber", rs.getRouteNumber());
+                    row.put("itemCode", rs.getItemCode());
+                    row.put("itemRevision", rs.getItemRevision());
+                    row.put("routeStatus", rs.getStatus());
+                    row.put("sequenceNo", op.getSequenceNo());
+                    row.put("processCode", op.getProcessCode());
+                    row.put("processName", op.getProcess() != null ? op.getProcess().getName() : op.getProcessCode());
+                    row.put("resourceName", op.getResourceName() != null ? op.getResourceName() : (op.getResource() != null ? op.getResource().getResourceName() : "—"));
+                    row.put("resourceType", op.getResourceType());
+                    row.put("processType", op.getProcessType() != null ? op.getProcessType() : "Outsource");
+                    row.put("setupTime", op.getSetupTime());
+                    row.put("cycleTime", op.getCycleTime());
+                    row.put("inspectionRequired", op.isInspectionRequired());
+                    row.put("remarks", op.getRemarks());
+                    rows.add(row);
+                }
+            }
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("content", rows);
+        result.put("totalElements", rows.size());
+        return result;
+    }
+
     private Map<String, Object> toReportMap(List<?> entities) {
         List<Map<String, Object>> rows = new ArrayList<>();
         for (Object e : entities) {
@@ -1550,6 +1693,88 @@ public class PlanningService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("content", rows);
         result.put("totalElements", rows.size());
+        return result;
+    }
+
+    /** FRD §6.1: Return active Sales Orders with pending qty for the WO SO picker. */
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getActiveSOsForWO() {
+        List<SalesOrder> sos = em.createQuery(
+            "SELECT so FROM SalesOrder so WHERE so.status IN ('APPROVED','RELEASED') AND so.deleted = false ORDER BY so.docNo",
+            SalesOrder.class).getResultList();
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (SalesOrder so : sos) {
+            boolean hasPendingLines = false;
+            if (so.getLines() != null) {
+                for (SalesOrderItem item : so.getLines()) {
+                    if (item.getPendingQty() != null && item.getPendingQty().compareTo(BigDecimal.ZERO) > 0) {
+                        hasPendingLines = true;
+                        break;
+                    }
+                }
+            }
+            if (!hasPendingLines && (so.getPendingQty() == null || so.getPendingQty().compareTo(BigDecimal.ZERO) <= 0)) {
+                continue;
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", so.getId());
+            row.put("docNo", so.getDocNo());
+            row.put("customerCode", so.getCustomerCode());
+            row.put("customer", so.getCustomer());
+            row.put("deliveryDate", so.getDeliveryDate());
+            row.put("customerRequiredDate", so.getCustomerRequiredDate());
+            row.put("pendingQty", so.getPendingQty());
+
+            List<Map<String, Object>> lineRows = new ArrayList<>();
+            if (so.getLines() != null) {
+                for (SalesOrderItem item : so.getLines()) {
+                    BigDecimal pending = item.getPendingQty() != null ? item.getPendingQty() : BigDecimal.ZERO;
+                    if (pending.compareTo(BigDecimal.ZERO) <= 0) continue;
+                    Map<String, Object> lr = new LinkedHashMap<>();
+                    lr.put("id", item.getId());
+                    lr.put("itemName", item.getItemName());
+                    lr.put("description", item.getDescription());
+                    lr.put("orderQty", item.getOrderQty());
+                    lr.put("pendingQty", item.getPendingQty());
+                    lr.put("drawingNumber", item.getDrawingNumber());
+                    lr.put("drawingRevision", item.getDrawingRevision());
+                    lr.put("uom", item.getUom());
+                    lineRows.add(lr);
+                }
+            }
+            row.put("lines", lineRows);
+            result.add(row);
+        }
+        return result;
+    }
+
+    /** FRD §6.1: Find active BOM (APPROVED) and active Route Sheet (RELEASED) for an item. */
+    @Transactional(readOnly = true)
+    public Map<String, Object> getActiveBomAndRoute(String itemCode) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (itemCode == null || itemCode.isBlank()) return result;
+
+        List<?> boms = em.createQuery(
+            "SELECT b FROM ProductionBOM b WHERE b.itemCode = :itemCode AND b.status = 'APPROVED' AND b.deleted = false ORDER BY b.id DESC")
+            .setParameter("itemCode", itemCode).setMaxResults(1).getResultList();
+        if (!boms.isEmpty()) {
+            ProductionBOM bom = (ProductionBOM) boms.get(0);
+            result.put("bomId", bom.getId());
+            result.put("bomCode", bom.getBomNumber());
+            result.put("bomRevision", bom.getBomVersion());
+        }
+
+        List<?> routes = em.createQuery(
+            "SELECT r FROM RouteSheet r WHERE r.itemCode = :itemCode AND r.status = 'RELEASED' AND r.deleted = false ORDER BY r.id DESC")
+            .setParameter("itemCode", itemCode).setMaxResults(1).getResultList();
+        if (!routes.isEmpty()) {
+            RouteSheet route = (RouteSheet) routes.get(0);
+            result.put("routeId", route.getId());
+            result.put("routeSheetCode", route.getRouteNumber());
+            result.put("routeRevision", route.getRouteVersion());
+        }
+
         return result;
     }
 }
