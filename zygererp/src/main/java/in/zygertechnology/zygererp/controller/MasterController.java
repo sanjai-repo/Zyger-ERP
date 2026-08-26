@@ -266,8 +266,8 @@ public class MasterController {
     private Map<String,Object> itemToMap(ItemMaster i) {
         Map<String,Object> m = new LinkedHashMap<>();
         m.put("id", i.getId()); m.put("code", i.getCode()); m.put("description", i.getDescription());
-        m.put("uom", i.getUom()); m.put("category", i.getCategory()); m.put("active", i.isActive());
-        m.put("itemType", i.getItemType()); m.put("drawingNumber", i.getDrawingNumber());
+        m.put("name", i.getName()); m.put("uom", i.getUom()); m.put("category", i.getCategory()); m.put("active", i.isActive());
+        m.put("itemType", i.getItemType()); m.put("weight", i.getWeight()); m.put("drawingNumber", i.getDrawingNumber());
         m.put("hsnCode", i.getHsnCode()); m.put("batchControl", i.getBatchControl());
         m.put("inspectionRequired", i.getInspectionRequired()); m.put("reorderPoint", i.getReorderPoint());
         m.put("minOrderQty", i.getMinOrderQty()); m.put("safetyStock", i.getSafetyStock());

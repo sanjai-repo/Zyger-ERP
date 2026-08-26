@@ -196,9 +196,9 @@ export default function BomMasterScreen() {
 
   const loadItems = useCallback(async () => {
     try {
-      const { data } = await apiClient.get('/v1/master/items', { params: { size: 500, page: 0, active: true } });
+      const { data } = await apiClient.get('/master/items', { params: { size: 500, page: 0, active: true } });
       const list = (data.content ?? data ?? []).map((i: Record<string, unknown>) => ({
-        id: i.id as number, code: i.code as string, name: i.name as string,
+        id: i.id as number, code: i.code as string, name: (i.name as string) || (i.description as string) || '',
         weight: (i.weight as number) || 0, uom: (i.uom as string) || 'PCS',
         itemType: (i.itemType as string) || '', active: i.active as boolean,
       }));
