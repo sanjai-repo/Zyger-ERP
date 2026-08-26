@@ -801,4 +801,147 @@ public class PrintService {
         t.addCell(total);
         return t;
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // FRS §5.4 FR-23/FR-24: BOM PDF
+    // ═══════════════════════════════════════════════════════════════
+
+    public byte[] bom(Map<String, Object> doc) {
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            Document pdf = new Document(PageSize.A4, 40, 40, 44, 44);
+            PdfWriter.getInstance(pdf, baos);
+            pdf.open();
+
+            PdfPTable titleBar = new PdfPTable(1);
+            titleBar.setWidthPercentage(100);
+            PdfPCell tc = new PdfPCell(new Phrase("BILL OF MATERIALS",
+                    FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, Color.WHITE)));
+            tc.setBackgroundColor(DARK);
+            tc.setPadding(12);
+            tc.setHorizontalAlignment(Element.ALIGN_CENTER);
+            titleBar.addCell(tc);
+            pdf.add(titleBar);
+            pdf.add(spacer(4));
+
+            pdf.add(section("HEADER", doc));
+
+            PdfPTable details = new PdfPTable(4);
+            details.setWidthPercentage(100);
+            details.setWidths(new float[]{18, 32, 18, 32});
+            field(details, "BOM No", str(doc.get("bomNumber")));
+            field(details, "Item Code", str(doc.get("itemCode")));
+            field(details, "Item Type", str(doc.get("itemType")));
+            field(details, "Base Qty", num(doc.get("baseQuantity")));
+            field(details, "Version", str(doc.get("bomVersion")));
+            field(details, "Weight", num(doc.get("weight")));
+            field(details, "Status", str(doc.get("status")));
+            field(details, "Specifications", str(doc.get("specifications")));
+            pdf.add(details);
+            pdf.add(spacer(6));
+
+            pdf.add(section("COMPONENT LIST", doc));
+            PdfPTable t = new PdfPTable(7);
+            t.setWidthPercentage(100);
+            t.setWidths(new float[]{6, 8, 14, 14, 18, 18, 22});
+            header(t, "#");
+            header(t, "Level");
+            header(t, "Component");
+            header(t, "Revision");
+            header(t, "Qty");
+            header(t, "Total Wt");
+            header(t, "Remarks");
+
+            int seq = 1;
+            for (Object o : lines(doc)) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> line = (Map<String, Object>) o;
+                cell(t, String.valueOf(seq++), false);
+                cell(t, str(line.get("bomLevel")), false);
+                cell(t, str(line.get("componentItemCode")), false);
+                cell(t, str(line.get("componentRevision")), false);
+                cell(t, num(line.get("quantityPer")), true);
+                cell(t, num(line.get("totalWeight")), true);
+                cell(t, str(line.get("remarks")), false);
+            }
+            pdf.add(t);
+            pdf.add(spacer(12));
+            pdf.add(signatures());
+            pdf.close();
+            return baos.toByteArray();
+        } catch (Exception e) {
+            log.error("BOM PDF generation failed", e);
+            throw new IllegalStateException("PDF print failed", e);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // FRS: Route Sheet PDF
+    // ═══════════════════════════════════════════════════════════════
+
+    public byte[] routeSheet(Map<String, Object> doc) {
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            Document pdf = new Document(PageSize.A4, 40, 40, 44, 44);
+            PdfWriter.getInstance(pdf, baos);
+            pdf.open();
+
+            PdfPTable titleBar = new PdfPTable(1);
+            titleBar.setWidthPercentage(100);
+            PdfPCell tc = new PdfPCell(new Phrase("ROUTE SHEET",
+                    FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, Color.WHITE)));
+            tc.setBackgroundColor(DARK);
+            tc.setPadding(12);
+            tc.setHorizontalAlignment(Element.ALIGN_CENTER);
+            titleBar.addCell(tc);
+            pdf.add(titleBar);
+            pdf.add(spacer(4));
+
+            pdf.add(section("HEADER", doc));
+
+            PdfPTable details = new PdfPTable(4);
+            details.setWidthPercentage(100);
+            details.setWidths(new float[]{18, 32, 18, 32});
+            field(details, "Route No", str(doc.get("routeNumber")));
+            field(details, "Item Code", str(doc.get("itemCode")));
+            field(details, "Item Type", str(doc.get("itemType")));
+            field(details, "Revision", str(doc.get("routeVersion")));
+            field(details, "Base Qty", num(doc.get("baseQuantity")));
+            field(details, "Status", str(doc.get("status")));
+            field(details, "Total Setup", num(doc.get("totalSetupTime")));
+            field(details, "Total Cycle", num(doc.get("totalCycleTime")));
+            pdf.add(details);
+            pdf.add(spacer(6));
+
+            pdf.add(section("OPERATION SEQUENCE", doc));
+            PdfPTable t = new PdfPTable(7);
+            t.setWidthPercentage(100);
+            t.setWidths(new float[]{8, 14, 14, 14, 14, 14, 22});
+            header(t, "Seq");
+            header(t, "Process");
+            header(t, "Resource");
+            header(t, "Type");
+            header(t, "Setup(min)");
+            header(t, "Cycle(min)");
+            header(t, "QC");
+
+            for (Object o : lines(doc)) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> line = (Map<String, Object>) o;
+                cell(t, num(line.get("sequenceNo")), true);
+                cell(t, str(line.get("processCode")), false);
+                cell(t, str(line.get("resourceName")), false);
+                cell(t, str(line.get("resourceType")), false);
+                cell(t, num(line.get("setupTime")), true);
+                cell(t, num(line.get("cycleTime")), true);
+                cell(t, Boolean.TRUE.equals(line.get("inspectionRequired")) ? "Yes" : "No", false);
+            }
+            pdf.add(t);
+            pdf.add(spacer(12));
+            pdf.add(signatures());
+            pdf.close();
+            return baos.toByteArray();
+        } catch (Exception e) {
+            log.error("Route Sheet PDF generation failed", e);
+            throw new IllegalStateException("PDF print failed", e);
+        }
+    }
 }

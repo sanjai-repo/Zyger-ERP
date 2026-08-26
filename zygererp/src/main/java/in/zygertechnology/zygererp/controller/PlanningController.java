@@ -143,6 +143,37 @@ public class PlanningController {
                 .body(pdf);
     }
 
+    // ── FRS §5.4 FR-23/FR-24: BOM Print/PDF ──
+
+    @GetMapping("/production-bom/{id}/print")
+    ResponseEntity<byte[]> printBom(@PathVariable Long id) {
+        Map<String, Object> doc = svc.getRow("production-bom", id);
+        byte[] pdf = printService.bom(doc);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=BOM-" + String.valueOf(doc.get("bomNumber")) + ".pdf")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdf);
+    }
+
+    // ── FRS FR-09: BOM Multi-level Tree ──
+
+    @GetMapping("/production-bom/{id}/tree")
+    Map<String, Object> bomTree(@PathVariable Long id) {
+        return planning.getBomTree(id);
+    }
+
+    // ── FRS: Route Sheet Print/PDF ──
+
+    @GetMapping("/route-sheet/{id}/print")
+    ResponseEntity<byte[]> printRouteSheet(@PathVariable Long id) {
+        Map<String, Object> doc = svc.getRow("route-sheet", id);
+        byte[] pdf = printService.routeSheet(doc);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=RS-" + String.valueOf(doc.get("routeNumber")) + ".pdf")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdf);
+    }
+
     // ── FRS §19.3: Status History ──
 
     @GetMapping("/work-order/{id}/status-history")

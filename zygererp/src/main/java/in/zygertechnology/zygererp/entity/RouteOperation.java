@@ -54,12 +54,12 @@ public class RouteOperation implements LineEntity {
     @Column(name = "manpower_count") Integer manpowerCount;
     @Column(length = 300) String remarks;
 
-    @OneToMany(mappedBy = "routeOperation", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "routeOperation", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     @Builder.Default
     List<RouteOperationTool> tools = new ArrayList<>();
 
     /** FRS §3.3: inspection parameters for this operation */
-    @OneToMany(mappedBy = "routeOperation", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "routeOperation", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     @Builder.Default
     List<RouteOperationInspection> inspections = new ArrayList<>();
 

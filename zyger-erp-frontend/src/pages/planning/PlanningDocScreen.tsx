@@ -123,7 +123,10 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
 
   const doc = documentQuery.data;
   const genericStatus = String(doc?.status ?? 'DRAFT');
-  const editable = !isViewOnly && (!documentId || ['DRAFT', 'REJECTED'].includes(genericStatus));
+  const isRouteSheet = config.docType === 'route-sheet';
+  const editable = !isViewOnly && (!documentId || (isRouteSheet
+    ? ['DRAFT'].includes(genericStatus)
+    : ['DRAFT', 'REJECTED'].includes(genericStatus)));
   const isBusy = createMutation.isPending || updateMutation.isPending || actionMutation.isPending || deleteMutation.isPending;
   const rows = listQuery.data?.content ?? [];
   const totalElements = listQuery.data?.totalElements ?? 0;
@@ -309,7 +312,7 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
   return (
     <>
       <div className="pg-head"><h1>{isViewOnly ? 'View' : documentId ? 'Edit' : 'Add'} {config.title} \u2014 {docNo}</h1><p>{config.subtitle}</p></div>
-      <div className="note"><span className="material-symbols-rounded">info</span><span>Workflow: DRAFT {'\u2192'} SUBMITTED {'\u2192'} APPROVED \u2022 Only DRAFT/REJECTED records are editable</span></div>
+      <div className="note"><span className="material-symbols-rounded">info</span><span>{isRouteSheet ? 'Workflow: DRAFT \u2192 RELEASED \u2192 UNDER_REVISION \u2022 Only DRAFT records are editable' : 'Workflow: DRAFT \u2192 SUBMITTED \u2192 APPROVED \u2022 Only DRAFT/REJECTED records are editable'}</span></div>
       <form onSubmit={(e) => e.preventDefault()}>
         <div className="panel">
           <div className="panel-h"><h2><span className="material-symbols-rounded">description</span> Header</h2>
@@ -318,11 +321,24 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
                 {documentId && !isViewOnly && genericStatus === 'DRAFT' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'submit', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">send</span> Submit</button>}
                 {documentId && !isViewOnly && genericStatus === 'SUBMITTED' && <button type="button" className="btn btn-sm btn-g" onClick={() => setActionModal({ action: 'approve', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">thumb_up</span> Approve</button>}
                 {documentId && !isViewOnly && genericStatus === 'SUBMITTED' && <button type="button" className="btn btn-sm btn-d" onClick={() => setActionModal({ action: 'reject', danger: true })} disabled={isBusy}><span className="material-symbols-rounded">thumb_down</span> Reject</button>}
+                {isRouteSheet && documentId && !isViewOnly && genericStatus === 'DRAFT' && <button type="button" className="btn btn-sm btn-g" onClick={() => runAction('release')} disabled={isBusy}><span className="material-symbols-rounded">rocket_launch</span> Release</button>}
+                {isRouteSheet && documentId && !isViewOnly && (genericStatus === 'RELEASED' || genericStatus === 'UNDER_REVISION') && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'revise', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">edit_note</span> Revise</button>}
+                {isRouteSheet && documentId && !isViewOnly && (genericStatus === 'RELEASED' || genericStatus === 'UNDER_REVISION') && <button type="button" className="btn btn-sm btn-d" onClick={() => runAction('obsolete')} disabled={isBusy}><span className="material-symbols-rounded">archive</span> Obsolete</button>}
                 {documentId && editable && genericStatus !== 'DRAFT' && <button type="button" className="btn btn-sm" onClick={() => runAction('reopen')} disabled={isBusy}><span className="material-symbols-rounded">restart_alt</span> Reopen</button>}
                 {documentId && !isViewOnly && ['DRAFT', 'SUBMITTED', 'APPROVED'].includes(genericStatus) && <button type="button" className="btn btn-sm btn-d" onClick={() => setActionModal({ action: 'cancel', danger: true })} disabled={isBusy}><span className="material-symbols-rounded">block</span> Cancel</button>}
                 <button type="button" className="btn btn-sm" title="Audit History" onClick={() => setAuditOpen(true)}>
                   <span className="material-symbols-rounded">history</span> Audit
                 </button>
+                {documentId && (config.docType === 'production-bom' || config.docType === 'route-sheet' || config.docType === 'work-order') && (
+                  <a href={`/api/v1/planning/${config.docType}/${documentId}/print`} target="_blank" rel="noopener noreferrer" className="btn btn-sm" title="Print PDF">
+                    <span className="material-symbols-rounded">print</span> Print
+                  </a>
+                )}
+                {documentId && config.docType === 'production-bom' && (
+                  <a href={`/api/v1/planning/production-bom/${documentId}/tree`} target="_blank" rel="noopener noreferrer" className="btn btn-sm" title="View BOM Tree">
+                    <span className="material-symbols-rounded">account_tree</span> Tree
+                  </a>
+                )}
                 <StatusBadge status={genericStatus} />
               </div>
             )}

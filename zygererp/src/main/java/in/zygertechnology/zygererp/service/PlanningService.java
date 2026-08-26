@@ -366,6 +366,7 @@ public class PlanningService {
         newRs.setBaseQuantity(source.getBaseQuantity());
         newRs.setBaseUom(source.getBaseUom());
         newRs.setEffectiveFrom(LocalDate.now());
+        newRs.setStatus("DRAFT");
         // Bump revision
         int newRev = (source.getRevisionNo() != null ? source.getRevisionNo() : 0) + 1;
         newRs.setRevisionNo(newRev);
@@ -866,6 +867,10 @@ public class PlanningService {
     @Transactional
     public ProductionBOM copyBom(String sourceBomCode, Map<String, Object> overrides, String user) {
         ProductionBOM source = bomRepo.findByBomNumber(sourceBomCode);
+        if (source == null) {
+            var candidates = bomRepo.findByItemCodeAndIsActiveTrue(sourceBomCode);
+            if (candidates != null && !candidates.isEmpty()) source = candidates.get(0);
+        }
         if (source == null) throw new IllegalArgumentException("Source BOM not found: " + sourceBomCode);
 
         ProductionBOM newBom = new ProductionBOM();
@@ -1076,6 +1081,63 @@ public class PlanningService {
             return wo;
         }
         throw new IllegalStateException("Failed to create Work Order.");
+    }
+
+    /** FRS FR-09: Multi-level recursive tree loading for Semi-FG components */
+    @Transactional(readOnly = true)
+    public Map<String, Object> getBomTree(Long bomId) {
+        ProductionBOM bom = (ProductionBOM) docs.get("production-bom", bomId);
+        Map<String, Object> root = new LinkedHashMap<>();
+        root.put("id", bom.getId());
+        root.put("bomNumber", bom.getBomNumber());
+        root.put("itemCode", bom.getItemCode());
+        root.put("itemType", bom.getItemType());
+        root.put("level", 0);
+        root.put("levelPath", "");
+        root.put("quantityPer", bom.getBaseQuantity());
+        root.put("totalWeight", bom.getWeight());
+        List<Map<String, Object>> children = new ArrayList<>();
+        if (bom.getLines() != null) {
+            int seq = 1;
+            for (ProductionBOMLine line : bom.getLines()) {
+                if (Boolean.TRUE.equals(line.getIsDeleted())) continue;
+                Map<String, Object> node = buildBomTreeNode(line, seq++, "0");
+                children.add(node);
+            }
+        }
+        root.put("children", children);
+        return root;
+    }
+
+    private Map<String, Object> buildBomTreeNode(ProductionBOMLine line, int seq, String parentPath) {
+        Map<String, Object> node = new LinkedHashMap<>();
+        String levelPath = parentPath + "." + seq;
+        node.put("lineNo", line.getLineNo());
+        node.put("componentItemCode", line.getComponentItemCode());
+        node.put("componentRevision", line.getComponentRevision());
+        node.put("description", line.getDescription());
+        node.put("quantityPer", line.getQuantityPer());
+        node.put("weightPerQty", line.getWeightPerQty());
+        node.put("totalWeight", line.getTotalWeight());
+        node.put("level", levelPath.split("\\.").length);
+        node.put("levelPath", levelPath.substring(1));
+
+        // FRS FR-09: recursively load child BOM for Semi-FG components
+        List<Map<String, Object>> children = new ArrayList<>();
+        if (line.getChildBomId() != null) {
+            try {
+                ProductionBOM childBom = bomRepo.findById(line.getChildBomId()).orElse(null);
+                if (childBom != null && childBom.getLines() != null) {
+                    int childSeq = 1;
+                    for (ProductionBOMLine childLine : childBom.getLines()) {
+                        if (Boolean.TRUE.equals(childLine.getIsDeleted())) continue;
+                        children.add(buildBomTreeNode(childLine, childSeq++, levelPath));
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        node.put("children", children);
+        return node;
     }
 
     @Transactional(readOnly = true)
