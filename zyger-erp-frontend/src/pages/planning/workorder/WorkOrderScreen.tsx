@@ -222,15 +222,23 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
 
   useEffect(() => { if (documentId && documentQuery.data) fetchSummary(); }, [documentId, documentQuery.data, fetchSummary]);
 
-  const viewBom = () => {
+  const viewBom = useCallback(() => {
     const bomId = form.bomId;
-    if (bomId) openTab({ id: 'bom-master', label: 'BOM', icon: 'account_tree', component: null as any, props: { initialDocId: bomId, viewOnly: true } });
-  };
+    if (!bomId) return;
+    import('../../../config/screenRegistry').then(({ getScreenComponent }) => {
+      const Comp = getScreenComponent('bom-master');
+      openTab({ id: `bom-master-${bomId}`, label: 'BOM', icon: 'account_tree', component: Comp, props: { initialDocId: bomId, viewOnly: true } });
+    });
+  }, [form.bomId, openTab]);
 
-  const viewRoute = () => {
+  const viewRoute = useCallback(() => {
     const routeId = form.routeId;
-    if (routeId) openTab({ id: 'route-sheet', label: 'Route Sheet', icon: 'route', component: null as any, props: { initialDocId: routeId, viewOnly: true } });
-  };
+    if (!routeId) return;
+    import('../../../config/screenRegistry').then(({ getScreenComponent }) => {
+      const Comp = getScreenComponent('route-sheet');
+      openTab({ id: `route-sheet-${routeId}`, label: 'Route Sheet', icon: 'route', component: Comp, props: { initialDocId: routeId, viewOnly: true } });
+    });
+  }, [form.routeId, openTab]);
 
   const cellValue = (row: Record<string, unknown>, field: string): string => {
     const raw = row[field]; if (raw == null) return '\u2014';
