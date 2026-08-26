@@ -990,6 +990,7 @@ function renderTreeRows(node: TreeNode, expanded: Set<string>, toggle: (path: st
       <span style={{ fontWeight: isRoot ? 700 : 500, color: '#1e293b', minWidth: 120 }}>
         {code}
       </span>
+      <span style={{ color: '#94a3b8', marginRight: 4 }}>-</span>
       <span style={{ color: '#64748b', flex: 1 }}>{desc}</span>
       <span style={{ textAlign: 'right', minWidth: 50, color: '#475569' }}>{qty}</span>
       <span style={{ textAlign: 'right', minWidth: 80, color: '#475569' }}>{wt || '\u2014'}</span>
