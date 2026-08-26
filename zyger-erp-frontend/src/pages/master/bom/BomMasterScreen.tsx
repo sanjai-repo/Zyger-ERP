@@ -883,7 +883,7 @@ export default function BomMasterScreen() {
                         <td>
                           <select className="in" value={line.componentItemCode} onChange={(e) => onComponentItemSelect(idx, e.target.value)} disabled={!isEditable}>
                             <option value="">\u2014 Select Item \u2014</option>
-                            {items.filter((i) => !line.bomLevel || i.itemType === line.bomLevel).map((i) => <option key={i.id} value={i.code}>{i.code} - {i.name}{i.weight ? ` (${i.weight} kg)` : ''}</option>)}
+                            {items.map((i) => <option key={i.id} value={i.code}>{i.code} - {i.name}{i.weight ? ` (${i.weight} kg)` : ''}</option>)}
                           </select>
                         </td>
                         <td>
