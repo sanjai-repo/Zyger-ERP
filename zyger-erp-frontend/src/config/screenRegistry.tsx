@@ -227,7 +227,7 @@ export const SCREEN_REGISTRY: Record<string, ScreenDefinition> = {
   'sales-schedule': { component: SoSchedulePage },
   'sales-dc-return': { component: DcReturnSalesPage },
   'sales-invoice-return': { component: InvoiceReturnSalesPage },
-  'production-bom': { component: BomPage },
+  'production-bom': { component: BomMasterScreen },
   'route-sheet': { component: RouteSheetPage },
   'work-order': { component: WorkOrderPage },
   'work-order-reports': { component: WorkOrderReportsScreen },
