@@ -205,10 +205,10 @@ export default function BomMasterScreen() {
 
   const loadSalesOrders = useCallback(async () => {
     try {
-      const { data } = await apiClient.get('/v1/planning/sales-order', { params: { size: 500, page: 0 } });
+      const { data } = await apiClient.get('/v1/sales/sales-order', { params: { size: 500 } });
       const list = (data.content ?? data ?? []).map((s: Record<string, unknown>) => ({
         id: s.id as number, orderNo: (s.orderNo ?? s.docNo ?? '') as string,
-        customerName: (s.customerName ?? '') as string, status: (s.status ?? '') as string,
+        customerName: (s.customerName ?? s.customerCode ?? '') as string, status: (s.status ?? '') as string,
       }));
       setSalesOrders(list);
     } catch { /* silent */ }
@@ -624,6 +624,10 @@ export default function BomMasterScreen() {
           <div className="panel">
             <div className="panel-h"><h2><span className="material-symbols-rounded">description</span> BOM Header</h2></div>
             <div className="fgrid">
+              <label className="fld"><span>BOM Code</span>
+                <input className="in" value={bom.bomNumber || bom.docNo || (editId ? '\u2014 (auto-generated on save) \u2014' : '\u2014 (generated on first save) \u2014')} readOnly tabIndex={-1} style={{ background: '#f9fafb', fontWeight: 600 }} />
+              </label>
+
               <label className="fld"><span>Sales Order No</span>
                 <select className="in" value={bom.salesOrderId ?? ''} onChange={(e) => setField('salesOrderId', e.target.value ? Number(e.target.value) : null)} disabled={!isEditable && !!editId}>
                   <option value="">\u2014 No SO (Standard BOM) \u2014</option>
