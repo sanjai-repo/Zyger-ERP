@@ -114,7 +114,7 @@ const BOM_TYPES = ['Primary', 'Alternate'];
 const emptyBom = (): Omit<BomDoc, 'id'> => ({
   docNo: '', bomNumber: '', bomVersion: '1.0', itemCode: '', itemRevision: '',
   description: '', itemType: 'FG', bomType: 'Primary',
-  baseQuantity: 1, baseUom: 'PCS', weight: 0, totalMaterialCost: 0,
+  baseQuantity: 0, baseUom: 'PCS', weight: 0, totalMaterialCost: 0,
   specifications: '', salesOrderId: null,
   effectiveFrom: new Date().toISOString().slice(0, 10), effectiveTo: '',
   approvedBy: '', releaseDate: '', obsoleteDate: '',
@@ -262,7 +262,7 @@ export default function BomMasterScreen() {
   const addLine = () => {
     const n = bom.lines.length + 1;
     const parentLevel = '1';
-    const qty = bom.baseQuantity || 1;
+    const qty = bom.baseQuantity || 0;
     setBom((p) => ({ ...p, lines: [...p.lines, { ...emptyLine(n), bomLevel: parentLevel, quantityPer: qty }] }));
   };
 
@@ -784,7 +784,15 @@ export default function BomMasterScreen() {
               </label>
 
               <label className="fld"><span>Quantity *</span>
-                <input className="in" type="number" min="0.01" step="0.01" value={bom.baseQuantity} onChange={(e) => setField('baseQuantity', parseFloat(e.target.value) || 1)} disabled={!isEditable && !!editId} />
+                <input className="in" type="number" min="0.01" step="0.01" value={bom.baseQuantity || ''} onChange={(e) => {
+                  const qty = parseFloat(e.target.value) || 0;
+                  // Sync quantity to all component rows
+                  setBom((p) => ({
+                    ...p,
+                    baseQuantity: qty,
+                    lines: p.lines.map((l) => ({ ...l, quantityPer: qty || l.quantityPer, totalWeight: (qty || l.quantityPer) * (l.weightPerQty || 0) })),
+                  }));
+                }} disabled={!isEditable && !!editId} />
               </label>
 
               <label className="fld"><span>Weight (auto)</span>
