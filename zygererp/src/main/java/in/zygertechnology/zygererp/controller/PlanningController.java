@@ -5,6 +5,7 @@ import in.zygertechnology.zygererp.service.ExportService;
 import in.zygertechnology.zygererp.service.PlanningService;
 import in.zygertechnology.zygererp.service.PrintService;
 import in.zygertechnology.zygererp.security.RequirePermission;
+import in.zygertechnology.zygererp.config.ApiEnvelope;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -38,9 +39,15 @@ public class PlanningController {
         return type;
     }
 
+    // FRS §5.1: List returns { data: [...], meta: { page, size, totalElements, totalPages } }
     @GetMapping("/{type}")
-    Map<String, Object> list(@PathVariable String type, @RequestParam Map<String, String> q) {
-        return svc.list(key(type), q);
+    ApiEnvelope<?> list(@PathVariable String type, @RequestParam Map<String, String> q) {
+        Map<String, Object> page = svc.list(key(type), q);
+        int pg = q.containsKey("page") ? Integer.parseInt(q.get("page")) : 0;
+        int sz = q.containsKey("size") ? Integer.parseInt(q.get("size")) : 8;
+        long total = page.get("totalElements") instanceof Number n ? n.longValue() : 0;
+        int totalPages = page.get("totalPages") instanceof Number n2 ? n2.intValue() : 1;
+        return ApiEnvelope.paged(page.get("content"), pg, sz, total, totalPages);
     }
 
     @PostMapping("/{type}")
@@ -48,9 +55,10 @@ public class PlanningController {
         return svc.toRow(planning.create(key(type), b, principalName(p)));
     }
 
+    // FRS §5.1: Single doc returns { data: {...} }
     @GetMapping("/{type}/{id}")
-    Map<String, Object> get(@PathVariable String type, @PathVariable Long id) {
-        return svc.getRow(key(type), id);
+    ApiEnvelope<?> get(@PathVariable String type, @PathVariable Long id) {
+        return ApiEnvelope.single(svc.getRow(key(type), id));
     }
 
     @PutMapping("/{type}/{id}")
@@ -188,6 +196,12 @@ public class PlanningController {
     @GetMapping("/work-order/{id}/status-history")
     List<Map<String, Object>> woStatusHistory(@PathVariable Long id) {
         return planning.getWorkOrderStatusHistory(id);
+    }
+
+    // FRS §10.1: Generic status history for any planning document
+    @GetMapping("/{type}/{id}/status-history")
+    List<Map<String, Object>> docStatusHistory(@PathVariable String type, @PathVariable Long id) {
+        return planning.getDocStatusHistory(key(type), id);
     }
 
     // ── FRS §3.3: Work Order Summary ──

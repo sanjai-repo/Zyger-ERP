@@ -25,7 +25,28 @@ apiClient.interceptors.request.use(
 );
 
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // FRS §5.1: Auto-unwrap { data, meta } envelope if present
+    const body = response.data;
+    if (body && typeof body === 'object' && 'data' in body && (body as Record<string, unknown>).data !== undefined) {
+      const envelope = body as { data: unknown; meta?: Record<string, unknown> };
+      // For list endpoints: merge data (content array) with meta fields so existing code still works
+      if (envelope.meta && Array.isArray(envelope.data)) {
+        response.data = {
+          content: envelope.data,
+          totalElements: envelope.meta.totalElements ?? (envelope.data as unknown[]).length,
+          totalPages: envelope.meta.totalPages ?? 1,
+          number: envelope.meta.page ?? 0,
+          size: envelope.meta.size ?? 8,
+          _meta: envelope.meta,
+        };
+      } else {
+        // For single-doc endpoints: unwrap data
+        response.data = envelope.data;
+      }
+    }
+    return response;
+  },
   async (error: AxiosError) => {
     const config = error.config as RetryableConfig | undefined;
 

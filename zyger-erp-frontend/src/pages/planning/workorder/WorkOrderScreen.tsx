@@ -18,6 +18,7 @@ import { useTabs } from '../../../contexts/TabsContext';
 import StatusBadge from '../../../components/common/StatusBadge';
 import ConfirmActionModal from '../../../components/common/ConfirmActionModal';
 import AuditHistoryDrawer from '../../../components/common/AuditHistoryDrawer';
+import ConflictModal from '../../../components/common/ConflictModal';
 import { auditEntityTypeFor } from '../../../utils/auditEntity';
 import apiClient from '../../../api/axiosClient';
 import { exportToCsv } from '../../../utils/csvExport';
@@ -106,6 +107,7 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
   const [workCenters, setWorkCenters] = useState<Array<{ code: string; name: string }>>([]);
   const [operators, setOperators] = useState<Array<{ username: string; fullName: string }>>([]);
   const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
+  const [conflictState, setConflictState] = useState<{ serverData: Record<string, unknown> | null; localData: Record<string, unknown> | null }>({ serverData: null, localData: null });
 
   const fetchPickers = useCallback(async () => {
     try {
@@ -200,7 +202,18 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
     try {
       const updated = await updateMutation.mutateAsync({ id: documentId, payload: buildPayload() });
       setForm({ ...updated }); toast(`${updated.woNumber ?? updated.docNo ?? ''} saved.`);
-    } catch (e) { toast(getApiErrorMessage(e, 'Save failed.'), 'error'); }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // FRS §5.4: Handle 409 VERSION_CONFLICT — show merge/overwrite modal
+      if (msg.startsWith('CONFLICT:')) {
+        try {
+          const { data: serverData } = await apiClient.get(`/v1/planning/work-order/${documentId}`);
+          setConflictState({ serverData, localData: buildPayload() as Record<string, unknown> });
+        } catch { toast('Version conflict detected but could not load server version.', 'error'); }
+      } else {
+        toast(getApiErrorMessage(e, 'Save failed.'), 'error');
+      }
+    }
   };
 
   const runAction = async (action: string, note?: string) => {
@@ -755,6 +768,36 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
           </div>
         </div>
       )}
+      {/* FRS §5.4: Conflict resolution modal */}
+      <ConflictModal
+        open={Boolean(conflictState.serverData)}
+        serverData={conflictState.serverData}
+        localData={conflictState.localData}
+        busy={isBusy}
+        onCancel={() => setConflictState({ serverData: null, localData: null })}
+        onOverwrite={async () => {
+          if (!documentId || !conflictState.localData) return;
+          setIsBusy(true);
+          try {
+            const { data } = await apiClient.put(`/v1/planning/work-order/${documentId}`, { ...conflictState.localData, forceOverwrite: true });
+            setForm({ ...data });
+            setConflictState({ serverData: null, localData: null });
+            toast('Overwritten successfully.', 'success');
+          } catch (e) { toast(getApiErrorMessage(e, 'Overwrite failed.'), 'error'); }
+          setIsBusy(false);
+        }}
+        onMerge={async (merged) => {
+          if (!documentId) return;
+          setIsBusy(true);
+          try {
+            const { data } = await apiClient.put(`/v1/planning/work-order/${documentId}`, { ...merged, forceOverwrite: true });
+            setForm({ ...data });
+            setConflictState({ serverData: null, localData: null });
+            toast('Merged and saved successfully.', 'success');
+          } catch (e) { toast(getApiErrorMessage(e, 'Merge save failed.'), 'error'); }
+          setIsBusy(false);
+        }}
+      />
     </>
   );
 }

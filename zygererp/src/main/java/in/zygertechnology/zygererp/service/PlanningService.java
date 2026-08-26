@@ -28,6 +28,7 @@ public class PlanningService {
     private final in.zygertechnology.zygererp.repo.WorkOrderStatusHistoryRepository woStatusHistoryRepo;
     private final ProcessMasterRepository processRepo;
     private final in.zygertechnology.zygererp.repository.ResourceMasterRepository resourceRepo;
+    private final DocStatusHistoryRepository docStatusHistoryRepo;
 
     public boolean isPlanning(String key) { return PLANNING_KEYS.contains(key); }
 
@@ -358,8 +359,9 @@ public class PlanningService {
         wo.setStatus(next);
         wo.setUpdatedAt(Instant.now());
 
-        // FRS §19.3: record status history
+        // FRS §19.3: record status history (WO-specific + generic)
         recordStatusHistory(wo, previousStatus, next, note, user);
+        recordStatusChange("work-order", wo.getId(), wo.getWoNumber(), previousStatus, next, note, user);
 
         return wo;
     }
@@ -410,6 +412,7 @@ public class PlanningService {
                 // Mark old as UNDER_REVISION
                 rs.setStatus("UNDER_REVISION");
                 rs.setUpdatedAt(Instant.now());
+                recordStatusChange("route-sheet", rs.getId(), rs.getRouteNumber(), current, "UNDER_REVISION", note, user);
                 return newRs;
             }
             case "obsolete" -> {
@@ -422,6 +425,7 @@ public class PlanningService {
         String previousStatus = rs.getStatus();
         rs.setStatus(next);
         rs.setUpdatedAt(Instant.now());
+        recordStatusChange("route-sheet", rs.getId(), rs.getRouteNumber(), current, next, note, user);
         return rs;
     }
 
@@ -558,6 +562,7 @@ public class PlanningService {
         bom.setApprovedAt(Instant.now());
         bom.setReleaseDate(LocalDate.now());
         recomputeBomWeights(bom);
+        recordStatusChange("production-bom", bom.getId(), bom.getBomNumber(), current, "APPROVED", note, user);
         return bom;
     }
 
@@ -798,6 +803,38 @@ public class PlanningService {
     }
 
     private static BigDecimal nvl(BigDecimal v) { return v == null ? BigDecimal.ZERO : v; }
+
+    /** FRS §10.1: Record status transition for any planning document. */
+    private void recordStatusChange(String docType, Long docId, String docNumber, String fromStatus, String toStatus, String reason, String user) {
+        DocStatusHistory h = new DocStatusHistory();
+        h.setDocType(docType);
+        h.setDocId(docId);
+        h.setDocNumber(docNumber);
+        h.setFromStatus(fromStatus);
+        h.setToStatus(toStatus);
+        h.setReason(reason);
+        h.setCreatedBy(user);
+        docStatusHistoryRepo.save(h);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getDocStatusHistory(String docType, Long docId) {
+        List<DocStatusHistory> history = docStatusHistoryRepo.findByDocTypeAndDocIdOrderByCreatedAtAsc(docType, docId);
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (var h : history) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", h.getId());
+            row.put("docType", h.getDocType());
+            row.put("docId", h.getDocId());
+            row.put("fromStatus", h.getFromStatus());
+            row.put("toStatus", h.getToStatus());
+            row.put("reason", h.getReason());
+            row.put("createdBy", h.getCreatedBy());
+            row.put("createdAt", h.getCreatedAt() != null ? h.getCreatedAt().toString() : null);
+            result.add(row);
+        }
+        return result;
+    }
 
     // FRS §6.3: recompute SalesOrderItem.pending_qty after WO cancel
     private void recomputeSOPendingQty(WorkOrder wo) {

@@ -16,6 +16,7 @@ import { useToast } from '../../contexts/ToastContext';
 import StatusBadge from '../../components/common/StatusBadge';
 import ConfirmActionModal from '../../components/common/ConfirmActionModal';
 import AuditHistoryDrawer from '../../components/common/AuditHistoryDrawer';
+import ConflictModal from '../../components/common/ConflictModal';
 import { auditEntityTypeFor } from '../../utils/auditEntity';
 import { exportToCsv } from '../../utils/csvExport';
 import { useFormKeyboard } from '../../hooks/useFormKeyboard';
@@ -60,6 +61,7 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
   const [processes, setProcesses] = useState<Array<Record<string, unknown>>>([]);
   const [resources, setResources] = useState<Array<Record<string, unknown>>>([]);
   const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
+  const [conflictState, setConflictState] = useState<{ serverData: Record<string, unknown> | null; localData: Record<string, unknown> | null }>({ serverData: null, localData: null });
 
   useEffect(() => { setPage(0); }, [search, status, type]);
 
@@ -251,7 +253,17 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
       const updated = await updateMutation.mutateAsync({ id: documentId, payload: buildPayload() });
       setForm({ ...updated });
       toast(`${updated.docNo ?? docType} saved.`);
-    } catch (e) { toast(getApiErrorMessage(e, 'Save failed.'), 'error'); }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.startsWith('CONFLICT:')) {
+        try {
+          const { data: serverData } = await apiClient.get(`/api/v1/planning/${docType}/${documentId}`);
+          setConflictState({ serverData, localData: buildPayload() as Record<string, unknown> });
+        } catch { toast('Version conflict detected but could not load server version.', 'error'); }
+      } else {
+        toast(getApiErrorMessage(e, 'Save failed.'), 'error');
+      }
+    }
   };
 
   const runAction = async (action: string, note?: string) => {
@@ -623,6 +635,32 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
       </form>
       <ConfirmActionModal open={Boolean(actionModal)} title={`${actionModal?.action ?? ''} ${docNo}`} body={actionModal?.action === 'approve' ? 'Approving records the action with your user in the audit trail.' : actionModal?.action === 'reject' ? 'Reason for rejection:' : actionModal?.action === 'revise' ? 'Remarks for new revision (required):' : actionModal?.action === 'cancel' ? 'This cancels the record with an audit trail.' : actionModal?.action === 'release' ? 'Release this Route Sheet? It will become read-only except Remarks.' : actionModal?.action === 'obsolete' ? 'Mark this Route Sheet as Obsolete? It will no longer be selectable for production.' : 'Submit this record for review?'} okLabel={actionModal ? actionModal.action.charAt(0).toUpperCase() + actionModal.action.slice(1) : 'Confirm'} danger={actionModal?.danger} busy={actionMutation.isPending} onClose={() => setActionModal(null)} onConfirm={(note) => actionModal && runAction(actionModal.action, note)} />
       <AuditHistoryDrawer open={auditOpen} entityType={auditEntityTypeFor(docType)} entityId={documentId ?? undefined} onClose={() => setAuditOpen(false)} />
+      {/* FRS §5.4: Conflict resolution modal */}
+      <ConflictModal
+        open={Boolean(conflictState.serverData)}
+        serverData={conflictState.serverData}
+        localData={conflictState.localData}
+        busy={isBusy}
+        onCancel={() => setConflictState({ serverData: null, localData: null })}
+        onOverwrite={async () => {
+          if (!documentId || !conflictState.localData) return;
+          try {
+            const { data } = await apiClient.put(`/api/v1/planning/${docType}/${documentId}`, { ...conflictState.localData, forceOverwrite: true });
+            setForm({ ...data });
+            setConflictState({ serverData: null, localData: null });
+            toast('Overwritten successfully.', 'success');
+          } catch (e) { toast(getApiErrorMessage(e, 'Overwrite failed.'), 'error'); }
+        }}
+        onMerge={async (merged) => {
+          if (!documentId) return;
+          try {
+            const { data } = await apiClient.put(`/api/v1/planning/${docType}/${documentId}`, { ...merged, forceOverwrite: true });
+            setForm({ ...data });
+            setConflictState({ serverData: null, localData: null });
+            toast('Merged and saved successfully.', 'success');
+          } catch (e) { toast(getApiErrorMessage(e, 'Merge save failed.'), 'error'); }
+        }}
+      />
     </>
   );
 }

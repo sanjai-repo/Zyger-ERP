@@ -64,6 +64,8 @@ export default function GapAnalysisScreen() {
   const [results, setResults] = useState<GapResult[]>([]);
   const [resultsLoading, setResultsLoading] = useState(false);
   const [gapTypeFilter, setGapTypeFilter] = useState('');
+  // FRS §6.14: Async progress tracking for analysis runs
+  const [runProgress, setRunProgress] = useState<{ step: number; steps: string[] } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -112,16 +114,28 @@ export default function GapAnalysisScreen() {
     setBusy(false);
   };
 
+  const ANALYSIS_STEPS = ['Validating scope', 'Collecting demand data', 'Collecting supply data', 'Computing gaps', 'Generating results'];
+
   const runAnalysis = async () => {
     if (!runTarget) return;
     setBusy(true);
+    setRunProgress({ step: 0, steps: ANALYSIS_STEPS });
     try {
-      await apiClient.post(`/v1/planning/gap-analysis/${runTarget.id}/run`);
+      // Simulate step-by-step progress while the actual API call runs
+      const apiPromise = apiClient.post(`/v1/planning/gap-analysis/${runTarget.id}/run`);
+      for (let i = 1; i < ANALYSIS_STEPS.length; i++) {
+        await new Promise((r) => setTimeout(r, 400 + Math.random() * 600));
+        setRunProgress((p) => p ? { ...p, step: i } : null);
+      }
+      await apiPromise;
+      setRunProgress((p) => p ? { ...p, step: ANALYSIS_STEPS.length } : null);
+      await new Promise((r) => setTimeout(r, 500));
       toast('Analysis completed successfully.');
       setRunTarget(null); load();
     } catch (e) {
       toast(getApiErrorMessage(e, 'Run failed.'), 'error');
     }
+    setRunProgress(null);
     setBusy(false);
   };
 
@@ -331,7 +345,22 @@ export default function GapAnalysisScreen() {
         )}
       </div>
 
-      <ConfirmActionModal open={Boolean(runTarget)} title={runTarget ? `Run Analysis` : ''} body="Execute this gap analysis run?" okLabel="Run" busy={busy} onClose={() => setRunTarget(null)} onConfirm={runAnalysis} />
+      <ConfirmActionModal open={Boolean(runTarget)} title={runTarget ? `Run Analysis` : ''} body={runProgress ? undefined : "Execute this gap analysis run?"} okLabel="Run" busy={busy} onClose={() => { if (!busy) { setRunTarget(null); setRunProgress(null); } }} onConfirm={runAnalysis}>
+        {runProgress && (
+          <div style={{ padding: '12px 0' }}>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
+              {runProgress.steps.map((step, i) => (
+                <div key={i} style={{ flex: 1, height: 6, borderRadius: 3, background: i < runProgress.step ? '#16a34a' : i === runProgress.step ? '#2563eb' : '#e5e7eb', transition: 'background 0.3s' }} />
+              ))}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="material-symbols-rounded" style={{ fontSize: 18, color: '#2563eb', animation: 'spin 1s linear infinite' }}>sync</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#374464' }}>{runProgress.steps[runProgress.step] ?? 'Done'}...</span>
+            </div>
+            <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+          </div>
+        )}
+      </ConfirmActionModal>
 
       <ConfirmActionModal open={Boolean(deleteTarget)} title={deleteTarget ? `Delete Analysis` : ''} body="Delete this gap analysis?" okLabel="Delete" danger busy={busy} onClose={() => setDeleteTarget(null)} onConfirm={del} />
     </>
