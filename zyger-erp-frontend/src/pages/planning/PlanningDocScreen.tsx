@@ -545,6 +545,29 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
           </div>
         )}
 
+        {/* FRS §6.1.6: Pinned weight/cost summary bar at bottom of BOM component grid */}
+        {config.docType === 'production-bom' && (documentId || lines.length > 0) && (
+          <div style={{ position: 'sticky', bottom: 0, zIndex: 10, background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: '10px 20px', display: 'flex', alignItems: 'center', gap: 32, marginBottom: 16, boxShadow: '0 -2px 8px rgba(0,0,0,0.06)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="material-symbols-rounded" style={{ fontSize: 16, color: '#0369a1' }}>scale</span>
+              <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Total Weight:</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#0c4a6e' }}>{Number(form.weight ?? 0).toFixed(3)} kg</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="material-symbols-rounded" style={{ fontSize: 16, color: '#0369a1' }}>inventory_2</span>
+              <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Components:</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#0c4a6e' }}>{lines.length}</span>
+            </div>
+            {Number(form.cost ?? 0) > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="material-symbols-rounded" style={{ fontSize: 16, color: '#0369a1' }}>payments</span>
+                <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Est. Cost:</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: '#0c4a6e' }}>{Number(form.cost ?? 0).toFixed(2)}</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {config.lines && !editable && Array.isArray(form.lines) && (form.lines as Array<Record<string, unknown>>).length > 0 && (
           <div className="panel">
             <div className="panel-h"><h2><span className="material-symbols-rounded">table_view</span> {config.lines.title}</h2></div>

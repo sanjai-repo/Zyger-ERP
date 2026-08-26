@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import apiClient from '../../../api/axiosClient';
 import { useToast } from '../../../contexts/ToastContext';
 import { getApiErrorMessage } from '../../../utils/apiError';
+import { useTabs } from '../../../contexts/TabsContext';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 interface PlanningDashboardData {
@@ -40,15 +41,21 @@ const EMPTY: PlanningDashboardData = {
 
 export default function PlanningDashboard() {
   const { toast } = useToast();
+  const { openTab } = useTabs();
   const [data, setData] = useState<PlanningDashboardData>(EMPTY);
   const [loading, setLoading] = useState(true);
+  const [pendingApprovals, setPendingApprovals] = useState<Array<Record<string, unknown>>>([]);
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       try {
-        const { data: d } = await apiClient.get('/v1/planning/dashboard');
-        setData((c) => ({ ...c, ...d }));
+        const [dashRes, pendRes] = await Promise.allSettled([
+          apiClient.get('/v1/planning/dashboard'),
+          apiClient.get('/v1/planning/pending-approvals'),
+        ]);
+        if (dashRes.status === 'fulfilled') setData((c) => ({ ...c, ...dashRes.value.data }));
+        if (pendRes.status === 'fulfilled') setPendingApprovals(pendRes.value.data as Array<Record<string, unknown>>);
       } catch (e) { toast(getApiErrorMessage(e, 'Dashboard load failed.'), 'error'); }
       setLoading(false);
     };
@@ -127,6 +134,57 @@ export default function PlanningDashboard() {
               </ResponsiveContainer>
             </div>
           </div>
+
+          {/* FRS §6.15: My Pending Approvals List */}
+          {pendingApprovals.length > 0 && (
+            <div style={{ padding: '0 20px 20px' }}>
+              <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 20 }}>
+                <h3 style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span className="material-symbols-rounded" style={{ fontSize: 18, color: '#b45309' }}>hourglass_top</span>
+                  My Pending Approvals ({pendingApprovals.length})
+                </h3>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid #e5e7eb', textAlign: 'left' }}>
+                        <th style={{ padding: '8px 12px', color: '#6b7280', fontWeight: 600 }}>Type</th>
+                        <th style={{ padding: '8px 12px', color: '#6b7280', fontWeight: 600 }}>Doc No</th>
+                        <th style={{ padding: '8px 12px', color: '#6b7280', fontWeight: 600 }}>Item / Name</th>
+                        <th style={{ padding: '8px 12px', color: '#6b7280', fontWeight: 600 }}>Created By</th>
+                        <th style={{ padding: '8px 12px', color: '#6b7280', fontWeight: 600 }}>Date</th>
+                        <th style={{ padding: '8px 12px', color: '#6b7280', fontWeight: 600 }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pendingApprovals.map((doc, idx) => {
+                        const docType = String(doc._docType ?? '');
+                        const typeLabel = docType === 'work-order' ? 'Work Order' : docType === 'production-bom' ? 'BOM' : docType === 'route-sheet' ? 'Route Sheet' : docType;
+                        const docNo = String(doc.woNumber ?? doc.bomNumber ?? doc.routeNumber ?? doc.docNo ?? `#${doc.id}`);
+                        const itemName = String(doc.itemCode ?? doc.itemDescription ?? doc.woDescription ?? '—');
+                        const createdBy = String(doc.createdBy ?? doc.submittedBy ?? '—');
+                        const createdAt = String(doc.createdAt ?? '').replace('T', ' ').slice(0, 10);
+                        const tabKey = docType === 'work-order' ? 'workorder' : docType === 'production-bom' ? 'bom' : docType === 'route-sheet' ? 'routesheet' : docType;
+                        return (
+                          <tr key={idx} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                            <td style={{ padding: '8px 12px' }}><span style={{ background: docType === 'work-order' ? '#dbeafe' : docType === 'production-bom' ? '#d1fae5' : '#fef3c7', color: docType === 'work-order' ? '#1e40af' : docType === 'production-bom' ? '#065f46' : '#92400e', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600 }}>{typeLabel}</span></td>
+                            <td style={{ padding: '8px 12px', fontWeight: 600, color: '#111827' }}>{docNo}</td>
+                            <td style={{ padding: '8px 12px', color: '#374151' }}>{itemName}</td>
+                            <td style={{ padding: '8px 12px', color: '#6b7280' }}>{createdBy}</td>
+                            <td style={{ padding: '8px 12px', color: '#6b7280' }}>{createdAt}</td>
+                            <td style={{ padding: '8px 12px' }}>
+                              <button type="button" className="btn btn-sm btn-p" onClick={() => openTab(tabKey, { initialDocId: doc.id })} style={{ fontSize: 11, padding: '2px 8px' }}>
+                                Review
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
           </>
         )}
       </div>

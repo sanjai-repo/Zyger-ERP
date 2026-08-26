@@ -325,6 +325,32 @@ public class PlanningService {
                 // FRS §6.3: recompute pending_qty on SO item
                 recomputeSOPendingQty(wo);
             }
+            case "shortClose" -> {
+                // FRS v4.0 §6.3.7: Short Close RELEASED/IN_PROCESS/ON_HOLD -> CLOSED
+                requireStatus(current, "RELEASED", "IN_PROCESS", "ON_HOLD");
+                if (note == null || note.isBlank()) {
+                    throw new IllegalArgumentException("Short Close Reason is mandatory.");
+                }
+                next = "CLOSED";
+                wo.setShortCloseReason(note);
+                wo.setClosedBy(user);
+                wo.setClosedAt(Instant.now());
+                // If not yet started, set actual dates
+                if (wo.getActualStartDate() == null) {
+                    wo.setActualStartDate(LocalDate.now());
+                    wo.setStartedBy(user);
+                    wo.setStartedAt(Instant.now());
+                }
+                if (wo.getActualEndDate() == null) {
+                    wo.setActualEndDate(LocalDate.now());
+                }
+                // Set completed qty to whatever was produced so far
+                if (wo.getCompletedQty() == null || wo.getCompletedQty().compareTo(BigDecimal.ZERO) == 0) {
+                    wo.setCompletedQty(wo.getProductionQty() != null ? wo.getProductionQty() : wo.getOrderQuantity());
+                }
+                recomputeWoBalanceQty(wo);
+                recomputeSOPendingQty(wo);
+            }
             default -> throw new IllegalArgumentException("Unknown action: " + action);
         }
 
@@ -697,16 +723,81 @@ public class PlanningService {
     }
 
     private void postActionHook(String key, DocEntity e, String action, String user) {
-        if (!"approve".equals(action)) return;
-        switch (key) {
-            case "work-order" -> {
-                if (e instanceof WorkOrder wo) {
-                    wo.setApprovedBy(user);
+        if ("approve".equals(action)) {
+            switch (key) {
+                case "work-order" -> {
+                    if (e instanceof WorkOrder wo) {
+                        wo.setApprovedBy(user);
+                    }
                 }
+                default -> {}
             }
-            default -> {}
+        }
+        // FRS §6.6: When a Shop Floor Entry is posted, update parent WO operation quantities
+        if ("post".equals(action) && "shop-floor-entry".equals(key) && e instanceof ShopFloorEntry sfe) {
+            updateWorkOrderFromShopFloor(sfe);
         }
     }
+
+    /**
+     * FRS §6.6: Accumulate posted Shop Floor Entry quantities into the parent WorkOrderOperation
+     * and recompute parent WO aggregated quantities.
+     */
+    private void updateWorkOrderFromShopFloor(ShopFloorEntry sfe) {
+        if (sfe.getWorkOrderNo() == null || sfe.getOperationSequence() == null) return;
+        // Find WorkOrder by woNumber
+        List<?> woResults = em.createQuery("SELECT w FROM WorkOrder w WHERE w.woNumber = :woNo")
+                .setParameter("woNo", sfe.getWorkOrderNo()).getResultList();
+        if (woResults.isEmpty()) return;
+        WorkOrder wo = (WorkOrder) woResults.get(0);
+
+        // Find matching WorkOrderOperation by operationSequence
+        WorkOrderOperation targetOp = null;
+        if (wo.getLines() != null) {
+            for (Object lineObj : wo.getLines()) {
+                if (lineObj instanceof WorkOrderOperation woOp) {
+                    if (woOp.getOperationSequence() != null && woOp.getOperationSequence().equals(sfe.getOperationSequence())) {
+                        targetOp = woOp;
+                        break;
+                    }
+                }
+            }
+        }
+        if (targetOp == null) return;
+
+        BigDecimal goodQty = sfe.getGoodQuantity() != null ? sfe.getGoodQuantity() : BigDecimal.ZERO;
+        BigDecimal scrapQty = sfe.getScrapQuantity() != null ? sfe.getScrapQuantity() : BigDecimal.ZERO;
+        BigDecimal reworkQty = sfe.getReworkQuantity() != null ? sfe.getReworkQuantity() : BigDecimal.ZERO;
+
+        // Accumulate quantities on the operation
+        targetOp.setCompletedQuantity(nvl(targetOp.getCompletedQuantity()).add(goodQty).add(scrapQty).add(reworkQty));
+        targetOp.setGoodQuantity(nvl(targetOp.getGoodQuantity()).add(goodQty));
+        targetOp.setScrapQuantity(nvl(targetOp.getScrapQuantity()).add(scrapQty));
+        targetOp.setReworkQuantity(nvl(targetOp.getReworkQuantity()).add(reworkQty));
+        em.merge(targetOp);
+
+        // Recompute parent WO aggregated quantities
+        BigDecimal totalCompleted = BigDecimal.ZERO;
+        BigDecimal totalGood = BigDecimal.ZERO;
+        BigDecimal totalScrap = BigDecimal.ZERO;
+        BigDecimal totalRework = BigDecimal.ZERO;
+        if (wo.getLines() != null) {
+            for (Object lineObj : wo.getLines()) {
+                if (lineObj instanceof WorkOrderOperation op) {
+                    totalCompleted = totalCompleted.add(nvl(op.getCompletedQuantity()));
+                    totalGood = totalGood.add(nvl(op.getGoodQuantity()));
+                    totalScrap = totalScrap.add(nvl(op.getScrapQuantity()));
+                    totalRework = totalRework.add(nvl(op.getReworkQuantity()));
+                }
+            }
+        }
+        wo.setCompletedQty(totalGood);
+        wo.setScrapQty(totalScrap);
+        recomputeWoBalanceQty(wo);
+        em.merge(wo);
+    }
+
+    private static BigDecimal nvl(BigDecimal v) { return v == null ? BigDecimal.ZERO : v; }
 
     // FRS §6.3: recompute SalesOrderItem.pending_qty after WO cancel
     private void recomputeSOPendingQty(WorkOrder wo) {
@@ -1294,6 +1385,22 @@ public class PlanningService {
             .getSingleResult();
         d.put("overdue", overdueCount);
         return d;
+    }
+
+    // FRS §6.15: Return documents in SUBMITTED status across planning types (pending approval)
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getPendingApprovals() {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (String key : List.of("work-order", "production-bom", "route-sheet")) {
+            Map<String, Object> page = docs.list(key, Map.of("status", "SUBMITTED", "size", "50", "page", "0"));
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> rows = (List<Map<String, Object>>) page.getOrDefault("content", List.of());
+            for (Map<String, Object> row : rows) {
+                row.put("_docType", key);
+                result.add(row);
+            }
+        }
+        return result;
     }
 
     private long countByStatus(String key, String status) {

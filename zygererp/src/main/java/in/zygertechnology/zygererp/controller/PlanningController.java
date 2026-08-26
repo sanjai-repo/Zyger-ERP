@@ -99,6 +99,12 @@ public class PlanningController {
         return planning.dashboard();
     }
 
+    // FRS §6.15: My Pending Approvals — documents awaiting current user's approval
+    @GetMapping("/pending-approvals")
+    List<Map<String, Object>> pendingApprovals() {
+        return planning.getPendingApprovals();
+    }
+
     @PostMapping("/work-order/{id}/populate")
     Map<String, Object> populateWo(@PathVariable Long id) {
         in.zygertechnology.zygererp.entity.WorkOrder wo = planning.populateFromBomAndRoute(id);

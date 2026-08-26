@@ -47,6 +47,16 @@ apiClient.interceptors.response.use(
       return Promise.reject(new Error(message));
     }
 
+    if (status === 409) {
+      const data = error.response?.data as Record<string, unknown> | undefined;
+      const code = data?.code as string;
+      if (code === 'VERSION_CONFLICT') {
+        return Promise.reject(new Error('CONFLICT:' + ((data?.detail as string) || 'This document was modified by another user.')));
+      }
+      const message = (data?.detail as string) || (data?.message as string) || 'Conflict detected.';
+      return Promise.reject(new Error(message));
+    }
+
     if (config && !error.response?.status?.toString().startsWith('4')) {
       const retries = config._retryCount ?? 0;
       if (retries < MAX_RETRIES) {

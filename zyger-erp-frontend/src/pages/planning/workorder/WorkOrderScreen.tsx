@@ -41,6 +41,31 @@ const STATUS_COLORS: Record<string, string> = {
   REJECTED: '#dc2626',
 };
 
+const sectionLabels: Record<string, string> = {
+  overview: 'Overview',
+  source: 'Source & Customer',
+  bomRoute: 'BOM & Route Links',
+  schedule: 'Schedule',
+  quantities: 'Quantities',
+  reasons: 'Reasons & Remarks',
+};
+const sectionIcons: Record<string, string> = {
+  overview: 'info',
+  source: 'person',
+  bomRoute: 'account_tree',
+  schedule: 'calendar_month',
+  quantities: 'pin',
+  reasons: 'edit_note',
+};
+const sectionFieldMap: Record<string, string[]> = {
+  overview: ['woNo', 'woType', 'priority', 'itemCode', 'itemDescription', 'itemRevision', 'drawingNumber', 'drawingRev', 'uom', 'plant', 'productionLine', 'productionDepartment', 'batchLotNo'],
+  source: ['sourceType', 'sourceDocNo', 'salesOrderId', 'salesOrderNo', 'soLineId', 'customerCode', 'customerOrderNo'],
+  bomRoute: ['bomId', 'bomRevision', 'routeId', 'routeRevision'],
+  schedule: ['dueDate', 'plannedStartDate', 'plannedEndDate', 'promisedDeliveryDate', 'actualStartDate', 'actualEndDate', 'approvedBy', 'releasedBy', 'startedBy', 'completedBy', 'closedBy'],
+  quantities: ['orderQuantity', 'productionQty', 'releasedQty', 'completedQty', 'rejectedQty', 'scrapQty', 'balanceQty', 'pendingQty', 'fgReceiptQty', 'scrapAllowancePercent'],
+  reasons: ['cancelReason', 'holdReason', 'shortCloseReason', 'remarks'],
+};
+
 type ActionModal = { action: string; danger: boolean; title?: string };
 
 export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { initialDocId?: string | number; viewOnly?: boolean }) {
@@ -67,6 +92,14 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
   const [activeTab, setActiveTab] = useState<'operations' | 'materials' | 'quantity' | 'history'>('operations');
   const [populating, setPopulating] = useState(false);
   const [summary, setSummary] = useState<Record<string, unknown> | null>(null);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
+    overview: false,
+    source: false,
+    bomRoute: true,
+    schedule: true,
+    quantities: true,
+    reasons: true,
+  });
   const [bomList, setBomList] = useState<Array<{ id: number; bomNumber: string; itemCode: string }>>([]);
   const [routeList, setRouteList] = useState<Array<{ id: number; routeNumber: string; itemCode: string }>>([]);
   const [machines, setMachines] = useState<Array<{ code: string; name: string }>>([]);
@@ -449,6 +482,7 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
                 {genericStatus === 'IN_PROCESS' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'complete', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">check_circle</span> Complete</button>}
                 {genericStatus === 'IN_PROCESS' && <button type="button" className="btn btn-sm" onClick={() => setActionModal({ action: 'hold', danger: true, title: 'Hold' })} disabled={isBusy}><span className="material-symbols-rounded">pause</span> Hold</button>}
                 {genericStatus === 'ON_HOLD' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'start', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">play_arrow</span> Resume</button>}
+                {['RELEASED', 'IN_PROCESS', 'ON_HOLD'].includes(genericStatus) && <button type="button" className="btn btn-sm btn-d" onClick={() => setActionModal({ action: 'shortClose', danger: true, title: 'Short Close' })} disabled={isBusy}><span className="material-symbols-rounded">close</span> Short Close</button>}
                 {genericStatus === 'COMPLETED' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'close', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">lock</span> Close</button>}
                 {['DRAFT', 'SUBMITTED', 'APPROVED'].includes(genericStatus) && can('planning', 'Cancel') && <button type="button" className="btn btn-sm btn-d" onClick={() => setActionModal({ action: 'cancel', danger: true })} disabled={isBusy}><span className="material-symbols-rounded">block</span> Cancel</button>}
                 <button type="button" className="btn btn-sm" title="Status History" onClick={fetchStatusHistory}>
@@ -464,65 +498,91 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
               </div>
             )}
           </div>
-          <div className="fgrid">
-            <label className="fld">
-              <span>WO No</span>
-              <input className="in" value={docNo} readOnly tabIndex={-1} style={{ fontWeight: 600, background: '#f9fafb' }} />
-            </label>
-            {config.fields.map((field) => {
-              const isBomOrRoute = field.key === 'bomId' || field.key === 'routeId';
-              const pickerOptions = field.key === 'bomId'
-                ? bomList.map((b) => `${b.id}`)
-                : field.key === 'routeId'
-                  ? routeList.map((r) => `${r.id}`)
-                  : (field.options ?? []);
-              const pickerLabels = field.key === 'bomId'
-                ? bomList.map((b) => `${b.bomNumber} \u2014 ${b.itemCode}`)
-                : field.key === 'routeId'
-                  ? routeList.map((r) => `${r.routeNumber} \u2014 ${r.itemCode}`)
-                  : pickerOptions;
-              const isProdQty = field.key === 'productionQty';
-              const isFieldReadonly = Boolean(field.readonly);
-              const isAutoDerived = isFieldReadonly && ['itemDescription', 'itemRevision', 'drawingNumber', 'drawingRev', 'uom'].includes(field.key);
-              return (
-                <label key={field.key} className={`fld ${field.span2 ? 'span2' : ''} ${isFieldError(field.key) ? 'invalid' : ''}`}>
-                  <span>{field.label}</span>
-                  {field.key === 'itemCode' ? (
-                    <select className="in" disabled={!editable} value={String(form[field.key] ?? '')}
-                      onChange={(e) => {
-                        const code = e.target.value;
-                        const it = items.find((i) => String(i.code) === code);
-                        // FRS v4.0 §3: auto-derive item fields from ItemMaster on WO item select
-                        setForm((c) => ({
-                          ...c,
-                          itemCode: code,
-                          itemDescription: it ? String(it.description ?? '') : c.itemDescription,
-                          itemRevision: it && it.revision ? String(it.revision) : c.itemRevision,
-                          drawingNumber: it && it.drawingNumber ? String(it.drawingNumber) : c.drawingNumber,
-                          drawingRev: it && it.drawingRevision ? String(it.drawingRevision) : c.drawingRev,
-                          uom: it && it.uom ? String(it.uom) : c.uom,
-                        }));
-                      }}>
-                      <option value="">{'\u2014 Select Item \u2014'}</option>
-                      {items.map((it) => (
-                        <option key={String(it.id)} value={String(it.code ?? '')}>{String(it.code ?? '')} — {String(it.description ?? '')}</option>
-                      ))}
-                    </select>
-                  ) : field.type === 'textarea' ? (
-                    <textarea className="in" rows={2} readOnly={!editable || isFieldReadonly} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))} />
-                  ) : (field.type === 'select' || isBomOrRoute) ? (
-                    <select className="in" disabled={!editable || isFieldReadonly} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))}>
-                      <option value="">\u2014 Select \u2014</option>
-                      {pickerOptions.map((o, i) => <option key={o} value={o}>{pickerLabels[i] ?? o}</option>)}
-                    </select>
-                  ) : (
-                    <input className="in" type={field.type ?? 'text'} readOnly={!editable || isFieldReadonly} value={String(form[field.key] ?? '')} onChange={(e) => isProdQty && editable ? handleProductionQtyChange(e.target.value) : setForm((c) => ({ ...c, [field.key]: e.target.value }))} style={isAutoDerived ? { background: '#f9fafb', fontStyle: 'italic' } : undefined} />
-                  )}
-                  {isAutoDerived && <span style={{ fontSize: '10px', color: '#9ca3af', marginTop: '2px' }}>Auto-derived</span>}
-                </label>
-              );
-            })}
-          </div>
+          {/* FRS §6.3.8: Collapsible header sections */}
+          {(['overview', 'source', 'bomRoute', 'schedule', 'quantities', 'reasons'] as const).map((sectionKey) => {
+            const isCollapsed = collapsedSections[sectionKey];
+            const sectionFields = sectionFieldMap[sectionKey];
+            const sectionLabel = sectionLabels[sectionKey];
+            const sectionIcon = sectionIcons[sectionKey];
+            const anyFieldVisible = sectionFields.some((k) => k === 'woNo' || config.fields.some((f) => f.key === k));
+            if (!anyFieldVisible) return null;
+            return (
+              <div key={sectionKey} style={{ marginBottom: 8, border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden' }}>
+                <button type="button" onClick={() => setCollapsedSections((c) => ({ ...c, [sectionKey]: !c[sectionKey] }))}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '8px 14px', background: '#f9fafb', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#374151', textAlign: 'left' }}>
+                  <span className="material-symbols-rounded" style={{ fontSize: 16, transition: 'transform 0.2s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0)' }}>expand_more</span>
+                  <span className="material-symbols-rounded" style={{ fontSize: 16, color: '#6b7280' }}>{sectionIcon}</span>
+                  {sectionLabel}
+                </button>
+                {!isCollapsed && (
+                  <div className="fgrid" style={{ padding: '8px 14px 12px', borderTop: '1px solid #e5e7eb' }}>
+                    {sectionFields.map((fieldKey) => {
+                      if (fieldKey === 'woNo') {
+                        return (
+                          <label key="woNo" className="fld">
+                            <span>WO No</span>
+                            <input className="in" value={docNo} readOnly tabIndex={-1} style={{ fontWeight: 600, background: '#f9fafb' }} />
+                          </label>
+                        );
+                      }
+                      const field = config.fields.find((f) => f.key === fieldKey);
+                      if (!field) return null;
+                      const isBomOrRoute = field.key === 'bomId' || field.key === 'routeId';
+                      const pickerOptions = field.key === 'bomId'
+                        ? bomList.map((b) => `${b.id}`)
+                        : field.key === 'routeId'
+                          ? routeList.map((r) => `${r.id}`)
+                          : (field.options ?? []);
+                      const pickerLabels = field.key === 'bomId'
+                        ? bomList.map((b) => `${b.bomNumber} \u2014 ${b.itemCode}`)
+                        : field.key === 'routeId'
+                          ? routeList.map((r) => `${r.routeNumber} \u2014 ${r.itemCode}`)
+                          : pickerOptions;
+                      const isProdQty = field.key === 'productionQty';
+                      const isFieldReadonly = Boolean(field.readonly);
+                      const isAutoDerived = isFieldReadonly && ['itemDescription', 'itemRevision', 'drawingNumber', 'drawingRev', 'uom'].includes(field.key);
+                      return (
+                        <label key={field.key} className={`fld ${field.span2 ? 'span2' : ''} ${isFieldError(field.key) ? 'invalid' : ''}`}>
+                          <span>{field.label}</span>
+                          {field.key === 'itemCode' ? (
+                            <select className="in" disabled={!editable} value={String(form[field.key] ?? '')}
+                              onChange={(e) => {
+                                const code = e.target.value;
+                                const it = items.find((i) => String(i.code) === code);
+                                setForm((c) => ({
+                                  ...c,
+                                  itemCode: code,
+                                  itemDescription: it ? String(it.description ?? '') : c.itemDescription,
+                                  itemRevision: it && it.revision ? String(it.revision) : c.itemRevision,
+                                  drawingNumber: it && it.drawingNumber ? String(it.drawingNumber) : c.drawingNumber,
+                                  drawingRev: it && it.drawingRevision ? String(it.drawingRevision) : c.drawingRev,
+                                  uom: it && it.uom ? String(it.uom) : c.uom,
+                                }));
+                              }}>
+                              <option value="">{'\u2014 Select Item \u2014'}</option>
+                              {items.map((it) => (
+                                <option key={String(it.id)} value={String(it.code ?? '')}>{String(it.code ?? '')} — {String(it.description ?? '')}</option>
+                              ))}
+                            </select>
+                          ) : field.type === 'textarea' ? (
+                            <textarea className="in" rows={2} readOnly={!editable || isFieldReadonly} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))} />
+                          ) : (field.type === 'select' || isBomOrRoute) ? (
+                            <select className="in" disabled={!editable || isFieldReadonly} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))}>
+                              <option value="">\u2014 Select \u2014</option>
+                              {pickerOptions.map((o, i) => <option key={o} value={o}>{pickerLabels[i] ?? o}</option>)}
+                            </select>
+                          ) : (
+                            <input className="in" type={field.type ?? 'text'} readOnly={!editable || isFieldReadonly} value={String(form[field.key] ?? '')} onChange={(e) => isProdQty && editable ? handleProductionQtyChange(e.target.value) : setForm((c) => ({ ...c, [field.key]: e.target.value }))} style={isAutoDerived ? { background: '#f9fafb', fontStyle: 'italic' } : undefined} />
+                          )}
+                          {isAutoDerived && <span style={{ fontSize: '10px', color: '#9ca3af', marginTop: '2px' }}>Auto-derived</span>}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {documentId && summary && (
@@ -653,6 +713,7 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
           actionModal?.action === 'start' ? 'Start production on this work order?' :
           actionModal?.action === 'complete' ? 'Mark this work order as completed?' :
           actionModal?.action === 'close' ? 'Close this work order? This cannot be undone.' :
+          actionModal?.action === 'shortClose' ? 'Short Close Reason (required):' :
           actionModal?.action === 'hold' ? 'Reason for hold (required):' :
           actionModal?.action === 'reject' ? 'Reason for rejection:' :
           actionModal?.action === 'cancel' ? 'Cancel this work order?' :

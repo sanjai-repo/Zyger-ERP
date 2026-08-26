@@ -12,10 +12,23 @@ import java.net.URI;
 import java.util.List;
 import java.util.Map;
 
+import jakarta.persistence.OptimisticLockException;
+
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(OptimisticLockException.class)
+    public ProblemDetail handleOptimisticLock(OptimisticLockException ex) {
+        log.warn("Optimistic lock conflict: {}", ex.getMessage());
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT, "This document was modified by another user. Please reload and try again.");
+        pd.setTitle("Version Conflict");
+        pd.setType(URI.create("/errors/version-conflict"));
+        pd.setProperty("code", "VERSION_CONFLICT");
+        return pd;
+    }
 
     @ExceptionHandler(IllegalStateException.class)
     public ProblemDetail handleIllegalState(IllegalStateException ex) {
