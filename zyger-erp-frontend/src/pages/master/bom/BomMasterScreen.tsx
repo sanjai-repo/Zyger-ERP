@@ -266,6 +266,15 @@ export default function BomMasterScreen() {
     setBom((p) => ({ ...p, lines: [...p.lines, { ...emptyLine(n), bomLevel: parentLevel, quantityPer: qty }] }));
   };
 
+  const insertLineAt = (atIdx: number) => {
+    const qty = bom.baseQuantity || 1;
+    setBom((p) => {
+      const lines = [...p.lines];
+      lines.splice(atIdx, 0, { ...emptyLine(atIdx + 1), bomLevel: '1', quantityPer: qty });
+      return { ...p, lines: lines.map((l, i) => ({ ...l, lineNo: i + 1 })) };
+    });
+  };
+
   const removeLine = (idx: number) => setBom((p) => ({
     ...p,
     lines: p.lines.filter((_, i) => i !== idx).map((l, i) => ({ ...l, lineNo: i + 1 })),
@@ -886,7 +895,10 @@ export default function BomMasterScreen() {
                           <input className="in" value={line.remarks || ''} onChange={(e) => setLine(idx, 'remarks', e.target.value)} disabled={!isEditable} style={{ width: 120 }} />
                         </td>
                         {isEditable && (
-                          <td>
+                          <td style={{ display: 'flex', gap: 4 }}>
+                            <button type="button" className="ibtn" onClick={() => insertLineAt(idx + 1)} disabled={busy} title="Insert row below" style={{ fontSize: '0.8rem', padding: '2px 6px' }}>
+                              <span className="material-symbols-rounded">add</span>
+                            </button>
                             <button type="button" className="ibtn danger" onClick={() => removeLine(idx)} disabled={busy} title="Delete row">
                               <span className="material-symbols-rounded">delete</span>
                             </button>
