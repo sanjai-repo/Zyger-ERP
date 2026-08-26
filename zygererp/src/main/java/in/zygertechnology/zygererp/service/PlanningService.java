@@ -26,24 +26,32 @@ public class PlanningService {
     private final BomRevisionHistoryRepository bomRevisionHistoryRepo;
     private final jakarta.persistence.EntityManager em;
     private final in.zygertechnology.zygererp.repo.WorkOrderStatusHistoryRepository woStatusHistoryRepo;
+    private final ProcessMasterRepository processRepo;
+    private final in.zygertechnology.zygererp.repository.ResourceMasterRepository resourceRepo;
 
     public boolean isPlanning(String key) { return PLANNING_KEYS.contains(key); }
 
     @Transactional
     public DocEntity create(String key, Map<String, Object> body, String user) {
         body.put("createdBy", user);
+        if ("route-sheet".equals(key)) preResolveRouteLineIds(body);
         validateBeforeCreate(key, body);
         DocEntity e = docs.create(key, body, user);
         applyCreationDefaults(key, e);
         if ("production-bom".equals(key) && e instanceof ProductionBOM bom) {
+            // FRS v4.0 Changelog #4: auto-derive itemType from ItemMaster
+            autoDeriveBomItemType(bom);
             recomputeBomWeights(bom);
             recomputeBomTotalMaterialCost(bom);
         }
         if ("route-sheet".equals(key) && e instanceof RouteSheet route) {
+            resolveRouteRefs(route);
             recomputeRouteDerivedFields(route);
             recomputeRouteTotals(route);
         }
         if ("work-order".equals(key) && e instanceof WorkOrder wo) {
+            // FRS v4.0 §3: auto-derive item fields from ItemMaster
+            autoDeriveWoItemFields(wo);
             recomputeWoBalanceQty(wo);
         }
         return e;
@@ -51,6 +59,7 @@ public class PlanningService {
 
     @Transactional
     public DocEntity update(String key, Long id, Map<String, Object> body, String user) {
+        if ("route-sheet".equals(key)) preResolveRouteLineIds(body);
         validateBeforeUpdate(key, id, body);
         DocEntity e = docs.update(key, id, body, user);
         if ("production-bom".equals(key) && e instanceof ProductionBOM bom) {
@@ -58,6 +67,7 @@ public class PlanningService {
             recomputeBomTotalMaterialCost(bom);
         }
         if ("route-sheet".equals(key) && e instanceof RouteSheet route) {
+            resolveRouteRefs(route);
             recomputeRouteDerivedFields(route);
             recomputeRouteTotals(route);
         }
@@ -163,6 +173,8 @@ public class PlanningService {
                     if (rt.getBaseUom() == null) rt.setBaseUom("PCS");
                     if (rt.getRouteVersion() == null) rt.setRouteVersion("1.0");
                     if (rt.getEffectiveFrom() == null) rt.setEffectiveFrom(LocalDate.now());
+                    if (rt.getRevisionNo() == null) rt.setRevisionNo(0);
+                    if (rt.getItemRevision() == null) rt.setItemRevision("Rev 0");
                 }
             }
             case "work-order" -> {
@@ -173,6 +185,42 @@ public class PlanningService {
                 }
             }
             case "shop-floor-entry" -> {}
+        }
+    }
+
+    private void resolveRouteRefs(RouteSheet route) {
+        if (route.getOperations() == null) return;
+        for (RouteOperation op : route.getOperations()) {
+            if (op.getResource() != null && (op.getResourceType() == null || op.getResourceType().isBlank())) {
+                op.setResourceType(op.getResource().getResourceType());
+            }
+            if (op.getProcess() != null && (op.getProcessType() == null || op.getProcessType().isBlank())) {
+                op.setProcessType(op.getProcess().getProcessType());
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void preResolveRouteLineIds(Map<String, Object> body) {
+        Object linesObj = body.get("lines");
+        if (!(linesObj instanceof List)) return;
+        for (Object lineObj : (List<?>) linesObj) {
+            if (!(lineObj instanceof Map)) continue;
+            Map<String, Object> line = (Map<String, Object>) lineObj;
+            Object processIdVal = line.remove("processId");
+            if (processIdVal != null && !String.valueOf(processIdVal).isBlank()) {
+                try {
+                    Optional<ProcessMaster> p = processRepo.findById(Long.parseLong(String.valueOf(processIdVal)));
+                    p.ifPresent(pm -> line.put("process", pm));
+                } catch (Exception ignored) {}
+            }
+            Object resourceIdVal = line.remove("resourceId");
+            if (resourceIdVal != null && !String.valueOf(resourceIdVal).isBlank()) {
+                try {
+                    Optional<ResourceMaster> r = resourceRepo.findById(Long.parseLong(String.valueOf(resourceIdVal)));
+                    r.ifPresent(rm -> line.put("resource", rm));
+                } catch (Exception ignored) {}
+            }
         }
     }
 
@@ -205,6 +253,8 @@ public class PlanningService {
             }
             case "approve" -> {
                 requireStatus(current, "SUBMITTED");
+                // FRS v4.0 X-07: segregation of duties — approver != submitter
+                validateSegregationOfDuty(wo.getSubmittedBy(), user);
                 next = "APPROVED";
                 wo.setApprovedBy(user);
             }
@@ -384,6 +434,7 @@ public class PlanningService {
         // Bump revision
         int newRev = (source.getRevisionNo() != null ? source.getRevisionNo() : 0) + 1;
         newRs.setRevisionNo(newRev);
+        newRs.setItemRevision("Rev " + newRev);
         newRs.setRouteVersion("Rev " + newRev);
         newRs.setRemarks(remarks);
         newRs.setCreatedBy(user);
@@ -423,23 +474,28 @@ public class PlanningService {
         ProductionBOM bom = (ProductionBOM) docs.get("production-bom", id);
         String current = bom.getStatus();
         requireStatus(current, "DRAFT");
-        // V-06/V-21: one active standard BOM per item (non-SO)
-        if (bom.getSalesOrderId() == null) {
-            List<ProductionBOM> activeBoms = bomRepo.findByItemCodeAndIsActiveTrue(bom.getItemCode());
-            for (ProductionBOM existing : activeBoms) {
-                if (!existing.getId().equals(id) && !"INACTIVE".equals(existing.getStatus())) {
-                    throw new IllegalStateException("Active BOM already exists for the selected item.");
+
+        // FRS v4.0 §3 §0: Auto-derive itemType from ItemMaster if not set
+        autoDeriveBomItemType(bom);
+
+        // FRS v4.0 X-06: only one APPROVED + Primary BOM per (Item Code) at a time
+        if ("Primary".equalsIgnoreCase(bom.getBomType()) || bom.getBomType() == null) {
+            if (bom.getSalesOrderId() == null) {
+                long approvedCount = bomRepo.countByItemCodeAndStatusAndBomTypeAndIdNot(
+                    bom.getItemCode(), "APPROVED", "Primary", id);
+                if (approvedCount > 0) {
+                    throw new IllegalStateException("An Approved Primary BOM already exists for item: " + bom.getItemCode()
+                        + ". Only one Approved Primary BOM is allowed per item.");
                 }
-            }
-        } else {
-            // V-22: one active BOM per (SO, Item)
-            List<ProductionBOM> soBoms = bomRepo.findByItemCodeAndSalesOrderIdAndIsActiveTrue(bom.getItemCode(), bom.getSalesOrderId());
-            for (ProductionBOM existing : soBoms) {
-                if (!existing.getId().equals(id)) {
-                    throw new IllegalStateException("BOM already exists for the selected Sales Order and Item.");
+            } else {
+                long approvedSoCount = bomRepo.countByItemCodeAndSalesOrderIdAndStatusAndIdNot(
+                    bom.getItemCode(), bom.getSalesOrderId(), "APPROVED", id);
+                if (approvedSoCount > 0) {
+                    throw new IllegalStateException("An Approved BOM already exists for this Item and Sales Order.");
                 }
             }
         }
+
         // V-20: at least one component required
         List<ProductionBOMLine> activeLines = bom.getLines().stream()
             .filter(l -> !Boolean.TRUE.equals(l.getIsDeleted()))
@@ -473,9 +529,61 @@ public class PlanningService {
         bom.setStatus("APPROVED");
         bom.setIsActive(true);
         bom.setApprovedBy(user);
-        bom.setUpdatedAt(Instant.now());
+        bom.setApprovedAt(Instant.now());
+        bom.setReleaseDate(LocalDate.now());
         recomputeBomWeights(bom);
         return bom;
+    }
+
+    /** FRS v4.0 Changelog #4, #9: Auto-derive BOM itemType, description from ItemMaster */
+    private void autoDeriveBomItemType(ProductionBOM bom) {
+        if (bom.getItemCode() == null || bom.getItemCode().isBlank()) return;
+        try {
+            List<?> items = em.createQuery(
+                "SELECT i FROM ItemMaster i WHERE i.code = :code")
+                .setParameter("code", bom.getItemCode()).setMaxResults(1).getResultList();
+            if (!items.isEmpty()) {
+                ItemMaster item = (ItemMaster) items.get(0);
+                if (item.getItemType() != null) bom.setItemType(item.getItemType());
+                if (item.getDescription() != null && (bom.getDescription() == null || bom.getDescription().isBlank())) {
+                    bom.setDescription(item.getDescription());
+                }
+                if (item.getRevision() != null && (bom.getItemRevision() == null || bom.getItemRevision().isBlank())) {
+                    bom.setItemRevision(item.getRevision());
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    /** FRS v4.0 §3 §0: Auto-derive WO item fields from ItemMaster */
+    private void autoDeriveWoItemFields(WorkOrder wo) {
+        if (wo.getItemCode() == null || wo.getItemCode().isBlank()) return;
+        try {
+            List<?> items = em.createQuery(
+                "SELECT i FROM ItemMaster i WHERE i.code = :code")
+                .setParameter("code", wo.getItemCode()).setMaxResults(1).getResultList();
+            if (!items.isEmpty()) {
+                ItemMaster item = (ItemMaster) items.get(0);
+                if (item.getDescription() != null) wo.setItemDescription(item.getDescription());
+                if (item.getRevision() != null && (wo.getItemRevision() == null || wo.getItemRevision().isBlank())) {
+                    wo.setItemRevision(item.getRevision());
+                }
+                if (item.getDrawingNumber() != null && (wo.getDrawingNumber() == null || wo.getDrawingNumber().isBlank())) {
+                    wo.setDrawingNumber(item.getDrawingNumber());
+                }
+                if (item.getDrawingRevision() != null && (wo.getDrawingRev() == null || wo.getDrawingRev().isBlank())) {
+                    wo.setDrawingRev(item.getDrawingRevision());
+                }
+                if (item.getUom() != null && (wo.getUom() == null || wo.getUom().isBlank())) wo.setUom(item.getUom());
+            }
+        } catch (Exception ignored) {}
+    }
+
+    /** FRS v4.0 §3: Segregation of duties — approver cannot be the submitter */
+    private void validateSegregationOfDuty(String submitter, String approver) {
+        if (submitter != null && submitter.equals(approver)) {
+            throw new IllegalStateException("Segregation of duty violation: the submitter cannot also approve this document.");
+        }
     }
 
     /** FRS §10.6/§11.5: Snapshot BOM and Route revision on release */
@@ -995,6 +1103,8 @@ public class PlanningService {
                         mat.setComponentItemCode(bomLine.getComponentItemCode());
                         mat.setComponentRevision(bomLine.getComponentRevision());
                         mat.setDescription(bomLine.getDescription());
+                        // FRS v4.0 Changelog #8: traceability link to source BOM line
+                        mat.setBomLineId(bomLine.getId());
                         BigDecimal qtyPer = bomLine.getQuantityPer() == null ? BigDecimal.ZERO : bomLine.getQuantityPer();
                         BigDecimal scrap = bomLine.getScrapPercentage() == null ? BigDecimal.ZERO : bomLine.getScrapPercentage();
                         BigDecimal required = qtyPer.multiply(scaleFactor)
@@ -1035,6 +1145,8 @@ public class PlanningService {
                         woOp.setOperationDescription(rtOp.getOperationDescription());
                         woOp.setWorkCenterCode(rtOp.getWorkCenterCode());
                         woOp.setMachineCode(rtOp.getMachineCode());
+                        // FRS v4.0 Changelog #7: traceability link to source Route operation
+                        woOp.setRouteOperationId(rtOp.getId());
                         woOp.setPlannedQuantity(orderQty);
                         woOp.setCompletedQuantity(BigDecimal.ZERO);
                         woOp.setGoodQuantity(BigDecimal.ZERO);
@@ -1173,7 +1285,14 @@ public class PlanningService {
         d.put("inProcess", countByStatus("work-order", "IN_PROCESS"));
         d.put("completed", countByStatus("work-order", "COMPLETED"));
         d.put("closed", countByStatus("work-order", "CLOSED"));
+        d.put("cancelled", countByStatus("work-order", "CANCELLED"));
         d.put("totalShopFloor", docs.count("shop-floor-entry"));
+        // FRS v4.0 §6.15: count overdue WOs
+        long overdueCount = em.createQuery(
+            "SELECT COUNT(w) FROM WorkOrder w WHERE w.plannedEndDate < CURRENT_DATE " +
+            "AND w.status NOT IN ('COMPLETED', 'CLOSED', 'CANCELLED')", Long.class)
+            .getSingleResult();
+        d.put("overdue", overdueCount);
         return d;
     }
 

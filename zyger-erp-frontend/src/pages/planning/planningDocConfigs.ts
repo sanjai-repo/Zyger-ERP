@@ -5,6 +5,7 @@ export interface FieldDef {
   options?: string[];
   required?: boolean;
   span2?: boolean;
+  readonly?: boolean;
 }
 
 export interface LineFieldDef {
@@ -13,6 +14,7 @@ export interface LineFieldDef {
   type?: 'text' | 'number' | 'date' | 'select';
   options?: string[];
   readonly?: boolean;
+  required?: boolean;
 }
 
 export interface ColumnDef {
@@ -63,10 +65,11 @@ export const PRODUCTION_BOM_CONFIG: DocScreenConfig = {
   statusOptions: ['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'CANCELLED'],
   fields: [
     { key: 'itemCode', label: 'Item Code *', type: 'text', required: true },
-    { key: 'itemRevision', label: 'Revision', type: 'text' },
+    { key: 'itemRevision', label: 'Revision', type: 'text', readonly: true },
+    { key: 'revisionLabel', label: 'Revision Label', type: 'text', readonly: true },
     { key: 'bomVersion', label: 'Version', type: 'text' },
     { key: 'description', label: 'Description', type: 'text' },
-    { key: 'itemType', label: 'Item Type', type: 'select', options: ['FG', 'SEMI_FG', 'RM'] },
+    { key: 'itemType', label: 'Item Type', type: 'select', options: ['FG', 'SEMI_FG', 'RM'], readonly: true },
     { key: 'bomType', label: 'BOM Type', type: 'select', options: ['Primary', 'Alternate'] },
     { key: 'salesOrderId', label: 'Sales Order ID', type: 'number' },
     { key: 'baseQuantity', label: 'Base Quantity', type: 'number' },
@@ -123,57 +126,32 @@ export const ROUTE_SHEET_CONFIG: DocScreenConfig = {
     { label: 'Doc No', field: 'docNo' },
     { label: 'Date', field: 'date' },
     { label: 'Item', field: 'itemCode' },
+    { label: 'Type', field: 'itemType' },
     { label: 'Revision', field: 'itemRevision' },
-    { label: 'Version', field: 'routeVersion' },
     { label: 'Status', field: 'status' },
   ],
   statusField: 'status',
   statusOptions: ['DRAFT', 'RELEASED', 'UNDER_REVISION', 'OBSOLETE'],
   fields: [
-    { key: 'itemCode', label: 'Item Code *', type: 'text', required: true },
-    { key: 'itemRevision', label: 'Revision', type: 'text' },
-    { key: 'routeVersion', label: 'Version', type: 'text' },
-    { key: 'description', label: 'Description', type: 'text' },
-    { key: 'baseQuantity', label: 'Base Quantity', type: 'number' },
-    { key: 'baseUom', label: 'UOM', type: 'text' },
-    { key: 'effectiveFrom', label: 'Effective From', type: 'date' },
-    { key: 'effectiveTo', label: 'Effective To', type: 'date' },
-    { key: 'approvedBy', label: 'Approved By', type: 'text' },
+    { key: 'itemCode', label: 'Item *', type: 'text', required: true },
+    { key: 'itemType', label: 'Item Type', type: 'text', readonly: true },
+    { key: 'itemRevision', label: 'Revision *', type: 'text', required: true },
+    { key: 'revisionLabel', label: 'Revision Label', type: 'text', readonly: true },
+    { key: 'status', label: 'Status', type: 'select', options: ['DRAFT', 'RELEASED', 'UNDER_REVISION', 'OBSOLETE'], readonly: true },
     { key: 'remarks', label: 'Remarks', type: 'textarea', span2: true },
   ],
   lines: {
     title: 'Operations',
     fields: [
-      { key: 'sequenceNo', label: 'Seq # *', type: 'number' },
-      { key: 'operationCode', label: 'Operation *', type: 'text' },
-      { key: 'operationDescription', label: 'Description', type: 'text' },
-      { key: 'workCenterCode', label: 'Work Center', type: 'text' },
-      { key: 'machineCode', label: 'Machine', type: 'text' },
-      { key: 'alternateMachineCode', label: 'Alt Machine', type: 'text' },
-      { key: 'processId', label: 'Process *', type: 'text' },
-      { key: 'resourceId', label: 'Resource (FK)', type: 'number' },
-      { key: 'processType', label: 'Process Type', type: 'text' },
-      { key: 'resourceName', label: 'Resource Name', type: 'text' },
-      { key: 'resourceType', label: 'Resource Type', type: 'text' },
-      { key: 'setupTime', label: 'Setup (min)', type: 'number' },
-      { key: 'cycleTime', label: 'Cycle (min)', type: 'number' },
-      { key: 'runBasis', label: 'Run Basis', type: 'select', options: ['Per Piece', 'Per Batch', 'Per Hour'] },
-      { key: 'overlapPercentage', label: 'Overlap %', type: 'number' },
-      { key: 'queueTime', label: 'Queue (min)', type: 'number' },
-      { key: 'moveTime', label: 'Move (min)', type: 'number' },
-      { key: 'inspectionRequired', label: 'Inspection', type: 'select', options: ['true', 'false'] },
-      { key: 'inspectionType', label: 'Inspection Type', type: 'select', options: ['IPQC', 'FAI', 'LAST_OFF', 'LINE'] },
-      { key: 'subcontractFlag', label: 'Subcontract', type: 'select', options: ['true', 'false'] },
-      { key: 'toolRequired', label: 'Tool Required', type: 'select', options: ['true', 'false'] },
-      { key: 'fixtureRequired', label: 'Fixture Required', type: 'select', options: ['true', 'false'] },
-      { key: 'skillRequired', label: 'Skill Required', type: 'text' },
-      { key: 'ncProgramReference', label: 'NC Program', type: 'text' },
-      { key: 'standardCostRate', label: 'Cost Rate', type: 'number' },
-      { key: 'operationType', label: 'Operation Type', type: 'select', options: ['Machining', 'Inspection', 'Assembly', 'Packing', 'Subcontract'] },
-      { key: 'teardownTime', label: 'Teardown (min)', type: 'number' },
-      { key: 'subcontractVendorId', label: 'Subcontract Vendor ID', type: 'number' },
-      { key: 'skillGradeRequired', label: 'Skill Grade', type: 'text' },
-      { key: 'manpowerCount', label: 'Manpower', type: 'number' },
+      { key: 'sequenceNo', label: 'Seq # *', type: 'number', required: true },
+      { key: 'processId', label: 'Process *', type: 'text', required: true },
+      { key: 'processCode', label: 'Process Code', type: 'text', readonly: true },
+      { key: 'resourceId', label: 'Resource', type: 'text' },
+      { key: 'resourceType', label: 'Resource Type', type: 'text', readonly: true },
+      { key: 'processType', label: 'Process Type', type: 'text', readonly: true },
+      { key: 'setupTime', label: 'Setup (min) *', type: 'number', required: true },
+      { key: 'cycleTime', label: 'Cycle (min) *', type: 'number', required: true },
+      { key: 'inspectionRequired', label: 'QC Required *', type: 'select', options: ['Yes', 'No'], required: true },
       { key: 'remarks', label: 'Remarks', type: 'text' },
     ],
   },
@@ -217,10 +195,10 @@ export const WORK_ORDER_CONFIG: DocScreenConfig = {
   statusOptions: ['DRAFT', 'RELEASED', 'UNDER_REVISION', 'OBSOLETE'],
   fields: [
     { key: 'itemCode', label: 'Item Code *', type: 'text', required: true },
-    { key: 'itemDescription', label: 'Item Description', type: 'text' },
-    { key: 'itemRevision', label: 'Revision', type: 'text' },
-    { key: 'drawingNumber', label: 'Drawing No', type: 'text' },
-    { key: 'drawingRev', label: 'Drawing Rev', type: 'text' },
+    { key: 'itemDescription', label: 'Item Description', type: 'text', readonly: true },
+    { key: 'itemRevision', label: 'Revision', type: 'text', readonly: true },
+    { key: 'drawingNumber', label: 'Drawing No', type: 'text', readonly: true },
+    { key: 'drawingRev', label: 'Drawing Rev', type: 'text', readonly: true },
     { key: 'orderQuantity', label: 'Order Quantity *', type: 'number', required: true },
     { key: 'productionQty', label: 'Production Qty', type: 'number' },
     { key: 'releasedQty', label: 'Released Qty', type: 'number' },

@@ -32,5 +32,19 @@ public class RouteSheet extends BaseDoc implements DocEntity {
     @OneToMany(mappedBy = "doc", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     List<RouteOperation> operations = new ArrayList<>();
 
-    @Override public List<RouteOperation> getLines() { return operations; }
+    /** FRS v4.0 Changelog #5: derived revision label, always system-controlled */
+    @com.fasterxml.jackson.annotation.JsonProperty("revisionLabel")
+    public String getRevisionLabel() {
+        return "Rev " + (revisionNo != null ? revisionNo : 0);
+    }
+
+    @Override
+    @com.fasterxml.jackson.annotation.JsonProperty("lines")
+    public List<RouteOperation> getLines() { return operations; }
+
+    @com.fasterxml.jackson.annotation.JsonSetter("lines")
+    public void setLines(List<RouteOperation> lines) {
+        this.operations.clear();
+        if (lines != null) this.operations.addAll(lines);
+    }
 }

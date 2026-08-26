@@ -59,6 +59,9 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
   const [includeInactive, setIncludeInactive] = useState(false);
   const [processes, setProcesses] = useState<Array<Record<string, unknown>>>([]);
   const [resources, setResources] = useState<Array<Record<string, unknown>>>([]);
+  const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
+
+  useEffect(() => { setPage(0); }, [search, status, type]);
 
   useEffect(() => {
     apiClient.get('/master/processes').then((r) => {
@@ -69,6 +72,11 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
     apiClient.get('/master/resources').then((r) => {
       const d = r.data as unknown;
       setResources(Array.isArray(d) ? (d as Array<Record<string, unknown>>) : []);
+    }).catch(() => {});
+    apiClient.get('/master/items').then((r) => {
+      const d = r.data as { content?: unknown[] } | unknown[];
+      const list = Array.isArray(d) ? d : (d?.content ?? []);
+      setItems(list as Array<Record<string, unknown>>);
     }).catch(() => {});
   }, []);
 
@@ -107,8 +115,6 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  useEffect(() => { setPage(0); }, [search, status, type]);
-
   useEffect(() => {
     setSelectedLineIdx(null);
     setChildGridData([]);
@@ -129,7 +135,7 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
     if (initializedForId === key) return;
     setInitializedForId(key);
     setForm({ ...doc });
-    setLines(Array.isArray(doc.lines) ? (doc.lines as Array<Record<string, unknown>>).map((l) => ({ ...l })) : []);
+    setLines(Array.isArray(doc.lines) ? (doc.lines as Array<Record<string, unknown>>).map((l) => ({ ...l, inspectionRequired: l.inspectionRequired === true ? 'Yes' : l.inspectionRequired === false ? 'No' : l.inspectionRequired })) : []);
   }, [documentQuery.data, documentId, initializedForId]);
 
   useEffect(() => {
@@ -185,10 +191,16 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
       else if (field.type === 'checkbox') payload[field.key] = Boolean(raw);
       else payload[field.key] = raw == null ? null : String(raw);
     }
+    if (isRouteSheet) {
+      if (!payload.routeVersion) payload.routeVersion = '1.0';
+      if (!payload.baseQuantity) payload.baseQuantity = 1;
+      if (!payload.baseUom) payload.baseUom = 'PCS';
+      if (!payload.description) payload.description = '';
+    }
     if (config.lines) {
       payload.lines = lines
         .filter((l) => String(l[config.lines!.fields[0].key] ?? '').trim() !== '')
-        .map((l) => { const out = { ...l }; delete out.id; delete out.qty; return out; });
+        .map((l) => { const out = { ...l }; delete out.id; delete out.qty; if (out.inspectionRequired === 'Yes') out.inspectionRequired = true; else if (out.inspectionRequired === 'No') out.inspectionRequired = false; return out; });
     }
     return payload;
   };
@@ -202,12 +214,22 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
       const seqs = lines.map((l) => Number(l.sequenceNo)).filter((s) => s > 0);
       const dupSeq = seqs.find((s, i) => seqs.indexOf(s) !== i);
       if (dupSeq) { toast(`V-02: Duplicate Sequence No ${dupSeq} — each operation must have a unique sequence.`, 'error'); return false; }
+      // V-03: At least one row required before release
+      if (lines.length === 0) { toast('V-03: At least one operation row is required.', 'error'); return false; }
       // V-04: Setup/Cycle time cannot be negative
       for (let i = 0; i < lines.length; i++) {
         const st = Number(lines[i].setupTime ?? 0);
         const ct = Number(lines[i].cycleTime ?? 0);
         if (st < 0) { toast(`V-04: Row ${i + 1} — Setup Time cannot be negative.`, 'error'); return false; }
         if (ct < 0) { toast(`V-04: Row ${i + 1} — Cycle Time cannot be negative.`, 'error'); return false; }
+      }
+      // V-05: All processes must be active
+      for (let i = 0; i < lines.length; i++) {
+        const proc = processes.find((p) => String(p.id) === String(lines[i].processId));
+        if (proc && proc.active === false) {
+          toast(`V-05: Row ${i + 1} — Selected process is inactive. Please select an active process.`, 'error');
+          return false;
+        }
       }
     }
     return true;
@@ -400,33 +422,69 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
           </div>
           <div className="fgrid">
             <label className="fld">
-              <span>Doc No</span>
+              <span>{isRouteSheet ? 'Route Sheet Code' : 'Doc No'}</span>
               <input className="in" value={docNo} readOnly tabIndex={-1} style={{ fontWeight: 600, background: '#f9fafb' }} />
             </label>
-            {config.fields.map((field) => (
+            {config.fields.map((field) => {
+              const isFieldReadonly = field.readonly || (isRouteSheet && field.key === 'itemType');
+              const isAutoDerived = field.readonly;
+              return (
               <label key={field.key} className={`fld ${field.span2 ? 'span2' : ''} ${isFieldError(field.key) ? 'invalid' : ''}`}>
                 <span>{field.label}</span>
-                {field.type === 'textarea' ? (
-                  <textarea className="in" rows={2} readOnly={field.key === 'remarks' ? !remarksEditable : !editable} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))} />
+                {isRouteSheet && field.key === 'itemCode' ? (
+                  <select className="in" disabled={!editable} value={String(form[field.key] ?? '')}
+                    onChange={(e) => {
+                      const code = e.target.value;
+                      const it = items.find((i) => String(i.code) === code);
+                      setForm((c) => ({ ...c, itemCode: code, itemType: it ? String(it.itemType ?? '') : c.itemType }));
+                    }}>
+                    <option value="">{'\u2014 Select Item \u2014'}</option>
+                    {items.map((it) => (
+                      <option key={String(it.id)} value={String(it.code ?? '')}>{String(it.code ?? '')} — {String(it.description ?? '')}</option>
+                    ))}
+                  </select>
+                ) : config.docType === 'production-bom' && field.key === 'itemCode' ? (
+                  <select className="in" disabled={!editable} value={String(form[field.key] ?? '')}
+                    onChange={(e) => {
+                      const code = e.target.value;
+                      const it = items.find((i) => String(i.code) === code);
+                      // FRS v4.0 Changelog #4: auto-derive itemType from ItemMaster on BOM item select
+                      setForm((c) => ({
+                        ...c,
+                        itemCode: code,
+                        itemType: it ? String(it.itemType ?? '') : c.itemType,
+                        itemRevision: it && it.revision ? String(it.revision) : c.itemRevision,
+                        description: it && it.description ? String(it.description) : c.description,
+                      }));
+                    }}>
+                    <option value="">{'\u2014 Select Item \u2014'}</option>
+                    {items.map((it) => (
+                      <option key={String(it.id)} value={String(it.code ?? '')}>{String(it.code ?? '')} — {String(it.description ?? '')}</option>
+                    ))}
+                  </select>
+                ) : field.type === 'textarea' ? (
+                  <textarea className="in" rows={2} readOnly={field.key === 'remarks' ? !remarksEditable : isFieldReadonly || !editable} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))} />
                 ) : field.type === 'select' ? (
-                  <select className="in" disabled={!editable} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))}>
+                  <select className="in" disabled={isFieldReadonly || !editable} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))}>
                     <option value="">\u2014 Select \u2014</option>
                     {(field.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
                 ) : field.type === 'checkbox' ? (
-                  <input type="checkbox" className="checkbox" disabled={!editable} checked={Boolean(form[field.key])} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.checked }))} />
+                  <input type="checkbox" className="checkbox" disabled={isFieldReadonly || !editable} checked={Boolean(form[field.key])} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.checked }))} />
                 ) : (
-                  <input className="in" type={field.type ?? 'text'} readOnly={!editable} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))} />
+                  <input className="in" type={field.type ?? 'text'} readOnly={isFieldReadonly || !editable} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))} style={isAutoDerived ? { background: '#f9fafb', fontStyle: 'italic' } : undefined} />
                 )}
+                {isAutoDerived && <span style={{ fontSize: '10px', color: '#9ca3af', marginTop: '2px' }}>Auto-derived</span>}
               </label>
-            ))}
+              );
+            })}
           </div>
         </div>
 
         {config.lines && editable && (
           <div className="panel">
             <div className="panel-h"><h2><span className="material-symbols-rounded">table_view</span> {config.lines.title}</h2>
-              {!config.lines.seed && <button type="button" className="btn btn-sm" disabled={isBusy} onClick={() => setLines((c) => [...c, {}])}><span className="material-symbols-rounded">add</span> Add Line</button>}
+              {!config.lines.seed && <button type="button" className="btn btn-sm" disabled={isBusy} onClick={() => setLines((c) => [...c, { sequenceNo: (c.length + 1) * 10 }])}><span className="material-symbols-rounded">add</span> Add Line</button>}
             </div>
             <div className="twrap">
               <table className="tbl lines">
@@ -443,14 +501,15 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
                               setLines((c) => c.map((l, i) => i === index ? {
                                 ...l,
                                 processId: selectedId || '',
+                                processCode: proc?.code ?? '',
                                 processType: proc?.processType ?? '',
-                                resourceId: proc?.resourceId ?? '',
-                                resourceName: proc?.resourceName ?? '',
-                                resourceType: proc?.resourceType ?? '',
+                                resourceId: proc?.resourceId ?? l.resourceId,
+                                resourceName: proc?.resourceName ?? l.resourceName,
+                                resourceType: proc?.resourceType ?? l.resourceType,
                               } : l));
                             }}>
                               <option value="">— Select Process —</option>
-                              {processes.map((p) => <option key={String(p.id)} value={String(p.id)}>{String(p.code || '')}{p.code ? ' — ' : ''}{String(p.name || '')}{p.active === false ? ' (inactive)' : ''}</option>)}
+                              {processes.filter((p) => p.active !== false).map((p) => <option key={String(p.id)} value={String(p.id)}>{String(p.code || '')}{p.code ? ' — ' : ''}{String(p.name || '')}</option>)}
                             </select>
                           ) : docType === 'route-sheet' && f.key === 'resourceId' ? (
                             <select className="in" value={String(line[f.key] ?? '')} onChange={(e) => {
@@ -461,6 +520,7 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
                                 resourceId: selectedResId || '',
                                 resourceName: res?.resourceName ?? '',
                                 resourceType: res?.resourceType ?? '',
+                                processType: res?.resourceType === 'Vendor' ? 'Outsource' : l.processType,
                               } : l));
                             }}>
                               <option value="">— Default from Process —</option>
@@ -472,7 +532,7 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
                               {(f.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
                             </select>
                           ) : (
-                            <input className="in" type={f.type ?? 'text'} readOnly={f.readonly || !editable || (docType === 'route-sheet' && ['processType', 'resourceName', 'resourceType'].includes(f.key))} value={String(line[f.key] ?? '')} onChange={(e) => setLines((c) => c.map((l, i) => (i === index ? { ...l, [f.key]: e.target.value } : l)))} />
+                            <input className="in" type={f.type ?? 'text'} readOnly={f.readonly || !editable} value={String(line[f.key] ?? '')} onChange={(e) => setLines((c) => c.map((l, i) => (i === index ? { ...l, [f.key]: e.target.value } : l)))} />
                           )}
                         </td>
                       ))}

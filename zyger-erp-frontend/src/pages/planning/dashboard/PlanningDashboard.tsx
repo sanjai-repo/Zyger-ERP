@@ -14,23 +14,28 @@ interface PlanningDashboardData {
   completed: number;
   closed: number;
   totalShopFloor: number;
+  overdue: number;
+  cancelled: number;
 }
 
 const KPI_CARDS: { key: keyof PlanningDashboardData; icon: string; label: string; color: string; bg: string }[] = [
   { key: 'totalBom', icon: 'account_tree', label: 'Total BOMs', color: '#1d4ed8', bg: '#dbeafe' },
   { key: 'totalRoutes', icon: 'route', label: 'Total Route Sheets', color: '#1d4ed8', bg: '#dbeafe' },
   { key: 'totalWorkOrders', icon: 'assignment', label: 'Total Work Orders', color: '#6b7280', bg: '#f3f4f6' },
-  { key: 'pendingApproval', icon: 'hourglass_top', label: 'WO Pending Approval', color: '#b45309', bg: '#fef3c7' },
+  { key: 'pendingApproval', icon: 'hourglass_top', label: 'Pending Approval', color: '#b45309', bg: '#fef3c7' },
+  { key: 'overdue', icon: 'warning', label: 'Overdue WOs', color: '#dc2626', bg: '#fef2f2' },
   { key: 'released', icon: 'play_circle', label: 'Released WO', color: '#166534', bg: '#d4edda' },
   { key: 'inProcess', icon: 'progress_activity', label: 'In Process WO', color: '#1d4ed8', bg: '#dbeafe' },
   { key: 'completed', icon: 'task_alt', label: 'Completed WO', color: '#166534', bg: '#d4edda' },
   { key: 'closed', icon: 'lock', label: 'Closed WO', color: '#6b7280', bg: '#f3f4f6' },
+  { key: 'cancelled', icon: 'block', label: 'Cancelled WO', color: '#dc2626', bg: '#fef2f2' },
   { key: 'totalShopFloor', icon: 'factory', label: 'Shop Floor Entries', color: '#6b7280', bg: '#f3f4f6' },
 ];
 
 const EMPTY: PlanningDashboardData = {
   totalBom: 0, totalRoutes: 0, totalWorkOrders: 0, pendingApproval: 0,
   released: 0, inProcess: 0, completed: 0, closed: 0, totalShopFloor: 0,
+  overdue: 0, cancelled: 0,
 };
 
 export default function PlanningDashboard() {
@@ -87,10 +92,12 @@ export default function PlanningDashboard() {
                     { name: 'In Process', value: data.inProcess, fill: '#2563eb' },
                     { name: 'Completed', value: data.completed, fill: '#059669' },
                     { name: 'Closed', value: data.closed, fill: '#6b7280' },
+                    { name: 'Overdue', value: data.overdue, fill: '#dc2626' },
+                    { name: 'Cancelled', value: data.cancelled, fill: '#ef4444' },
                   ].filter((d) => d.value > 0)} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}>
                     {[
                       { fill: '#f59e0b' }, { fill: '#16a34a' }, { fill: '#2563eb' },
-                      { fill: '#059669' }, { fill: '#6b7280' },
+                      { fill: '#059669' }, { fill: '#6b7280' }, { fill: '#dc2626' }, { fill: '#ef4444' },
                     ].map((entry, i) => <Cell key={i} fill={entry.fill} />)}
                   </Pie>
                   <Tooltip />

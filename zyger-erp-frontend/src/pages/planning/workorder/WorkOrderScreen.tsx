@@ -72,21 +72,27 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
   const [machines, setMachines] = useState<Array<{ code: string; name: string }>>([]);
   const [workCenters, setWorkCenters] = useState<Array<{ code: string; name: string }>>([]);
   const [operators, setOperators] = useState<Array<{ username: string; fullName: string }>>([]);
+  const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
 
   const fetchPickers = useCallback(async () => {
     try {
-      const [bRes, rRes, mRes, wRes, oRes] = await Promise.allSettled([
+      const [bRes, rRes, mRes, wRes, oRes, iRes] = await Promise.allSettled([
         apiClient.get('/v1/planning/bom', { params: { size: 500 } }),
         apiClient.get('/v1/planning/route-sheet', { params: { size: 500 } }),
         apiClient.get('/master/machines', { params: { size: 200 } }),
         apiClient.get('/master/work-centers', { params: { size: 200 } }),
         apiClient.get('/master/users', { params: { size: 200 } }),
+        apiClient.get('/master/items', { params: { size: 500 } }),
       ]);
       if (bRes.status === 'fulfilled') setBomList((bRes.value.data?.content ?? bRes.value.data ?? []).map((b: any) => ({ id: b.id, bomNumber: b.bomNumber || b.docNo || `BOM-${b.id}`, itemCode: b.itemCode ?? '' })));
       if (rRes.status === 'fulfilled') setRouteList((rRes.value.data?.content ?? rRes.value.data ?? []).map((r: any) => ({ id: r.id, routeNumber: r.routeNumber || r.docNo || `RT-${r.id}`, itemCode: r.itemCode ?? '' })));
       if (mRes.status === 'fulfilled') setMachines((mRes.value.data?.content ?? mRes.value.data ?? []).filter((m: any) => m.active !== false).map((m: any) => ({ code: m.machineCode ?? m.code ?? '', name: m.description ?? m.name ?? '' })));
       if (wRes.status === 'fulfilled') setWorkCenters((wRes.value.data?.content ?? wRes.value.data ?? []).filter((w: any) => w.active !== false).map((w: any) => ({ code: w.code ?? '', name: w.name ?? '' })));
       if (oRes.status === 'fulfilled') setOperators((oRes.value.data?.content ?? oRes.value.data ?? []).filter((u: any) => u.active !== false).map((u: any) => ({ username: (u.username ?? ''), fullName: (u.fullName || u.username) ?? '' })));
+      if (iRes.status === 'fulfilled') {
+        const data = iRes.value.data as { content?: unknown[] } | unknown[];
+        setItems(Array.isArray(data) ? data as Array<Record<string, unknown>> : (data?.content ?? []) as Array<Record<string, unknown>>);
+      }
     } catch { /* ignore */ }
   }, []);
 
@@ -421,6 +427,12 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
     <>
       <div className="pg-head"><h1>{isViewOnly ? 'View' : documentId ? 'Edit' : 'Add'} Work Order \u2014 {docNo}</h1><p>Production work order with operation and material tracking</p></div>
       <div className="note"><span className="material-symbols-rounded">info</span><span>Workflow: DRAFT {'\u2192'} SUBMITTED {'\u2192'} APPROVED {'\u2192'} RELEASED {'\u2192'} IN_PROCESS {'\u2192'} COMPLETED {'\u2192'} CLOSED</span></div>
+      {documentId && !editable && (
+        <div style={{ padding: '8px 16px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '6px', fontSize: '13px', color: '#92400e', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>lock</span>
+          This document is <strong>{genericStatus}</strong> and locked. Only workflow actions are available.
+        </div>
+      )}
 
       <form onSubmit={(e) => e.preventDefault()}>
         <div className="panel">
@@ -470,19 +482,43 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
                   ? routeList.map((r) => `${r.routeNumber} \u2014 ${r.itemCode}`)
                   : pickerOptions;
               const isProdQty = field.key === 'productionQty';
+              const isFieldReadonly = Boolean(field.readonly);
+              const isAutoDerived = isFieldReadonly && ['itemDescription', 'itemRevision', 'drawingNumber', 'drawingRev', 'uom'].includes(field.key);
               return (
                 <label key={field.key} className={`fld ${field.span2 ? 'span2' : ''} ${isFieldError(field.key) ? 'invalid' : ''}`}>
                   <span>{field.label}</span>
-                  {field.type === 'textarea' ? (
-                    <textarea className="in" rows={2} readOnly={!editable} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))} />
+                  {field.key === 'itemCode' ? (
+                    <select className="in" disabled={!editable} value={String(form[field.key] ?? '')}
+                      onChange={(e) => {
+                        const code = e.target.value;
+                        const it = items.find((i) => String(i.code) === code);
+                        // FRS v4.0 §3: auto-derive item fields from ItemMaster on WO item select
+                        setForm((c) => ({
+                          ...c,
+                          itemCode: code,
+                          itemDescription: it ? String(it.description ?? '') : c.itemDescription,
+                          itemRevision: it && it.revision ? String(it.revision) : c.itemRevision,
+                          drawingNumber: it && it.drawingNumber ? String(it.drawingNumber) : c.drawingNumber,
+                          drawingRev: it && it.drawingRevision ? String(it.drawingRevision) : c.drawingRev,
+                          uom: it && it.uom ? String(it.uom) : c.uom,
+                        }));
+                      }}>
+                      <option value="">{'\u2014 Select Item \u2014'}</option>
+                      {items.map((it) => (
+                        <option key={String(it.id)} value={String(it.code ?? '')}>{String(it.code ?? '')} — {String(it.description ?? '')}</option>
+                      ))}
+                    </select>
+                  ) : field.type === 'textarea' ? (
+                    <textarea className="in" rows={2} readOnly={!editable || isFieldReadonly} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))} />
                   ) : (field.type === 'select' || isBomOrRoute) ? (
-                    <select className="in" disabled={!editable} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))}>
+                    <select className="in" disabled={!editable || isFieldReadonly} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))}>
                       <option value="">\u2014 Select \u2014</option>
                       {pickerOptions.map((o, i) => <option key={o} value={o}>{pickerLabels[i] ?? o}</option>)}
                     </select>
                   ) : (
-                    <input className="in" type={field.type ?? 'text'} readOnly={!editable} value={String(form[field.key] ?? '')} onChange={(e) => isProdQty && editable ? handleProductionQtyChange(e.target.value) : setForm((c) => ({ ...c, [field.key]: e.target.value }))} />
+                    <input className="in" type={field.type ?? 'text'} readOnly={!editable || isFieldReadonly} value={String(form[field.key] ?? '')} onChange={(e) => isProdQty && editable ? handleProductionQtyChange(e.target.value) : setForm((c) => ({ ...c, [field.key]: e.target.value }))} style={isAutoDerived ? { background: '#f9fafb', fontStyle: 'italic' } : undefined} />
                   )}
+                  {isAutoDerived && <span style={{ fontSize: '10px', color: '#9ca3af', marginTop: '2px' }}>Auto-derived</span>}
                 </label>
               );
             })}

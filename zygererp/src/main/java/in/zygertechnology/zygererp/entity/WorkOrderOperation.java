@@ -37,6 +37,10 @@ public class WorkOrderOperation implements LineEntity {
     @Column(length = 30) String status;
     @Column(length = 300) String remarks;
 
+    /** FRS v4.0 §6.3.3 Changelog #7: traceability link to source Route Sheet operation */
+    @Column(name = "route_operation_id")
+    Long routeOperationId;
+
     @Override public String getItemCode() { return operationCode; }
     @Override public String getLocation() { return workCenterCode; }
     @Override public String getBatchNo() { return null; }

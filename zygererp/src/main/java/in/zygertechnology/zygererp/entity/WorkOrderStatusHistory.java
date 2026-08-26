@@ -8,6 +8,11 @@ import java.time.Instant;
 public class WorkOrderStatusHistory {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY) Long id;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "work_order_id", insertable = false, updatable = false)
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    WorkOrder workOrder;
+
     @Column(name = "work_order_id", nullable = false) Long workOrderId;
 
     @Column(name = "wo_number", length = 30) String woNumber;

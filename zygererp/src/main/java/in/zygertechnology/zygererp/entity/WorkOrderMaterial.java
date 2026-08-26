@@ -30,6 +30,10 @@ public class WorkOrderMaterial extends BaseLine implements LineEntity {
     @Column(length = 20) String uom;
     @Column(name = "balance_qty") BigDecimal balanceQty;
 
+    /** FRS v4.0 §6.3.4 Changelog #8: traceability link to source BOM component line */
+    @Column(name = "bom_line_id")
+    Long bomLineId;
+
     @Override public String getItemCode() { return componentItemCode; }
     @Override public BigDecimal getQty() { return requiredQuantity == null ? BigDecimal.ZERO : requiredQuantity; }
 }

@@ -72,6 +72,10 @@ public class WorkOrder extends BaseDoc implements DocEntity {
     @OneToMany(mappedBy = "doc", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     List<WorkOrderMaterial> materials = new ArrayList<>();
 
+    @OneToMany(mappedBy = "workOrder", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    List<WorkOrderStatusHistory> statusHistory = new ArrayList<>();
+
     @SuppressWarnings("unchecked")
     @Override public List<WorkOrderOperation> getLines() { return (List<WorkOrderOperation>)(List<? extends LineEntity>) operations; }
 
