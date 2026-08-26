@@ -1024,7 +1024,7 @@ export default function BomMasterScreen() {
                 <span className="material-symbols-rounded" style={{ color: '#fff', fontSize: '1.5rem' }}>account_tree</span>
                 <div>
                   <h2 style={{ margin: 0, color: '#fff', fontSize: '1.15rem', fontWeight: 600 }}>BOM Structure</h2>
-                  <p style={{ margin: 0, color: 'rgba(255,255,255,0.75)', fontSize: '0.8rem' }}>{bom.bomNumber || bom.docNo} \u2014 {bom.itemCode}</p>
+                  <p style={{ margin: 0, color: 'rgba(255,255,255,0.75)', fontSize: '0.8rem' }}>{bom.bomNumber || bom.docNo} — {bom.itemCode}</p>
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1049,7 +1049,7 @@ export default function BomMasterScreen() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: '10px 24px', background: '#f8fafc', borderBottom: '2px solid #e2e8f0', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               <span style={{ width: 36, flexShrink: 0 }}></span>
               <span style={{ width: 56, flexShrink: 0 }}>Level</span>
-              <span style={{ flex: 1, minWidth: 200 }}>Item \u00B7 Description</span>
+              <span style={{ flex: 1, minWidth: 200 }}>Item · Name</span>
               <span style={{ width: 80, flexShrink: 0, textAlign: 'right' }}>Qty</span>
               <span style={{ width: 100, flexShrink: 0, textAlign: 'right' }}>Wt/Unit</span>
               <span style={{ width: 110, flexShrink: 0, textAlign: 'right' }}>Total Wt</span>
@@ -1158,7 +1158,7 @@ function renderTreeRows(node: TreeNode, expanded: Set<string>, toggle: (path: st
         </span>
         {desc && (
           <>
-            <span style={{ color: '#cbd5e1', flexShrink: 0 }}>\u2014</span>
+            <span style={{ color: '#cbd5e1', flexShrink: 0 }}>—</span>
             <span style={{ color: '#64748b', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {desc}
             </span>
