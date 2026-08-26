@@ -170,6 +170,7 @@ export default function BomMasterScreen() {
   const [treeData, setTreeData] = useState<TreeNode | null>(null);
   const [treeLoading, setTreeLoading] = useState(false);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  const [treeMode, setTreeMode] = useState<'single' | 'multi'>('single');
 
   // Next BOM number
   const [nextBomNumber, setNextBomNumber] = useState('');
@@ -476,97 +477,10 @@ export default function BomMasterScreen() {
   const fetchTree = async (_id?: number) => {
     setTreeLoading(true);
     setTreeOpen(true);
+    setTreeMode('single');
     try {
-      // Build tree client-side from flat BOM lines
-      const itemMap = new Map(items.map((i) => [i.code, i]));
-      const activeLines = bom.lines.filter((l) => l.componentItemCode);
-      const root: TreeNode = {
-        itemCode: bom.itemCode || '',
-        description: itemMap.get(bom.itemCode || '')?.name || '',
-        quantityPer: bom.baseQuantity || 1,
-        weightPerQty: itemMap.get(bom.itemCode || '')?.weight || 0,
-        totalWeight: bom.weight || 0,
-        level: 1,
-        levelPath: '1',
-        children: [],
-      };
-
-      let seq = 1;
-      let lastSemiFg: TreeNode | null = null;
-
-      for (const line of activeLines) {
-        const item = itemMap.get(line.componentItemCode);
-        const level = line.bomLevel || item?.itemType || 'RAW_MATERIAL';
-        const path = seq === 0 ? '1' : '';
-
-        if (level === 'SEMI_FG' || level === 'SFG') {
-          const node: TreeNode = {
-            componentItemCode: line.componentItemCode,
-            description: item?.name || line.description || '',
-            quantityPer: line.quantityPer,
-            weightPerQty: line.weightPerQty || item?.weight || 0,
-            totalWeight: line.totalWeight || 0,
-            level: 2,
-            levelPath: `${root.levelPath}.${seq}`,
-            children: [],
-          };
-          root.children!.push(node);
-          lastSemiFg = node;
-          seq++;
-        } else if (level === 'FG') {
-          const node: TreeNode = {
-            componentItemCode: line.componentItemCode,
-            description: item?.name || line.description || '',
-            quantityPer: line.quantityPer,
-            weightPerQty: line.weightPerQty || item?.weight || 0,
-            totalWeight: line.totalWeight || 0,
-            level: 2,
-            levelPath: `${root.levelPath}.${seq}`,
-            children: [],
-          };
-          root.children!.push(node);
-          lastSemiFg = null;
-          seq++;
-        } else {
-          // RAW_MATERIAL — child of last Semi-FG or direct child of root
-          if (lastSemiFg && lastSemiFg.children) {
-            const childSeq = lastSemiFg.children.length + 1;
-            lastSemiFg.children.push({
-              componentItemCode: line.componentItemCode,
-              description: item?.name || line.description || '',
-              quantityPer: line.quantityPer,
-              weightPerQty: line.weightPerQty || item?.weight || 0,
-              totalWeight: line.totalWeight || 0,
-              level: 3,
-              levelPath: `${lastSemiFg.levelPath}.${childSeq}`,
-            });
-          } else {
-            const node: TreeNode = {
-              componentItemCode: line.componentItemCode,
-              description: item?.name || line.description || '',
-              quantityPer: line.quantityPer,
-              weightPerQty: line.weightPerQty || item?.weight || 0,
-              totalWeight: line.totalWeight || 0,
-              level: 2,
-              levelPath: `${root.levelPath}.${seq}`,
-              children: [],
-            };
-            root.children!.push(node);
-            seq++;
-          }
-        }
-      }
-
-      // Fix levelPaths after building
-      root.children?.forEach((child, i) => {
-        child.levelPath = `${root.levelPath}.${i + 1}`;
-        child.children?.forEach((grandchild, j) => {
-          grandchild.levelPath = `${child.levelPath}.${j + 1}`;
-        });
-      });
-
+      const root = buildTreeFromBom(bom, '1');
       setTreeData(root);
-      // Expand all levels by default
       const expanded = new Set<string>();
       const expandAll = (node: TreeNode) => {
         if (node.children && node.children.length > 0) {
@@ -585,6 +499,137 @@ export default function BomMasterScreen() {
     if (next.has(path)) next.delete(path); else next.add(path);
     return next;
   });
+
+  /* ── Build tree from a BOM doc ── */
+
+  const buildTreeFromBom = (bomDoc: BomDoc, rootNum: string): TreeNode => {
+    const itemMap = new Map(items.map((i) => [i.code, i]));
+    const activeLines = (bomDoc.lines || []).filter((l) => l.componentItemCode);
+    const root: TreeNode = {
+      itemCode: bomDoc.itemCode || '',
+      description: itemMap.get(bomDoc.itemCode || '')?.name || bomDoc.description || '',
+      quantityPer: bomDoc.baseQuantity || 1,
+      weightPerQty: itemMap.get(bomDoc.itemCode || '')?.weight || 0,
+      totalWeight: bomDoc.weight || 0,
+      level: 1,
+      levelPath: rootNum,
+      children: [],
+    };
+
+    let seq = 1;
+    let lastSemiFg: TreeNode | null = null;
+
+    for (const line of activeLines) {
+      const item = itemMap.get(line.componentItemCode);
+      const level = line.bomLevel || item?.itemType || 'RAW_MATERIAL';
+
+      if (level === 'SEMI_FG' || level === 'SFG') {
+        const node: TreeNode = {
+          componentItemCode: line.componentItemCode,
+          description: item?.name || line.description || '',
+          quantityPer: line.quantityPer,
+          weightPerQty: line.weightPerQty || item?.weight || 0,
+          totalWeight: line.totalWeight || 0,
+          level: 2,
+          levelPath: `${root.levelPath}.${seq}`,
+          children: [],
+        };
+        root.children!.push(node);
+        lastSemiFg = node;
+        seq++;
+      } else if (level === 'FG') {
+        const node: TreeNode = {
+          componentItemCode: line.componentItemCode,
+          description: item?.name || line.description || '',
+          quantityPer: line.quantityPer,
+          weightPerQty: line.weightPerQty || item?.weight || 0,
+          totalWeight: line.totalWeight || 0,
+          level: 2,
+          levelPath: `${root.levelPath}.${seq}`,
+          children: [],
+        };
+        root.children!.push(node);
+        lastSemiFg = null;
+        seq++;
+      } else {
+        if (lastSemiFg && lastSemiFg.children) {
+          const childSeq = lastSemiFg.children.length + 1;
+          lastSemiFg.children.push({
+            componentItemCode: line.componentItemCode,
+            description: item?.name || line.description || '',
+            quantityPer: line.quantityPer,
+            weightPerQty: line.weightPerQty || item?.weight || 0,
+            totalWeight: line.totalWeight || 0,
+            level: 3,
+            levelPath: `${lastSemiFg.levelPath}.${childSeq}`,
+          });
+        } else {
+          const node: TreeNode = {
+            componentItemCode: line.componentItemCode,
+            description: item?.name || line.description || '',
+            quantityPer: line.quantityPer,
+            weightPerQty: line.weightPerQty || item?.weight || 0,
+            totalWeight: line.totalWeight || 0,
+            level: 2,
+            levelPath: `${root.levelPath}.${seq}`,
+            children: [],
+          };
+          root.children!.push(node);
+          seq++;
+        }
+      }
+    }
+
+    root.children?.forEach((child, i) => {
+      child.levelPath = `${root.levelPath}.${i + 1}`;
+      child.children?.forEach((grandchild, j) => {
+        grandchild.levelPath = `${child.levelPath}.${j + 1}`;
+      });
+    });
+
+    return root;
+  };
+
+  /* ── Multi-BOM Tree ── */
+
+  const fetchAllBomsTree = async () => {
+    setTreeLoading(true);
+    setTreeOpen(true);
+    setTreeMode('multi');
+    try {
+      const { data } = await apiClient.get('/v1/planning/production-bom', { params: { size: 500, page: 0 } });
+      const bomList: BomDoc[] = data.content ?? data ?? [];
+      const activeBoms = bomList.filter((b) => b.isActive && b.lines && b.lines.length > 0);
+
+      if (activeBoms.length === 0) {
+        setTreeData(null);
+        toast('No active BOMs found.', 'error');
+        setTreeLoading(false);
+        return;
+      }
+
+      const multiRoot: TreeNode = {
+        itemCode: 'ALL BOMs',
+        description: `${activeBoms.length} BOMs`,
+        quantityPer: 0,
+        level: 0,
+        levelPath: 'root',
+        children: activeBoms.map((b, i) => buildTreeFromBom(b, String(i + 1))),
+      };
+
+      setTreeData(multiRoot);
+      const expanded = new Set<string>();
+      const expandAll = (node: TreeNode) => {
+        if (node.children && node.children.length > 0) {
+          expanded.add(node.levelPath);
+          for (const child of node.children) expandAll(child);
+        }
+      };
+      expandAll(multiRoot);
+      setExpandedNodes(expanded);
+    } catch { toast('Failed to load BOM tree.', 'error'); }
+    setTreeLoading(false);
+  };
 
   /* ── Navigation ── */
 
@@ -723,6 +768,7 @@ export default function BomMasterScreen() {
             )}
             <a href={`/api/v1/planning/production-bom/${editId}/print`} target="_blank" rel="noopener noreferrer" className="btn btn-sm" title="Print PDF"><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>print</span> PDF</a>
             <button type="button" className="btn btn-sm" onClick={() => fetchTree(editId!)} title="View BOM Tree"><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>account_tree</span> Tree</button>
+            <button type="button" className="btn btn-sm" onClick={() => fetchAllBomsTree()} title="View All BOMs Tree"><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>lan</span> All BOMs</button>
             <button type="button" className="btn btn-sm" title="Audit History" onClick={() => setAuditOpen(true)}><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>history</span></button>
             <StatusBadge status={bom.status} />
           </div>
@@ -1011,8 +1057,12 @@ export default function BomMasterScreen() {
         <div className="modal-overlay" onClick={() => setTreeOpen(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 800, maxHeight: '80vh', overflow: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h3>BOM Tree \u2014 {bom.bomNumber || bom.docNo}</h3>
-              <button className="btn btn-sm" onClick={() => setTreeOpen(false)}><span className="material-symbols-rounded">close</span></button>
+              <h3>{treeMode === 'multi' ? 'All BOMs Tree' : `BOM Tree \u2014 ${bom.bomNumber || bom.docNo}`}</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <button type="button" className={`btn btn-sm ${treeMode === 'single' ? 'btn-p' : ''}`} onClick={() => { if (treeMode !== 'single') fetchTree(editId!); }} disabled={treeMode === 'single'}>Single BOM</button>
+                <button type="button" className={`btn btn-sm ${treeMode === 'multi' ? 'btn-p' : ''}`} onClick={() => { if (treeMode !== 'multi') fetchAllBomsTree(); }} disabled={treeMode === 'multi'}>All BOMs</button>
+                <button className="btn btn-sm" onClick={() => setTreeOpen(false)}><span className="material-symbols-rounded">close</span></button>
+              </div>
             </div>
             {treeLoading ? <div className="empty" style={{ padding: 20 }}>Loading tree...</div> : treeData ? (
               <div style={{ fontFamily: 'monospace', fontSize: '0.85em' }}>
