@@ -155,9 +155,6 @@ export default function BomMasterScreen() {
 
   // Copy BOM
   const [copyBomId, setCopyBomId] = useState('');
-  const [previewBom, setPreviewBom] = useState<BomDoc | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [treePreviewOpen, setTreePreviewOpen] = useState(false);
 
   // Where-used & version compare
   const [whereUsedRows, setWhereUsedRows] = useState<Array<{ type: string; reference: string; itemCode: string; status: string; quantity: number }>>([]);
@@ -409,16 +406,6 @@ export default function BomMasterScreen() {
 
   /* ── Copy BOM ── */
 
-  const previewCopyBom = async (id: string) => {
-    if (!id) { setPreviewBom(null); return; }
-    setPreviewLoading(true);
-    try {
-      const { data } = await apiClient.get(`/v1/planning/production-bom/${id}`);
-      setPreviewBom(data);
-    } catch { setPreviewBom(null); }
-    setPreviewLoading(false);
-  };
-
   const copyBom = async () => {
     if (!copyBomId) { toast('Select a BOM to copy.', 'error'); return; }
     setBusy(true);
@@ -432,7 +419,6 @@ export default function BomMasterScreen() {
       setEditId(data.id);
       setBom({ ...data, lines: data.lines ?? [] });
       setCopyBomId('');
-      setPreviewBom(null);
       toast('BOM copied. New BOM Code: ' + (data.bomNumber || data.docNo));
       loadBoms();
     } catch (e) { toast(getApiErrorMessage(e, 'Copy failed.'), 'error'); }
@@ -844,78 +830,13 @@ export default function BomMasterScreen() {
 
               <label className="fld" style={{ gridColumn: 'span 2' }}><span>Copy BOM</span>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <select className="in" value={copyBomId} onChange={(e) => { setCopyBomId(e.target.value); previewCopyBom(e.target.value); }} style={{ flex: 1 }}>
+                  <select className="in" value={copyBomId} onChange={(e) => setCopyBomId(e.target.value)} style={{ flex: 1 }}>
                     <option value="">\u2014 Select BOM to Copy \u2014</option>
                     {allBoms.filter((b) => b.id !== editId).map((b) => <option key={b.id} value={String(b.id)}>{b.bomNumber || b.docNo} - {b.itemCode} ({b.bomVersion})</option>)}
                   </select>
                   <button type="button" className="btn btn-sm btn-p" onClick={copyBom} disabled={busy || !copyBomId}><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>content_copy</span> Copy</button>
                 </div>
               </label>
-
-              {/* Preview of selected BOM to copy */}
-              {copyBomId && (
-                <div style={{ gridColumn: 'span 4', border: '1px solid #e2e8f0', borderRadius: 10, background: '#fff', overflow: 'hidden' }}>
-                  {previewLoading ? (
-                    <div style={{ padding: 20, textAlign: 'center', color: '#94a3b8', fontSize: '0.82rem' }}>
-                      <span className="material-symbols-rounded" style={{ fontSize: '1.2rem', animation: 'spin 1s linear infinite', verticalAlign: 'middle' }}>progress_activity</span> Loading preview...
-                    </div>
-                  ) : previewBom ? (
-                    <>
-                      {/* Preview header */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span className="material-symbols-rounded" style={{ fontSize: '1rem', color: '#6366f1' }}>preview</span>
-                          <span style={{ fontWeight: 600, fontSize: '0.82rem', color: '#1e293b' }}>Preview: {previewBom.bomNumber || previewBom.docNo}</span>
-                          <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{previewBom.itemCode} \u2022 v{previewBom.bomVersion} \u2022 {previewBom.lines?.length || 0} components</span>
-                        </div>
-                        <button type="button" className="btn btn-sm" onClick={() => setTreePreviewOpen(true)} style={{ fontSize: '0.72rem' }}>
-                          <span className="material-symbols-rounded" style={{ fontSize: '0.9rem' }}>account_tree</span> Tree View
-                        </button>
-                      </div>
-                      {/* Component table */}
-                      {previewBom.lines && previewBom.lines.length > 0 ? (
-                        <div style={{ overflow: 'auto', maxHeight: 220 }}>
-                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
-                            <thead>
-                              <tr style={{ background: '#f1f5f9' }}>
-                                <th style={{ padding: '6px 12px', textAlign: 'left', fontWeight: 600, color: '#64748b', borderBottom: '1px solid #e2e8f0' }}>#</th>
-                                <th style={{ padding: '6px 12px', textAlign: 'left', fontWeight: 600, color: '#64748b', borderBottom: '1px solid #e2e8f0' }}>Level</th>
-                                <th style={{ padding: '6px 12px', textAlign: 'left', fontWeight: 600, color: '#64748b', borderBottom: '1px solid #e2e8f0' }}>Item</th>
-                                <th style={{ padding: '6px 12px', textAlign: 'left', fontWeight: 600, color: '#64748b', borderBottom: '1px solid #e2e8f0' }}>Name</th>
-                                <th style={{ padding: '6px 12px', textAlign: 'right', fontWeight: 600, color: '#64748b', borderBottom: '1px solid #e2e8f0' }}>Qty</th>
-                                <th style={{ padding: '6px 12px', textAlign: 'right', fontWeight: 600, color: '#64748b', borderBottom: '1px solid #e2e8f0' }}>Wt/Unit</th>
-                                <th style={{ padding: '6px 12px', textAlign: 'right', fontWeight: 600, color: '#64748b', borderBottom: '1px solid #e2e8f0' }}>Total Wt</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {previewBom.lines.map((l: BomLine, i: number) => {
-                                const lvlColor = l.bomLevel === 'FG' ? '#3b82f6' : l.bomLevel === 'SEMI_FG' ? '#10b981' : '#f59e0b';
-                                return (
-                                  <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                    <td style={{ padding: '6px 12px', color: '#94a3b8' }}>{l.lineNo || i + 1}</td>
-                                    <td style={{ padding: '6px 12px' }}>
-                                      <span style={{ display: 'inline-block', padding: '1px 6px', borderRadius: 4, fontSize: '0.65rem', fontWeight: 700, background: `${lvlColor}15`, color: lvlColor, border: `1px solid ${lvlColor}30` }}>{l.bomLevel || 'RM'}</span>
-                                    </td>
-                                    <td style={{ padding: '6px 12px', fontWeight: 600, color: '#1e293b' }}>{l.componentItemCode}</td>
-                                    <td style={{ padding: '6px 12px', color: '#64748b' }}>{l.description || '\u2014'}</td>
-                                    <td style={{ padding: '6px 12px', textAlign: 'right', fontWeight: 500 }}>{l.quantityPer}</td>
-                                    <td style={{ padding: '6px 12px', textAlign: 'right', color: '#64748b' }}>{l.weightPerQty > 0 ? l.weightPerQty.toFixed(4) : '\u2014'}</td>
-                                    <td style={{ padding: '6px 12px', textAlign: 'right', fontWeight: 600 }}>{l.totalWeight > 0 ? l.totalWeight.toFixed(4) : '\u2014'}</td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : (
-                        <div style={{ padding: 16, textAlign: 'center', color: '#94a3b8', fontSize: '0.8rem' }}>No components in this BOM.</div>
-                      )}
-                    </>
-                  ) : (
-                    <div style={{ padding: 16, textAlign: 'center', color: '#94a3b8', fontSize: '0.8rem' }}>Unable to load preview.</div>
-                  )}
-                </div>
-              )}
 
               <label className="fld"><span>BOM Type</span>
                 <select className="in" value={bom.bomType} onChange={(e) => setField('bomType', e.target.value)} disabled={!isEditable && !!editId}>
@@ -1185,81 +1106,6 @@ export default function BomMasterScreen() {
                   <span className="material-symbols-rounded" style={{ fontSize: '3rem', marginBottom: 8 }}>account_tree</span> No tree data.
                 </div>
               )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Preview Tree Modal ── */}
-      {treePreviewOpen && previewBom && (
-        <div className="mwrap" onClick={() => setTreePreviewOpen(false)} style={{ background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(6px)' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{
-            position: 'fixed', inset: 20, background: '#fafbfc', borderRadius: 14, boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
-            display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid #e2e8f0',
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 24px', background: '#fff', borderBottom: '1px solid #e5e7eb' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span className="material-symbols-rounded" style={{ color: '#6366f1', fontSize: '1.4rem' }}>account_tree</span>
-                <div>
-                  <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#1e293b' }}>BOM Structure (Preview)</h2>
-                  <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.78rem', marginTop: 2 }}>{previewBom.bomNumber || previewBom.docNo} \u2014 {previewBom.itemCode}</p>
-                </div>
-              </div>
-              <button className="btn btn-sm" onClick={() => setTreePreviewOpen(false)}>
-                <span className="material-symbols-rounded">close</span>
-              </button>
-            </div>
-            <div style={{ flex: 1, overflow: 'auto', padding: 20 }}>
-              {(() => {
-                const itemMap = new Map(items.map((i) => [i.code, i]));
-                const activeLines = (previewBom.lines || []).filter((l) => l.componentItemCode);
-                const firstLine = activeLines.length > 0 ? activeLines[0] : null;
-                const rootItem = itemMap.get(previewBom.itemCode || '');
-                const root: TreeNode = {
-                  itemCode: previewBom.itemCode || '',
-                  description: rootItem?.name || firstLine?.description || '',
-                  quantityPer: firstLine?.quantityPer || previewBom.baseQuantity || 1,
-                  weightPerQty: firstLine?.weightPerQty || rootItem?.weight || 0,
-                  totalWeight: firstLine?.totalWeight || previewBom.weight || 0,
-                  remarks: firstLine?.remarks || '',
-                  level: 1, levelPath: '1', children: [],
-                };
-                let seq = 1;
-                let lastSemiFg: TreeNode | null = null;
-                const childLines = activeLines.slice(1);
-                for (const line of childLines) {
-                  const item = itemMap.get(line.componentItemCode);
-                  const level = line.bomLevel || item?.itemType || 'RAW_MATERIAL';
-                  if (level === 'SEMI_FG' || level === 'SFG') {
-                    const node: TreeNode = { componentItemCode: line.componentItemCode, description: item?.name || line.description || '', quantityPer: line.quantityPer, weightPerQty: line.weightPerQty || item?.weight || 0, totalWeight: line.totalWeight || 0, remarks: line.remarks || '', level: 2, levelPath: `${root.levelPath}.${seq}`, children: [] };
-                    root.children!.push(node);
-                    lastSemiFg = node;
-                    seq++;
-                  } else if (level === 'FG') {
-                    const node: TreeNode = { componentItemCode: line.componentItemCode, description: item?.name || line.description || '', quantityPer: line.quantityPer, weightPerQty: line.weightPerQty || item?.weight || 0, totalWeight: line.totalWeight || 0, remarks: line.remarks || '', level: 2, levelPath: `${root.levelPath}.${seq}`, children: [] };
-                    root.children!.push(node);
-                    lastSemiFg = null;
-                    seq++;
-                  } else {
-                    if (lastSemiFg && lastSemiFg.children) {
-                      const childSeq = lastSemiFg.children.length + 1;
-                      lastSemiFg.children.push({ componentItemCode: line.componentItemCode, description: item?.name || line.description || '', quantityPer: line.quantityPer, weightPerQty: line.weightPerQty || item?.weight || 0, totalWeight: line.totalWeight || 0, remarks: line.remarks || '', level: 3, levelPath: `${lastSemiFg.levelPath}.${childSeq}` });
-                    } else {
-                      const node: TreeNode = { componentItemCode: line.componentItemCode, description: item?.name || line.description || '', quantityPer: line.quantityPer, weightPerQty: line.weightPerQty || item?.weight || 0, totalWeight: line.totalWeight || 0, remarks: line.remarks || '', level: 2, levelPath: `${root.levelPath}.${seq}`, children: [] };
-                      root.children!.push(node);
-                      seq++;
-                    }
-                  }
-                }
-                const previewExpanded = new Set<string>();
-                const collectAll = (n: TreeNode) => { if (n.children?.length) { previewExpanded.add(n.levelPath); n.children.forEach(collectAll); } };
-                collectAll(root);
-                return (
-                  <div style={{ maxWidth: 960, margin: '0 auto' }}>
-                    {renderTreeRows(root, previewExpanded, () => {}, true)}
-                  </div>
-                );
-              })()}
             </div>
           </div>
         </div>
