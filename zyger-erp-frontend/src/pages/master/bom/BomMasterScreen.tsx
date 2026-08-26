@@ -410,17 +410,15 @@ export default function BomMasterScreen() {
     if (!copyBomId) { toast('Select a BOM to copy.', 'error'); return; }
     setBusy(true);
     try {
-      const source = allBoms.find((b) => String(b.id) === copyBomId || b.bomNumber === copyBomId || b.itemCode === copyBomId);
-      const sourceCode = source?.bomNumber || source?.itemCode || copyBomId;
-      const { data } = await apiClient.post('/v1/planning/production-bom/copy', {
-        sourceBomCode: sourceCode,
-        itemCode: bom.itemCode || undefined,
-      });
-      setEditId(data.id);
-      setBom({ ...data, lines: data.lines ?? [] });
+      const source = allBoms.find((b) => String(b.id) === copyBomId);
+      if (!source) { toast('Source BOM not found.', 'error'); setBusy(false); return; }
+      const { data } = await apiClient.get(`/v1/planning/production-bom/${source.id}`);
+      setBom((p) => ({
+        ...p,
+        lines: (data.lines || []).map((l: BomLine, i: number) => ({ ...l, lineNo: i + 1 })),
+      }));
       setCopyBomId('');
-      toast('BOM copied. New BOM Code: ' + (data.bomNumber || data.docNo));
-      loadBoms();
+      toast(`Copied ${data.lines?.length || 0} components from ${data.bomNumber || data.itemCode}.`);
     } catch (e) { toast(getApiErrorMessage(e, 'Copy failed.'), 'error'); }
     setBusy(false);
   };
