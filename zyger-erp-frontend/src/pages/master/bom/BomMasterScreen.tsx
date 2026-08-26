@@ -1046,18 +1046,18 @@ export default function BomMasterScreen() {
             </div>
 
             {/* Column Headers */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: '10px 24px', background: '#f8fafc', borderBottom: '2px solid #e2e8f0', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 24, padding: '10px 32px', background: '#f8fafc', borderBottom: '2px solid #e2e8f0', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               <span style={{ width: 36, flexShrink: 0 }}></span>
               <span style={{ width: 56, flexShrink: 0 }}>Level</span>
               <span style={{ flex: 1, minWidth: 200 }}>Item · Name</span>
-              <span style={{ width: 80, flexShrink: 0, textAlign: 'right' }}>Qty</span>
-              <span style={{ width: 100, flexShrink: 0, textAlign: 'right' }}>Wt/Unit</span>
-              <span style={{ width: 110, flexShrink: 0, textAlign: 'right' }}>Total Wt</span>
-              <span style={{ width: 160, flexShrink: 0 }}>Remarks</span>
+              <span style={{ width: 120, flexShrink: 0, textAlign: 'right' }}>Qty</span>
+              <span style={{ width: 140, flexShrink: 0, textAlign: 'right' }}>Wt/Unit</span>
+              <span style={{ width: 140, flexShrink: 0, textAlign: 'right' }}>Total Wt</span>
+              <span style={{ flex: 0.5, minWidth: 200 }}>Remarks</span>
             </div>
 
             {/* Body */}
-            <div style={{ flex: 1, overflow: 'auto', padding: '0 24px 24px' }}>
+            <div style={{ flex: 1, overflow: 'auto', padding: '0 0 24px' }}>
               {treeLoading ? (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 60, color: '#94a3b8' }}>
                   <span className="material-symbols-rounded" style={{ fontSize: '2rem', marginRight: 8, animation: 'spin 1s linear infinite' }}>progress_activity</span> Loading tree...
@@ -1117,8 +1117,8 @@ function renderTreeRows(node: TreeNode, expanded: Set<string>, toggle: (path: st
       key={path}
       onClick={() => !isLeaf && toggle(path)}
       style={{
-        display: 'flex', alignItems: 'center', gap: 0,
-        padding: '10px 24px',
+        display: 'flex', alignItems: 'center', gap: 24,
+        padding: '10px 32px',
         marginLeft: indent,
         cursor: isLeaf ? 'default' : 'pointer',
         borderBottom: '1px solid #f1f5f9',
@@ -1167,22 +1167,22 @@ function renderTreeRows(node: TreeNode, expanded: Set<string>, toggle: (path: st
       </span>
 
       {/* Qty */}
-      <span style={{ width: 80, flexShrink: 0, textAlign: 'right', color: '#334155', fontWeight: 500, fontSize: '0.875rem', paddingRight: 8 }}>
+      <span style={{ width: 120, flexShrink: 0, textAlign: 'right', color: '#334155', fontWeight: 500, fontSize: '0.875rem' }}>
         {qty}
       </span>
 
       {/* Wt/Unit */}
-      <span style={{ width: 100, flexShrink: 0, textAlign: 'right', color: '#64748b', fontSize: '0.85rem', paddingRight: 8 }}>
+      <span style={{ width: 140, flexShrink: 0, textAlign: 'right', color: '#64748b', fontSize: '0.85rem' }}>
         {wt || '\u2014'}
       </span>
 
       {/* Total Wt */}
-      <span style={{ width: 110, flexShrink: 0, textAlign: 'right', fontWeight: 600, color: '#1e293b', fontSize: '0.875rem', paddingRight: 8 }}>
+      <span style={{ width: 140, flexShrink: 0, textAlign: 'right', fontWeight: 600, color: '#1e293b', fontSize: '0.875rem' }}>
         {totalWt ? `${totalWt} kg` : '\u2014'}
       </span>
 
       {/* Remarks */}
-      <span style={{ width: 160, flexShrink: 0, color: '#94a3b8', fontSize: '0.8rem', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span style={{ flex: 0.5, minWidth: 200, color: '#94a3b8', fontSize: '0.8rem', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {rmk || '\u2014'}
       </span>
     </div>
