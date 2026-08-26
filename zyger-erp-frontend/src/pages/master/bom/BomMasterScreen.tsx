@@ -608,14 +608,13 @@ export default function BomMasterScreen() {
   };
 
   const editBom = (r: BomDoc) => {
-    if (!r.isActive && r.status !== 'DRAFT') {
-      toast('This revision is inactive and cannot be edited.', 'error');
-      return;
-    }
     setBom({ ...r, lines: r.lines ? r.lines.map((l) => ({ ...l })) : [] });
     setEditId(r.id);
     setFormTab('details');
     setViewMode('FORM');
+    if (!r.isActive && r.status !== 'DRAFT') {
+      toast('This revision is inactive. Opening in read-only mode.', 'info');
+    }
   };
 
   const openFormTab = (tab: typeof formTab) => {
