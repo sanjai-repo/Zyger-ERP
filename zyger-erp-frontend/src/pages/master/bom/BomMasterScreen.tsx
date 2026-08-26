@@ -751,13 +751,18 @@ export default function BomMasterScreen() {
                   if (item) {
                     setField('baseUom', item.uom || 'PCS');
                   }
-                  // Auto-add selected item as first component row
-                  if (code && bom.lines.length === 0) {
+                  // Always show BOM Item as first component row
+                  if (code) {
                     const levelMap: Record<string, string> = { FG: 'FG', SEMI_FG: 'SEMI_FG', RAW_MATERIAL: 'RAW_MATERIAL' };
                     const bomLevel = levelMap[item?.itemType || ''] || 'FG';
                     const qty = bom.baseQuantity || 1;
                     const wt = item?.weight || 0;
-                    setBom((p) => ({ ...p, lines: [{ ...emptyLine(1), bomLevel, componentItemCode: code, quantityPer: qty, weightPerQty: wt, totalWeight: wt * qty }] }));
+                    setBom((p) => {
+                      const existing = p.lines.filter((l) => l.componentItemCode);
+                      const firstRow: BomLine = { ...emptyLine(1), bomLevel, componentItemCode: code, description: item?.name || '', quantityPer: qty, weightPerQty: wt, totalWeight: wt * qty, uom: item?.uom || 'PCS' };
+                      const rest = existing.filter((l) => l.componentItemCode !== code).map((l, i) => ({ ...l, lineNo: i + 2 }));
+                      return { ...p, lines: [firstRow, ...rest] };
+                    });
                   }
                 }} disabled={!isEditable && !!editId} required>
                   <option value="">\u2014 Select Item \u2014</option>
@@ -784,7 +789,20 @@ export default function BomMasterScreen() {
               </label>
 
               <label className="fld"><span>Quantity *</span>
-                <input className="in" type="number" min="0.01" step="0.01" value={bom.baseQuantity} onChange={(e) => setField('baseQuantity', parseFloat(e.target.value) || 1)} disabled={!isEditable && !!editId} />
+                <input className="in" type="number" min="0.01" step="0.01" value={bom.baseQuantity} onChange={(e) => {
+                  const qty = parseFloat(e.target.value) || 1;
+                  setField('baseQuantity', qty);
+                  // Sync quantity to first component row (BOM Item)
+                  setBom((p) => {
+                    if (p.lines.length > 0 && p.lines[0].componentItemCode === p.itemCode) {
+                      const lines = [...p.lines];
+                      lines[0] = { ...lines[0], quantityPer: qty, totalWeight: qty * (lines[0].weightPerQty || 0) };
+                      const totalWt = lines.reduce((s, l) => s + (l.totalWeight || 0), 0);
+                      return { ...p, lines, weight: totalWt };
+                    }
+                    return p;
+                  });
+                }} disabled={!isEditable && !!editId} />
               </label>
 
               <label className="fld"><span>Weight (auto)</span>
