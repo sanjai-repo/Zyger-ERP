@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import apiClient from '../../../api/axiosClient';
 import { useToast } from '../../../contexts/ToastContext';
 import { getApiErrorMessage } from '../../../utils/apiError';
@@ -1049,57 +1049,57 @@ export default function BomMasterScreen() {
 
       {/* ── Tree View Modal ── */}
       {treeOpen && (
-        <div className="mwrap" onClick={() => setTreeOpen(false)} style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)' }}>
+        <div className="mwrap" onClick={() => setTreeOpen(false)} style={{ background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(6px)' }}>
           <div onClick={(e) => e.stopPropagation()} style={{
-            position: 'fixed', inset: 24, background: '#fff', borderRadius: 16, boxShadow: '0 25px 60px rgba(0,0,0,0.25)',
-            display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid #e2e8f0', zIndex: 120,
+            position: 'fixed', inset: 20, background: '#fafbfc', borderRadius: 14, boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid #e2e8f0',
           }}>
             {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderBottom: '1px solid #e2e8f0', background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span className="material-symbols-rounded" style={{ color: '#fff', fontSize: '1.5rem' }}>account_tree</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 24px', background: '#fff', borderBottom: '1px solid #e5e7eb' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span className="material-symbols-rounded" style={{ color: '#6366f1', fontSize: '1.4rem' }}>account_tree</span>
                 <div>
-                  <h2 style={{ margin: 0, color: '#fff', fontSize: '1.15rem', fontWeight: 600 }}>BOM Structure</h2>
-                  <p style={{ margin: 0, color: 'rgba(255,255,255,0.75)', fontSize: '0.8rem' }}>{bom.bomNumber || bom.docNo} — {bom.itemCode}</p>
+                  <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#1e293b' }}>BOM Structure</h2>
+                  <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.78rem', marginTop: 2 }}>{bom.bomNumber || bom.docNo} — {bom.itemCode}</p>
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button type="button" className="btn btn-sm" onClick={() => { setExpandedNodes(new Set()); }} style={{ background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.3)' }}>
-                  <span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>unfold_less</span> Collapse All
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <button type="button" className="btn btn-sm" onClick={() => setExpandedNodes(new Set())} style={{ fontSize: '0.75rem' }}>
+                  <span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>unfold_less</span> Collapse
                 </button>
                 <button type="button" className="btn btn-sm" onClick={() => {
                   const all = new Set<string>();
                   const collect = (n: TreeNode) => { if (n.children?.length) { all.add(n.levelPath); n.children.forEach(collect); } };
                   if (treeData) collect(treeData);
                   setExpandedNodes(all);
-                }} style={{ background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.3)' }}>
-                  <span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>unfold_more</span> Expand All
+                }} style={{ fontSize: '0.75rem' }}>
+                  <span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>unfold_more</span> Expand
                 </button>
-                <button className="btn btn-sm" onClick={() => setTreeOpen(false)} style={{ background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.3)' }}>
+                <button className="btn btn-sm" onClick={() => setTreeOpen(false)} style={{ marginLeft: 4 }}>
                   <span className="material-symbols-rounded">close</span>
                 </button>
               </div>
             </div>
 
-            {/* Column Headers */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 24, padding: '10px 32px', background: '#f8fafc', borderBottom: '2px solid #e2e8f0', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              <span style={{ width: 36, flexShrink: 0 }}></span>
-              <span style={{ width: 56, flexShrink: 0 }}>Level</span>
-              <span style={{ flex: 1, minWidth: 200 }}>Item · Name</span>
-              <span style={{ width: 120, flexShrink: 0, textAlign: 'right' }}>Qty</span>
-              <span style={{ width: 140, flexShrink: 0, textAlign: 'right' }}>Wt/Unit</span>
-              <span style={{ width: 140, flexShrink: 0, textAlign: 'right', marginRight: 32 }}>Total Wt</span>
-              <span style={{ flex: 0.5, minWidth: 200 }}>Remarks</span>
-            </div>
+            {/* Summary bar */}
+            {treeData && (
+              <div style={{ display: 'flex', gap: 24, padding: '10px 24px', background: '#f1f5f9', borderBottom: '1px solid #e2e8f0', fontSize: '0.78rem', color: '#64748b' }}>
+                <span><strong style={{ color: '#1e293b' }}>{countNodes(treeData)}</strong> total nodes</span>
+                <span><strong style={{ color: '#3b82f6' }}>{countByType(treeData, 'FG')}</strong> FG</span>
+                <span><strong style={{ color: '#22c55e' }}>{countByType(treeData, 'SFG')}</strong> Semi-FG</span>
+                <span><strong style={{ color: '#f59e0b' }}>{countByType(treeData, 'RM')}</strong> Raw Material</span>
+                <span style={{ marginLeft: 'auto' }}>Total weight: <strong style={{ color: '#1e293b' }}>{treeData.totalWeight ? treeData.totalWeight.toFixed(2) : '—'} kg</strong></span>
+              </div>
+            )}
 
-            {/* Body */}
-            <div style={{ flex: 1, overflow: 'auto', padding: '0 0 24px' }}>
+            {/* Tree Body */}
+            <div style={{ flex: 1, overflow: 'auto', padding: 20 }}>
               {treeLoading ? (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 60, color: '#94a3b8' }}>
                   <span className="material-symbols-rounded" style={{ fontSize: '2rem', marginRight: 8, animation: 'spin 1s linear infinite' }}>progress_activity</span> Loading tree...
                 </div>
               ) : treeData ? (
-                <div style={{ paddingTop: 4 }}>
+                <div style={{ maxWidth: 960, margin: '0 auto' }}>
                   {renderTreeRows(treeData, expandedNodes, toggleNode, true)}
                 </div>
               ) : (
@@ -1120,115 +1120,144 @@ export default function BomMasterScreen() {
 
 /* ── Tree Row Renderer ── */
 
+function countNodes(node: TreeNode): number {
+  let c = 1;
+  if (node.children) for (const ch of node.children) c += countNodes(ch);
+  return c;
+}
+function countByType(node: TreeNode, type: string): number {
+  let c = 0;
+  const code = (node.componentItemCode || node.itemCode || '').toUpperCase();
+  if (type === 'FG' && code.startsWith('FG')) c = 1;
+  else if (type === 'SFG' && (code.startsWith('SFG') || code.startsWith('SMFG'))) c = 1;
+  else if (type === 'RM' && !code.startsWith('FG') && !code.startsWith('SFG') && !code.startsWith('SMFG')) c = 1;
+  if (node.children) for (const ch of node.children) c += countByType(ch, type);
+  return c;
+}
+
 function renderTreeRows(node: TreeNode, expanded: Set<string>, toggle: (path: string) => void, isRoot = false): React.ReactNode[] {
   const rows: React.ReactNode[] = [];
   const isLeaf = !node.children || node.children.length === 0;
   const path = node.levelPath || '1';
   const isExpanded = expanded.has(path);
-  const depth = path.split('.').length;
-  const indent = (depth - 1) * 28;
+  const depth = path.split('.').length - 1;
 
   const code = node.itemCode || node.componentItemCode || '';
   const desc = node.description || '';
   const qty = node.quantityPer || 0;
   const wt = node.weightPerQty && node.weightPerQty > 0 ? node.weightPerQty.toFixed(4) : '';
-  const totalWt = node.totalWeight && node.totalWeight > 0 ? node.totalWeight.toFixed(4) : '';
+  const totalWt = node.totalWeight && node.totalWeight > 0 ? node.totalWeight.toFixed(2) : '';
   const rmk = node.remarks || '';
 
-  const levelColors: Record<number, { bg: string; badge: string }> = {
-    0: { bg: 'linear-gradient(135deg, #eef2ff 0%, #f5f3ff 100%)', badge: '#6366f1' },
-    1: { bg: 'linear-gradient(135deg, #eff6ff 0%, #eef2ff 100%)', badge: '#3b82f6' },
-    2: { bg: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)', badge: '#22c55e' },
-    3: { bg: 'transparent', badge: '#f59e0b' },
-  };
-  const style = levelColors[depth] || levelColors[3];
-
-  const isFg = (node.componentItemCode || '').startsWith('FG') || (node.itemCode || '').startsWith('FG');
-  const isSfg = (node.componentItemCode || '').startsWith('SFG') || (node.componentItemCode || '').startsWith('SMFG') || (node.itemCode || '').startsWith('SFG');
+  const isFg = (code).toUpperCase().startsWith('FG');
+  const isSfg = (code).toUpperCase().startsWith('SFG') || (code).toUpperCase().startsWith('SMFG');
   const typeLabel = isRoot ? 'ROOT' : isFg ? 'FG' : isSfg ? 'SFG' : 'RM';
-  const typeColor = isRoot ? '#6366f1' : isFg ? '#3b82f6' : isSfg ? '#22c55e' : '#f59e0b';
+  const typeColor = isRoot ? '#6366f1' : isFg ? '#3b82f6' : isSfg ? '#10b981' : '#f59e0b';
+  const typeBg = isRoot ? '#eef2ff' : isFg ? '#eff6ff' : isSfg ? '#ecfdf5' : '#fffbeb';
 
   rows.push(
-    <div
-      key={path}
-      onClick={() => !isLeaf && toggle(path)}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 24,
-        padding: '10px 32px',
-        marginLeft: indent,
-        cursor: isLeaf ? 'default' : 'pointer',
-        borderBottom: '1px solid #f1f5f9',
-        borderRadius: isRoot ? 8 : 0,
-        background: style.bg,
-        transition: 'all 0.15s ease',
-        marginTop: isRoot ? 8 : 0,
-      }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = isRoot ? style.bg : 'rgba(99,102,241,0.04)'; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = style.bg; }}
-    >
-      {/* Expand/Collapse icon */}
-      <span style={{ width: 36, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        {!isLeaf ? (
-          <span className="material-symbols-rounded" style={{ fontSize: '1.1rem', color: style.badge }}>
-            {isExpanded ? 'expand_more' : 'chevron_right'}
-          </span>
-        ) : (
-          <span style={{ display: 'inline-block', width: 16 }} />
-        )}
-      </span>
+    <div key={path} style={{ marginLeft: isRoot ? 0 : depth * 32, position: 'relative', marginTop: isRoot ? 0 : 2 }}>
+      {/* Connector line for non-root */}
+      {!isRoot && depth > 0 && (
+        <div style={{
+          position: 'absolute', left: -20, top: 0, bottom: 0, width: 1,
+          background: '#d1d5db',
+        }} />
+      )}
+      {!isRoot && (
+        <div style={{
+          position: 'absolute', left: -20, top: '50%', width: 16, height: 1,
+          background: '#d1d5db',
+        }} />
+      )}
 
-      {/* Level path */}
-      <span style={{ width: 56, flexShrink: 0, fontWeight: isRoot ? 700 : 500, color: style.badge, fontSize: '0.85rem', fontFamily: 'monospace' }}>
-        {path}
-      </span>
+      {/* Card */}
+      <div
+        onClick={() => !isLeaf && toggle(path)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 16,
+          padding: isRoot ? '14px 20px' : '10px 16px',
+          cursor: isLeaf ? 'default' : 'pointer',
+          borderRadius: isRoot ? 10 : 8,
+          border: isRoot ? '1.5px solid #c7d2fe' : '1px solid #e5e7eb',
+          background: isRoot ? '#f5f3ff' : '#fff',
+          boxShadow: isRoot ? '0 2px 8px rgba(99,102,241,0.08)' : '0 1px 3px rgba(0,0,0,0.04)',
+          transition: 'all 0.12s ease',
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.boxShadow = isRoot ? '0 4px 14px rgba(99,102,241,0.14)' : '0 2px 8px rgba(0,0,0,0.08)'; e.currentTarget.style.borderColor = isRoot ? '#a5b4fc' : '#c7d2fe'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.boxShadow = isRoot ? '0 2px 8px rgba(99,102,241,0.08)' : '0 1px 3px rgba(0,0,0,0.04)'; e.currentTarget.style.borderColor = isRoot ? '#c7d2fe' : '#e5e7eb'; }}
+      >
+        {/* Expand/Collapse */}
+        <span style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          {!isLeaf ? (
+            <span className="material-symbols-rounded" style={{ fontSize: '1.1rem', color: '#6366f1', transition: 'transform 0.2s', transform: isExpanded ? 'rotate(0)' : 'rotate(0)' }}>
+              {isExpanded ? 'expand_more' : 'chevron_right'}
+            </span>
+          ) : (
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#d1d5db', flexShrink: 0 }} />
+          )}
+        </span>
 
-      {/* Item Code + Type Badge + Description (combined) */}
-      <span style={{ flex: 1, minWidth: 200, display: 'flex', alignItems: 'center', gap: 10, marginRight: 16 }}>
+        {/* Level path */}
+        <span style={{ width: 44, flexShrink: 0, fontWeight: 600, color: '#64748b', fontSize: '0.72rem', fontFamily: 'monospace', textAlign: 'center', background: '#f1f5f9', borderRadius: 4, padding: '2px 4px' }}>
+          {path}
+        </span>
+
+        {/* Type badge */}
         <span style={{
-          display: 'inline-flex', padding: '3px 10px', borderRadius: 6, fontSize: '0.65rem', fontWeight: 700,
-          background: `${typeColor}15`, color: typeColor, border: `1px solid ${typeColor}30`,
-          letterSpacing: '0.03em', flexShrink: 0,
+          display: 'inline-flex', padding: '2px 8px', borderRadius: 5, fontSize: '0.62rem', fontWeight: 700,
+          background: typeBg, color: typeColor, border: `1px solid ${typeColor}25`,
+          letterSpacing: '0.04em', flexShrink: 0, textTransform: 'uppercase',
         }}>{typeLabel}</span>
-        <span style={{ fontWeight: isRoot ? 700 : 600, color: '#1e293b', fontSize: isRoot ? '0.95rem' : '0.875rem', flexShrink: 0 }}>
+
+        {/* Item code */}
+        <span style={{ fontWeight: 700, color: '#1e293b', fontSize: isRoot ? '0.92rem' : '0.85rem', flexShrink: 0 }}>
           {code}
         </span>
+
+        {/* Name / Description */}
         {desc && (
-          <>
-            <span style={{ color: '#cbd5e1', flexShrink: 0 }}>—</span>
-            <span style={{ color: '#64748b', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {desc}
-            </span>
-          </>
+          <span style={{ color: '#6b7280', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
+            {desc}
+          </span>
         )}
-      </span>
 
-      {/* Qty */}
-      <span style={{ width: 120, flexShrink: 0, textAlign: 'right', color: '#334155', fontWeight: 500, fontSize: '0.875rem' }}>
-        {qty}
-      </span>
+        {/* Spacer */}
+        <span style={{ flex: '0 0 auto', width: 12 }} />
 
-      {/* Wt/Unit */}
-      <span style={{ width: 140, flexShrink: 0, textAlign: 'right', color: '#64748b', fontSize: '0.85rem' }}>
-        {wt || '\u2014'}
-      </span>
+        {/* Qty */}
+        <span style={{ textAlign: 'right', minWidth: 50, flexShrink: 0, color: '#1e293b', fontWeight: 600, fontSize: '0.82rem' }}>
+          {qty}
+        </span>
 
-      {/* Total Wt */}
-      <span style={{ width: 140, flexShrink: 0, textAlign: 'right', fontWeight: 600, color: '#1e293b', fontSize: '0.875rem', marginRight: 32 }}>
-        {totalWt ? `${totalWt} kg` : '\u2014'}
-      </span>
+        {/* Wt/Unit */}
+        <span style={{ textAlign: 'right', minWidth: 70, flexShrink: 0, color: '#64748b', fontSize: '0.78rem' }}>
+          {wt ? `${wt} kg` : '—'}
+        </span>
 
-      {/* Remarks */}
-      <span style={{ flex: 0.5, minWidth: 200, color: '#94a3b8', fontSize: '0.8rem', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {rmk || '\u2014'}
-      </span>
+        {/* Total Wt */}
+        <span style={{ textAlign: 'right', minWidth: 80, flexShrink: 0, fontWeight: 600, color: totalWt ? '#1e293b' : '#94a3b8', fontSize: '0.82rem' }}>
+          {totalWt ? `${totalWt} kg` : '—'}
+        </span>
+
+        {/* Remarks */}
+        {rmk && (
+          <span style={{ color: '#94a3b8', fontSize: '0.75rem', fontStyle: 'italic', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>
+            {rmk}
+          </span>
+        )}
+      </div>
+
+      {/* Children */}
+      {isExpanded && node.children && (
+        <div style={{ position: 'relative' }}>
+          {node.children.map((child) => (
+            <React.Fragment key={child.levelPath}>{renderTreeRows(child, expanded, toggle, false)}</React.Fragment>
+          ))}
+        </div>
+      )}
     </div>
   );
-
-  if (isExpanded && node.children) {
-    for (const child of node.children) {
-      rows.push(...renderTreeRows(child, expanded, toggle, false));
-    }
-  }
 
   return rows;
 }
