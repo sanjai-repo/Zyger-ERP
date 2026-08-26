@@ -6,8 +6,6 @@ import { defaultForm } from './processTypes';
 
 interface Resource { id: number; resourceName: string; resourceCode: string; resourceType: string; }
 
-const PROCESS_TYPES = ['', 'Insource', 'Outsource'];
-
 interface Props {
   processId: number | null;
   viewOnly?: boolean;
@@ -62,7 +60,15 @@ export default function ProcessForm({ processId, viewOnly = false, onBack, onSav
     if (id) {
       const res = resources.find((r) => r.id === id);
       if (res) {
-        setForm((c) => ({ ...c, requiredResource: id, resourceName: res.resourceName, resourceType: res.resourceType, ...(res.resourceType === 'Vendor' ? { processType: 'Outsource' } : {}) }));
+        const updates: Record<string, unknown> = { requiredResource: id, resourceName: res.resourceName, resourceType: res.resourceType };
+        const currentType = String(form.processType ?? '');
+        if (!currentType || currentType === 'Insource' || currentType === 'Outsource') {
+          updates.processType = res.resourceType === 'Vendor' ? 'Outsource' : 'Insource';
+        }
+        if (currentType === 'Outsource' && res.resourceType !== 'Vendor') {
+          toast('Note: Outsource process type is typically assigned to Vendor resources.', 'error');
+        }
+        setForm((c) => ({ ...c, ...updates }));
         return;
       }
     }
@@ -72,6 +78,7 @@ export default function ProcessForm({ processId, viewOnly = false, onBack, onSav
   const save = async () => {
     if (!String(form.code ?? '').trim()) { toast('Process Code is required.', 'error'); return; }
     if (!String(form.name ?? '').trim()) { toast('Process Name is required.', 'error'); return; }
+    if (!form.requiredResource) { toast('Required Resource is mandatory.', 'error'); return; }
     setBusy(true);
     try {
       if (editId) {
@@ -114,7 +121,7 @@ export default function ProcessForm({ processId, viewOnly = false, onBack, onSav
           <div className="fgrid sec-body">
             <label className="fld">
               <span>Process Code *</span>
-              <input className="in" value={String(form.code ?? '')} readOnly={!!editId}
+              <input className="in" value={String(form.code ?? '')} readOnly
                 onChange={(e) => updateForm('code', e.target.value)} disabled={viewOnly} />
             </label>
             <label className="fld">
@@ -126,12 +133,12 @@ export default function ProcessForm({ processId, viewOnly = false, onBack, onSav
               <span>Process Type</span>
               <select className="in" value={String(form.processType ?? '')}
                 onChange={(e) => updateForm('processType', e.target.value)} disabled={viewOnly}>
-                <option value="">— Select —</option>
-                {PROCESS_TYPES.filter(Boolean).map((t) => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+                <option value="Insource">Insource</option>
+                <option value="Outsource">Outsource</option>
               </select>
             </label>
             <label className="fld">
-              <span>Required Resource</span>
+              <span>Required Resource *</span>
               <select className="in" value={String(form.requiredResource ?? '')}
                 onChange={(e) => onResourceChange(e.target.value)} disabled={viewOnly}>
                 <option value="">— None —</option>

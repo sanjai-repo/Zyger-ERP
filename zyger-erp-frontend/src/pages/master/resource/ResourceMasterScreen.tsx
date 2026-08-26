@@ -54,6 +54,7 @@ export default function ResourceMasterScreen() {
     if (!form.resourceName.trim()) { toast('Resource Name is mandatory.', 'error'); return; }
     if (!form.resourceType) { toast('Resource Type is mandatory.', 'error'); return; }
     if (!form.capacity || form.capacity <= 0) { toast('Capacity must be > 0.', 'error'); return; }
+    if (!form.capacityUom) { toast('Capacity UOM is mandatory.', 'error'); return; }
     setBusy(true);
     try {
       if (editId) {

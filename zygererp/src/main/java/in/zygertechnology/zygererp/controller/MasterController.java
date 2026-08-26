@@ -741,6 +741,12 @@ public class MasterController {
         if (body.has("requiredResource") && !body.get("requiredResource").isNull()) {
             p.setRequiredResource(resourceMasters.findById(body.get("requiredResource").asLong()).orElse(null));
         }
+        if (p.getName() == null || p.getName().isBlank()) {
+            throw new RuntimeException("Process Name is mandatory.");
+        }
+        if (processMasters.existsByNameIgnoreCase(p.getName())) {
+            throw new RuntimeException("A process with this name already exists.");
+        }
         p.setId(null);
         deriveResourceFields(p);
         ProcessMaster saved = processMasters.save(p);
@@ -750,6 +756,11 @@ public class MasterController {
         ProcessMaster e = processMasters.findById(id).orElseThrow(() -> new RuntimeException("Process not found"));
         ProcessMaster merged = mergePatch(e, body);
         merged.setId(id); merged.setVersion(e.getVersion());
+        if (merged.getName() != null && !merged.getName().isBlank()) {
+            if (processMasters.existsByNameIgnoreCaseAndIdNot(merged.getName(), id)) {
+                throw new RuntimeException("A process with this name already exists.");
+            }
+        }
         if (body.has("processGroupId") && !body.get("processGroupId").isNull()) {
             merged.setProcessGroup(processGroups.findById(body.get("processGroupId").asLong()).orElse(null));
         } else if (body.has("processGroupId") && body.get("processGroupId").isNull()) {
@@ -1071,6 +1082,9 @@ public class MasterController {
 
     private final ResourceMasterRepository resourceMasters;
 
+    @GetMapping("/api/master/resources/next-code")
+    Map<String,String> nextResourceCode() { return Map.of("code", docNumbers.next("resource")); }
+
     @GetMapping("/api/master/resources")
     List<ResourceMaster> resources() { return resourceMasters.findByActiveTrue(); }
 
@@ -1078,10 +1092,16 @@ public class MasterController {
     ResourceMaster getResource(@PathVariable Long id) { return resourceMasters.findById(id).orElseThrow(); }
 
     @PostMapping("/api/master/resources")
-    ResourceMaster createResource(@RequestBody ResourceMaster r) {
+    @Transactional ResourceMaster createResource(@RequestBody ResourceMaster r) {
         r.setId(null);
+        if (r.getResourceCode() == null || r.getResourceCode().isBlank()) {
+            r.setResourceCode(docNumbers.next("resource"));
+        }
         if (resourceMasters.existsByResourceCode(r.getResourceCode())) {
             throw new RuntimeException("Resource code already exists: " + r.getResourceCode());
+        }
+        if (r.getResourceName() == null || r.getResourceName().isBlank()) {
+            throw new RuntimeException("Resource Name is mandatory.");
         }
         if (resourceMasters.existsByResourceNameIgnoreCase(r.getResourceName())) {
             throw new RuntimeException("A resource with this name already exists.");
@@ -1101,6 +1121,18 @@ public class MasterController {
     @PutMapping("/api/master/resources/{id}")
     @Transactional ResourceMaster updateResource(@PathVariable Long id, @RequestBody ResourceMaster r) {
         ResourceMaster existing = resourceMasters.findById(id).orElseThrow();
+        if (r.getResourceName() == null || r.getResourceName().isBlank()) {
+            throw new RuntimeException("Resource Name is mandatory.");
+        }
+        if (resourceMasters.existsByResourceNameIgnoreCaseAndIdNot(r.getResourceName(), id)) {
+            throw new RuntimeException("A resource with this name already exists.");
+        }
+        if (r.getResourceType() == null || r.getResourceType().isBlank()) {
+            throw new RuntimeException("Resource Type is mandatory.");
+        }
+        if (r.getCapacity() == null || r.getCapacity().signum() <= 0) {
+            throw new RuntimeException("Capacity must be greater than 0.");
+        }
         existing.setResourceName(r.getResourceName());
         existing.setResourceType(r.getResourceType());
         existing.setCapacity(r.getCapacity());
@@ -1108,22 +1140,13 @@ public class MasterController {
         existing.setDepartment(r.getDepartment());
         existing.setHourlyRate(r.getHourlyRate());
         existing.setDescription(r.getDescription());
+        existing.setStatus(r.getStatus() != null ? r.getStatus() : existing.getStatus());
         existing.setUpdatedAt(java.time.Instant.now());
         return resourceMasters.save(existing);
     }
 
     @DeleteMapping("/api/master/resources/{id}")
     void deleteResource(@PathVariable Long id) {
-        Long processCount = em.createQuery("SELECT COUNT(pm) FROM ProcessMaster pm WHERE pm.requiredResource.id = :resourceId", Long.class)
-                .setParameter("resourceId", id).getSingleResult();
-        if (processCount > 0) {
-            throw new IllegalStateException("This Resource is referenced in existing Processes and cannot be deleted.");
-        }
-        Long routeCount = em.createQuery("SELECT COUNT(ro) FROM RouteOperation ro WHERE ro.resource.id = :resourceId", Long.class)
-                .setParameter("resourceId", id).getSingleResult();
-        if (routeCount > 0) {
-            throw new IllegalStateException("This Resource is referenced in existing Route Operations and cannot be deleted.");
-        }
         resourceMasters.findById(id).ifPresent(r -> {
             r.setActive(false);
             r.setStatus("Inactive");

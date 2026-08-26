@@ -21,5 +21,5 @@ export const defaultForm = (): Record<string, unknown> => ({
   code: '', name: '', description: '',
   processGroupId: null, cycleTime: null, setupTime: null, unitRate: null,
   machineRequired: false, inspection: false, active: true,
-  processType: '', requiredResource: null, resourceName: '', resourceType: '',
+  processType: 'Insource', requiredResource: null, resourceName: '', resourceType: '',
 });

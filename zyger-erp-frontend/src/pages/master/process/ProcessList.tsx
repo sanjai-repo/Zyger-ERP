@@ -42,9 +42,9 @@ export default function ProcessList({ onAdd, onEdit, onView }: Props) {
     setBusy(true);
     try {
       await apiClient.delete(`/master/processes/${deleteTarget.id}`);
-      toast('Process deleted.');
+      toast('Process inactivated.');
       setDeleteTarget(null); load();
-    } catch (e) { toast(getApiErrorMessage(e, 'Delete failed.'), 'error'); }
+    } catch (e) { toast(getApiErrorMessage(e, 'Inactivate failed.'), 'error'); }
     setBusy(false);
   };
 
@@ -96,8 +96,8 @@ export default function ProcessList({ onAdd, onEdit, onView }: Props) {
                         <button className="ibtn" title="Edit" onClick={() => onEdit(r.id)}>
                           <span className="material-symbols-rounded">edit</span>
                         </button>
-                        <button className="ibtn danger" title="Delete" onClick={() => setDeleteTarget(r)}>
-                          <span className="material-symbols-rounded">delete</span>
+                        <button className="ibtn danger" title="Inactivate" onClick={() => setDeleteTarget(r)}>
+                          <span className="material-symbols-rounded">toggle_off</span>
                         </button>
                       </div>
                     </td>
@@ -120,8 +120,8 @@ export default function ProcessList({ onAdd, onEdit, onView }: Props) {
         )}
       </div>
 
-      <ConfirmActionModal open={Boolean(deleteTarget)} title={`Delete ${deleteTarget?.code ?? ''}`}
-        body="Permanently delete this process?" okLabel="Delete" danger busy={busy}
+      <ConfirmActionModal open={Boolean(deleteTarget)} title={`Inactivate ${deleteTarget?.code ?? ''}`}
+        body="Inactivate this process? It will be hidden from new selections but retained on existing route sheets." okLabel="Inactivate" danger busy={busy}
         onClose={() => setDeleteTarget(null)} onConfirm={del} />
     </>
   );

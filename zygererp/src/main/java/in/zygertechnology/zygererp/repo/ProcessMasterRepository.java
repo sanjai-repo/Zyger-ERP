@@ -8,5 +8,6 @@ public interface ProcessMasterRepository extends JpaRepository<ProcessMaster, Lo
     Optional<ProcessMaster> findByCode(String code);
     boolean existsByCode(String code);
     boolean existsByNameIgnoreCase(String name);
+    boolean existsByNameIgnoreCaseAndIdNot(String name, Long id);
     List<ProcessMaster> findByActiveTrue();
 }

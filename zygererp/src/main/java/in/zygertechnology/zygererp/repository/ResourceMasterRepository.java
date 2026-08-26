@@ -11,4 +11,5 @@ public interface ResourceMasterRepository extends JpaRepository<ResourceMaster, 
     List<ResourceMaster> findByResourceTypeAndActiveTrue(String resourceType);
     boolean existsByResourceCode(String resourceCode);
     boolean existsByResourceNameIgnoreCase(String resourceName);
+    boolean existsByResourceNameIgnoreCaseAndIdNot(String resourceName, Long id);
 }
