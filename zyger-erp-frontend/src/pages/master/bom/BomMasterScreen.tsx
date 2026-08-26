@@ -224,6 +224,16 @@ export default function BomMasterScreen() {
     return rows.filter((r) => (r.bomNumber || r.docNo || '').toLowerCase().includes(q) || (r.itemCode || '').toLowerCase().includes(q) || (r.description || '').toLowerCase().includes(q));
   }, [rows, searchText]);
 
+  const filteredItems = useMemo(() => {
+    if (!bom.itemType) return items;
+    return items.filter((i) => {
+      const t = (i.itemType || '').toUpperCase();
+      if (bom.itemType === 'FG') return t === 'FG';
+      if (bom.itemType === 'SEMI_FG') return t === 'SEMI_FG' || t === 'SFG';
+      return true;
+    });
+  }, [items, bom.itemType]);
+
   const computedWeight = useMemo(() => {
     return bom.lines.filter((l) => !l.isActive || true).reduce((sum, l) => sum + (l.totalWeight || 0), 0);
   }, [bom.lines]);
@@ -636,14 +646,34 @@ export default function BomMasterScreen() {
               </label>
 
               <label className="fld"><span>BOM Item *</span>
-                <select className="in" value={bom.itemCode} onChange={(e) => setField('itemCode', e.target.value)} disabled={!isEditable && !!editId} required>
+                <select className="in" value={bom.itemCode} onChange={(e) => {
+                  const code = e.target.value;
+                  setField('itemCode', code);
+                  // Auto-fill weight and UOM from item master
+                  const item = items.find((i) => i.code === code);
+                  if (item) {
+                    setField('baseUom', item.uom || 'PCS');
+                  }
+                }} disabled={!isEditable && !!editId} required>
                   <option value="">\u2014 Select Item \u2014</option>
-                  {items.map((i) => <option key={i.id} value={i.code}>{i.code} - {i.name}</option>)}
+                  {filteredItems.map((i) => <option key={i.id} value={i.code}>{i.code} - {i.name}{i.weight ? ` (${i.weight} kg)` : ''}</option>)}
                 </select>
               </label>
 
               <label className="fld"><span>Item Type *</span>
-                <select className="in" value={bom.itemType} onChange={(e) => setField('itemType', e.target.value)} disabled={!isEditable && !!editId}>
+                <select className="in" value={bom.itemType} onChange={(e) => {
+                  const newType = e.target.value;
+                  // Clear itemCode if it doesn't match the new type
+                  const matchItems = items.filter((i) => {
+                    const t = (i.itemType || '').toUpperCase();
+                    if (newType === 'FG') return t === 'FG';
+                    if (newType === 'SEMI_FG') return t === 'SEMI_FG' || t === 'SFG';
+                    return true;
+                  });
+                  const stillValid = matchItems.some((i) => i.code === bom.itemCode);
+                  setField('itemType', newType);
+                  if (!stillValid) setField('itemCode', '');
+                }} disabled={!isEditable && !!editId}>
                   {ITEM_TYPES.map((t) => <option key={t} value={t}>{t === 'SEMI_FG' ? 'Semi FG' : t}</option>)}
                 </select>
               </label>
@@ -731,7 +761,7 @@ export default function BomMasterScreen() {
                         <td>
                           <select className="in" value={line.componentItemCode} onChange={(e) => onComponentItemSelect(idx, e.target.value)} disabled={!isEditable}>
                             <option value="">\u2014 Select Item \u2014</option>
-                            {items.map((i) => <option key={i.id} value={i.code}>{i.code} - {i.name}</option>)}
+                            {items.map((i) => <option key={i.id} value={i.code}>{i.code} - {i.name}{i.weight ? ` (${i.weight} kg)` : ''}</option>)}
                           </select>
                         </td>
                         <td>
