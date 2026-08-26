@@ -32,7 +32,7 @@ interface PlanningDocScreenProps {
   defaultType?: string;
 }
 
-type ActionModal = { action: 'submit' | 'approve' | 'reject' | 'reopen' | 'cancel' | 'revise'; danger: boolean };
+type ActionModal = { action: 'submit' | 'approve' | 'reject' | 'reopen' | 'cancel' | 'revise' | 'release' | 'obsolete'; danger: boolean };
 
 export default function PlanningDocScreen({ config, initialDocId, viewOnly = false, defaultType }: PlanningDocScreenProps) {
   const { toast } = useToast();
@@ -58,12 +58,17 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
   const [childGridData, setChildGridData] = useState<Record<string, unknown>[]>([]);
   const [includeInactive, setIncludeInactive] = useState(false);
   const [processes, setProcesses] = useState<Array<Record<string, unknown>>>([]);
+  const [resources, setResources] = useState<Array<Record<string, unknown>>>([]);
 
   useEffect(() => {
     apiClient.get('/master/processes').then((r) => {
       const data = r.data as { content?: unknown[] } | unknown[];
       const list = Array.isArray(data) ? data : (data?.content ?? []);
       setProcesses(list as Array<Record<string, unknown>>);
+    }).catch(() => {});
+    apiClient.get('/master/resources').then((r) => {
+      const d = r.data as unknown;
+      setResources(Array.isArray(d) ? (d as Array<Record<string, unknown>>) : []);
     }).catch(() => {});
   }, []);
 
@@ -190,8 +195,22 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
 
   const validate = () => {
     const errs = validateFields(config.fields, form);
-    if (errs.length > 0) toast(errs[0].message, 'error');
-    return errs.length === 0;
+    if (errs.length > 0) { toast(errs[0].message, 'error'); return false; }
+    // Route Sheet specific validations (FRS §6)
+    if (isRouteSheet && config.lines && lines.length > 0) {
+      // V-02: Sequence No must be unique
+      const seqs = lines.map((l) => Number(l.sequenceNo)).filter((s) => s > 0);
+      const dupSeq = seqs.find((s, i) => seqs.indexOf(s) !== i);
+      if (dupSeq) { toast(`V-02: Duplicate Sequence No ${dupSeq} — each operation must have a unique sequence.`, 'error'); return false; }
+      // V-04: Setup/Cycle time cannot be negative
+      for (let i = 0; i < lines.length; i++) {
+        const st = Number(lines[i].setupTime ?? 0);
+        const ct = Number(lines[i].cycleTime ?? 0);
+        if (st < 0) { toast(`V-04: Row ${i + 1} — Setup Time cannot be negative.`, 'error'); return false; }
+        if (ct < 0) { toast(`V-04: Row ${i + 1} — Cycle Time cannot be negative.`, 'error'); return false; }
+      }
+    }
+    return true;
   };
 
   const handleCreate = async () => {
@@ -356,7 +375,7 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
                 {documentId && !isViewOnly && genericStatus === 'DRAFT' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'submit', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">send</span> Submit</button>}
                 {documentId && !isViewOnly && genericStatus === 'SUBMITTED' && <button type="button" className="btn btn-sm btn-g" onClick={() => setActionModal({ action: 'approve', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">thumb_up</span> Approve</button>}
                 {documentId && !isViewOnly && genericStatus === 'SUBMITTED' && <button type="button" className="btn btn-sm btn-d" onClick={() => setActionModal({ action: 'reject', danger: true })} disabled={isBusy}><span className="material-symbols-rounded">thumb_down</span> Reject</button>}
-                {isRouteSheet && documentId && !isViewOnly && genericStatus === 'DRAFT' && <button type="button" className="btn btn-sm btn-g" onClick={() => runAction('release')} disabled={isBusy}><span className="material-symbols-rounded">rocket_launch</span> Release</button>}
+                {isRouteSheet && documentId && !isViewOnly && genericStatus === 'DRAFT' && <button type="button" className="btn btn-sm btn-g" onClick={() => { if (lines.length === 0) { toast('V-03: At least one operation row is required before Release.', 'error'); return; } setActionModal({ action: 'release', danger: false }); }} disabled={isBusy}><span className="material-symbols-rounded">rocket_launch</span> Release</button>}
                 {isRouteSheet && documentId && !isViewOnly && (genericStatus === 'RELEASED' || genericStatus === 'UNDER_REVISION') && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'revise', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">edit_note</span> Revise</button>}
                 {!isRouteSheet && config.docType === 'production-bom' && documentId && !isViewOnly && genericStatus === 'APPROVED' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'revise', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">edit_note</span> Revise</button>}
                 {isRouteSheet && documentId && !isViewOnly && (genericStatus === 'RELEASED' || genericStatus === 'UNDER_REVISION') && <button type="button" className="btn btn-sm btn-d" onClick={() => runAction('obsolete')} disabled={isBusy}><span className="material-symbols-rounded">archive</span> Obsolete</button>}
@@ -431,7 +450,21 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
                               } : l));
                             }}>
                               <option value="">— Select Process —</option>
-                              {processes.map((p) => <option key={String(p.id)} value={String(p.id)}>{String(p.code || p.name)}{p.active === false ? ' (inactive)' : ''}</option>)}
+                              {processes.map((p) => <option key={String(p.id)} value={String(p.id)}>{String(p.code || '')}{p.code ? ' — ' : ''}{String(p.name || '')}{p.active === false ? ' (inactive)' : ''}</option>)}
+                            </select>
+                          ) : docType === 'route-sheet' && f.key === 'resourceId' ? (
+                            <select className="in" value={String(line[f.key] ?? '')} onChange={(e) => {
+                              const selectedResId = e.target.value;
+                              const res = resources.find((r) => String(r.id) === selectedResId);
+                              setLines((c) => c.map((l, i) => i === index ? {
+                                ...l,
+                                resourceId: selectedResId || '',
+                                resourceName: res?.resourceName ?? '',
+                                resourceType: res?.resourceType ?? '',
+                              } : l));
+                            }}>
+                              <option value="">— Default from Process —</option>
+                              {resources.filter((r) => r.active !== false).map((r) => <option key={String(r.id)} value={String(r.id)}>{String(r.resourceCode || '')} — {String(r.resourceName || '')} ({String(r.resourceType || '')})</option>)}
                             </select>
                           ) : f.type === 'select' ? (
                             <select className="in" value={String(line[f.key] ?? '')} onChange={(e) => setLines((c) => c.map((l, i) => (i === index ? { ...l, [f.key]: e.target.value } : l)))}>
@@ -439,7 +472,7 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
                               {(f.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
                             </select>
                           ) : (
-                            <input className="in" type={f.type ?? 'text'} readOnly={f.readonly || !editable || (docType === 'route-sheet' && ['processType', 'resourceName', 'resourceType', 'resourceId'].includes(f.key))} value={String(line[f.key] ?? '')} onChange={(e) => setLines((c) => c.map((l, i) => (i === index ? { ...l, [f.key]: e.target.value } : l)))} />
+                            <input className="in" type={f.type ?? 'text'} readOnly={f.readonly || !editable || (docType === 'route-sheet' && ['processType', 'resourceName', 'resourceType'].includes(f.key))} value={String(line[f.key] ?? '')} onChange={(e) => setLines((c) => c.map((l, i) => (i === index ? { ...l, [f.key]: e.target.value } : l)))} />
                           )}
                         </td>
                       ))}
@@ -505,7 +538,7 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
           </div>
         </div>
       </form>
-      <ConfirmActionModal open={Boolean(actionModal)} title={`${actionModal?.action ?? ''} ${docNo}`} body={actionModal?.action === 'approve' ? 'Approving records the action with your user in the audit trail.' : actionModal?.action === 'reject' ? 'Reason for rejection:' : actionModal?.action === 'revise' ? 'Remarks for new revision (required):' : actionModal?.action === 'cancel' ? 'This cancels the record with an audit trail.' : 'Submit this record for review?'} okLabel={actionModal ? actionModal.action.charAt(0).toUpperCase() + actionModal.action.slice(1) : 'Confirm'} danger={actionModal?.danger} busy={actionMutation.isPending} onClose={() => setActionModal(null)} onConfirm={(note) => actionModal && runAction(actionModal.action, note)} />
+      <ConfirmActionModal open={Boolean(actionModal)} title={`${actionModal?.action ?? ''} ${docNo}`} body={actionModal?.action === 'approve' ? 'Approving records the action with your user in the audit trail.' : actionModal?.action === 'reject' ? 'Reason for rejection:' : actionModal?.action === 'revise' ? 'Remarks for new revision (required):' : actionModal?.action === 'cancel' ? 'This cancels the record with an audit trail.' : actionModal?.action === 'release' ? 'Release this Route Sheet? It will become read-only except Remarks.' : actionModal?.action === 'obsolete' ? 'Mark this Route Sheet as Obsolete? It will no longer be selectable for production.' : 'Submit this record for review?'} okLabel={actionModal ? actionModal.action.charAt(0).toUpperCase() + actionModal.action.slice(1) : 'Confirm'} danger={actionModal?.danger} busy={actionMutation.isPending} onClose={() => setActionModal(null)} onConfirm={(note) => actionModal && runAction(actionModal.action, note)} />
       <AuditHistoryDrawer open={auditOpen} entityType={auditEntityTypeFor(docType)} entityId={documentId ?? undefined} onClose={() => setAuditOpen(false)} />
     </>
   );

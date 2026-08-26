@@ -19,11 +19,12 @@ interface Resource {
 }
 
 const RESOURCE_TYPES = ['Machine', 'Labour', 'Tool', 'Vendor'];
-const CAPACITY_UOMS = ['Pieces/Hour', 'Kg/Hour', 'Hours', 'Pieces/Day'];
+const CAPACITY_UOMS = ['Pieces/Hour', 'Kg/Hour', 'Hours', 'Pieces/Day', 'Kg/Day', 'Units/Day'];
+const STATUS_OPTIONS = ['Active', 'Inactive'];
 
 const initialForm = {
-  resourceCode: '', resourceName: '', resourceType: 'Machine',
-  capacity: 1, capacityUom: 'Pieces/Hour', department: '',
+  resourceName: '', resourceType: 'Machine',
+  capacity: 1, capacityUom: 'Pieces/Hour', department: '', status: 'Active',
   hourlyRate: 0, description: '',
 };
 
@@ -81,9 +82,9 @@ export default function ResourceMasterScreen() {
   const edit = (r: Resource) => {
     setEditId(r.id);
     setForm({
-      resourceCode: r.resourceCode, resourceName: r.resourceName,
+      resourceName: r.resourceName,
       resourceType: r.resourceType, capacity: r.capacity,
-      capacityUom: r.capacityUom, department: r.department ?? '',
+      capacityUom: r.capacityUom, department: r.department ?? '', status: r.status || 'Active',
       hourlyRate: r.hourlyRate ?? 0, description: r.description ?? '',
     });
   };
@@ -96,9 +97,9 @@ export default function ResourceMasterScreen() {
       </div>
 
       <div className="panel">
-        <div className="panel-h"><h2>{editId ? 'Edit' : 'New'} Resource</h2></div>
+        <div className="panel-h"><h2><span className="material-symbols-rounded" style={{ fontSize: '20px', color: '#2563eb' }}>{editId ? 'edit' : 'add_circle'}</span> {editId ? 'Edit' : 'New'} Resource</h2></div>
         <div className="fgrid">
-          <label className="fld"><span>Resource Code</span><input className="in" value={form.resourceCode} onChange={(e) => set('resourceCode', e.target.value)} placeholder={editId ? '' : 'Auto-generated'} readOnly={!!editId} /></label>
+          <label className="fld"><span>Resource Code</span><input className="in" value={editId ? (rows.find((r) => r.id === editId)?.resourceCode || '') : 'Auto-generated'} readOnly style={{ background: '#f9fafb' }} tabIndex={-1} /></label>
           <label className="fld"><span>Resource Name *</span><input className="in" value={form.resourceName} onChange={(e) => set('resourceName', e.target.value)} /></label>
           <label className="fld"><span>Resource Type *</span>
             <select className="in" value={form.resourceType} onChange={(e) => set('resourceType', e.target.value)}>
@@ -112,12 +113,21 @@ export default function ResourceMasterScreen() {
             </select>
           </label>
           <label className="fld"><span>Department</span><input className="in" value={form.department} onChange={(e) => set('department', e.target.value)} /></label>
+          <label className="fld"><span>Status *</span>
+            <select className="in" value={form.status} onChange={(e) => set('status', e.target.value)}>
+              {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
           <label className="fld"><span>Hourly Rate</span><input className="in" type="number" min="0" step="0.01" value={form.hourlyRate} onChange={(e) => set('hourlyRate', parseFloat(e.target.value) || 0)} /></label>
-          <label className="fld"><span>Description</span><input className="in" value={form.description} onChange={(e) => set('description', e.target.value)} /></label>
+          <label className="fld" style={{ gridColumn: 'span 2' }}><span>Description</span><input className="in" value={form.description} onChange={(e) => set('description', e.target.value)} /></label>
         </div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-          <button className="btn primary" onClick={save} disabled={busy}>{editId ? 'Update' : 'Save'}</button>
-          {editId && <button className="btn" onClick={() => { setEditId(null); setForm(initialForm); }}>Cancel</button>}
+        <div className="actbar">
+          <div className="lft">
+            <button className="btn btn-sm" onClick={() => { setEditId(null); setForm(initialForm); }}><span className="material-symbols-rounded">arrow_back</span> Back</button>
+          </div>
+          <div className="rgt">
+            <button className="btn btn-sm btn-p" onClick={save} disabled={busy}><span className="material-symbols-rounded">save</span> {editId ? 'Update' : 'Save'}</button>
+          </div>
         </div>
       </div>
 
@@ -148,13 +158,13 @@ export default function ResourceMasterScreen() {
       </div>
 
       {deleteTarget && (
-        <div className="modal-overlay" onClick={() => setDeleteTarget(null)}>
+        <div className="mwrap" onClick={() => setDeleteTarget(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3>Inactivate Resource</h3>
             <p>Inactivate <b>{deleteTarget.resourceName}</b>? It will be hidden from new selections but retained on existing records.</p>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button className="btn" onClick={() => setDeleteTarget(null)}>Cancel</button>
-              <button className="btn danger" onClick={del} disabled={busy}>Inactivate</button>
+            <div className="acts">
+              <button className="btn btn-sm" onClick={() => setDeleteTarget(null)}>Cancel</button>
+              <button className="btn btn-sm btn-d" onClick={del} disabled={busy}>Inactivate</button>
             </div>
           </div>
         </div>

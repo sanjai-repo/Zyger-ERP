@@ -135,7 +135,7 @@ export default function ProcessForm({ processId, viewOnly = false, onBack, onSav
               <select className="in" value={String(form.requiredResource ?? '')}
                 onChange={(e) => onResourceChange(e.target.value)} disabled={viewOnly}>
                 <option value="">— None —</option>
-                {resources.map((r) => <option key={r.id} value={r.id}>{r.resourceCode} — {r.resourceName} ({r.resourceType})</option>)}
+                {resources.filter((r) => r.active !== false).map((r) => <option key={r.id} value={r.id}>{r.resourceCode} — {r.resourceName} ({r.resourceType})</option>)}
               </select>
             </label>
             <label className="fld">
