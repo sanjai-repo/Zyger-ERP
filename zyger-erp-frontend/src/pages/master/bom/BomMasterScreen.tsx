@@ -1013,10 +1013,10 @@ export default function BomMasterScreen() {
 
       {/* ── Tree View Modal ── */}
       {treeOpen && (
-        <div className="modal-overlay" onClick={() => setTreeOpen(false)} style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)' }}>
+        <div className="mwrap" onClick={() => setTreeOpen(false)} style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)' }}>
           <div onClick={(e) => e.stopPropagation()} style={{
             position: 'fixed', inset: 24, background: '#fff', borderRadius: 16, boxShadow: '0 25px 60px rgba(0,0,0,0.25)',
-            display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid #e2e8f0',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid #e2e8f0', zIndex: 120,
           }}>
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderBottom: '1px solid #e2e8f0', background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)' }}>
