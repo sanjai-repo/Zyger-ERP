@@ -1114,8 +1114,8 @@ public class PlanningService {
         root.put("bomNumber", bom.getBomNumber());
         root.put("itemCode", bom.getItemCode());
         root.put("itemType", bom.getItemType());
-        root.put("level", 0);
-        root.put("levelPath", "");
+        root.put("level", 1);
+        root.put("levelPath", "1");
         root.put("quantityPer", bom.getBaseQuantity());
         root.put("totalWeight", bom.getWeight());
         List<Map<String, Object>> children = new ArrayList<>();
@@ -1123,7 +1123,7 @@ public class PlanningService {
             int seq = 1;
             for (ProductionBOMLine line : bom.getLines()) {
                 if (Boolean.TRUE.equals(line.getIsDeleted())) continue;
-                Map<String, Object> node = buildBomTreeNode(line, seq++, "0");
+                Map<String, Object> node = buildBomTreeNode(line, seq++, "1");
                 children.add(node);
             }
         }
@@ -1142,7 +1142,7 @@ public class PlanningService {
         node.put("weightPerQty", line.getWeightPerQty());
         node.put("totalWeight", line.getTotalWeight());
         node.put("level", levelPath.split("\\.").length);
-        node.put("levelPath", levelPath.substring(1));
+        node.put("levelPath", levelPath);
 
         // FRS FR-09: recursively load child BOM for Semi-FG components
         List<Map<String, Object>> children = new ArrayList<>();

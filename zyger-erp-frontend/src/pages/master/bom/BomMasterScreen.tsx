@@ -930,12 +930,9 @@ export default function BomMasterScreen() {
               <button className="btn btn-sm" onClick={() => setTreeOpen(false)}><span className="material-symbols-rounded">close</span></button>
             </div>
             {treeLoading ? <div className="empty" style={{ padding: 20 }}>Loading tree...</div> : treeData ? (
-              <table className="tbl" style={{ fontSize: '0.85em' }}>
-                <thead><tr><th style={{ width: 50 }}>Level</th><th>Item Code</th><th>Description</th><th style={{ width: 60 }}>Qty</th><th style={{ width: 80 }}>Wt/Unit</th><th style={{ width: 80 }}>Total Wt</th></tr></thead>
-                <tbody>
-                  {renderTreeRows(treeData, expandedNodes, toggleNode)}
-                </tbody>
-              </table>
+              <div style={{ fontFamily: 'monospace', fontSize: '0.85em' }}>
+                {renderTreeRows(treeData, expandedNodes, toggleNode, true)}
+              </div>
             ) : <div className="empty" style={{ padding: 20 }}>No tree data.</div>}
           </div>
         </div>
@@ -949,29 +946,60 @@ export default function BomMasterScreen() {
 
 /* ── Tree Row Renderer ── */
 
-function renderTreeRows(node: TreeNode, expanded: Set<string>, toggle: (path: string) => void): React.ReactNode[] {
+function renderTreeRows(node: TreeNode, expanded: Set<string>, toggle: (path: string) => void, isRoot = false): React.ReactNode[] {
   const rows: React.ReactNode[] = [];
   const isLeaf = !node.children || node.children.length === 0;
-  const isExpanded = expanded.has(node.levelPath);
-  const indent = node.level * 20;
+  const path = node.levelPath || '1';
+  const isExpanded = expanded.has(path);
+  const depth = path.split('.').length;
+  const indent = (depth - 1) * 24;
+
+  const code = node.itemCode || node.componentItemCode || '';
+  const desc = node.description || '';
+  const qty = node.quantityPer || 0;
+  const wt = node.weightPerQty && node.weightPerQty > 0 ? node.weightPerQty.toFixed(4) : '';
+  const totalWt = node.totalWeight && node.totalWeight > 0 ? node.totalWeight.toFixed(4) : '';
+
+  const bg = depth % 2 === 0 ? 'rgba(99,102,241,0.04)' : 'transparent';
 
   rows.push(
-    <tr key={node.levelPath} style={{ cursor: isLeaf ? 'default' : 'pointer' }} onClick={() => !isLeaf && toggle(node.levelPath)}>
-      <td style={{ paddingLeft: indent, fontWeight: node.level === 0 ? 700 : 400 }}>
-        {!isLeaf && <span className="material-symbols-rounded" style={{ fontSize: '1rem', verticalAlign: 'middle', marginRight: 4 }}>{isExpanded ? 'expand_more' : 'chevron_right'}</span>}
-        {node.levelPath || '0'}
-      </td>
-      <td style={{ fontWeight: node.level === 0 ? 700 : 500 }}>{node.itemCode || node.componentItemCode}</td>
-      <td>{node.description || '\u2014'}</td>
-      <td>{node.quantityPer}</td>
-      <td>{node.weightPerQty && node.weightPerQty > 0 ? node.weightPerQty.toFixed(4) : '\u2014'}</td>
-      <td style={{ fontWeight: 600 }}>{node.totalWeight && node.totalWeight > 0 ? node.totalWeight.toFixed(4) : '\u2014'}</td>
-    </tr>
+    <div
+      key={path}
+      onClick={() => !isLeaf && toggle(path)}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px',
+        cursor: isLeaf ? 'default' : 'pointer',
+        paddingLeft: indent + 8,
+        background: bg,
+        borderBottom: '1px solid #f1f5f9',
+        transition: 'background 0.15s',
+      }}
+      onMouseEnter={(e) => { if (!isLeaf) e.currentTarget.style.background = 'rgba(99,102,241,0.08)'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = bg; }}
+    >
+      {!isLeaf ? (
+        <span className="material-symbols-rounded" style={{ fontSize: '1rem', color: '#6366f1', flexShrink: 0 }}>
+          {isExpanded ? 'expand_more' : 'chevron_right'}
+        </span>
+      ) : (
+        <span style={{ width: 16, flexShrink: 0 }} />
+      )}
+      <span style={{ fontWeight: isRoot ? 700 : 500, color: isRoot ? '#1e293b' : depth <= 2 ? '#334155' : '#475569', minWidth: 50, flexShrink: 0 }}>
+        {path}
+      </span>
+      <span style={{ fontWeight: isRoot ? 700 : 500, color: '#1e293b', minWidth: 120 }}>
+        {code}
+      </span>
+      <span style={{ color: '#64748b', flex: 1 }}>{desc}</span>
+      <span style={{ textAlign: 'right', minWidth: 50, color: '#475569' }}>{qty}</span>
+      <span style={{ textAlign: 'right', minWidth: 80, color: '#475569' }}>{wt || '\u2014'}</span>
+      <span style={{ textAlign: 'right', minWidth: 80, fontWeight: 600, color: '#1e293b' }}>{totalWt || '\u2014'}</span>
+    </div>
   );
 
   if (isExpanded && node.children) {
     for (const child of node.children) {
-      rows.push(...renderTreeRows(child, expanded, toggle));
+      rows.push(...renderTreeRows(child, expanded, toggle, false));
     }
   }
 
