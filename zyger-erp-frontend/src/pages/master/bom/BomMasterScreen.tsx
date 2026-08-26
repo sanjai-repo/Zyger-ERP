@@ -1,23 +1,39 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import apiClient from '../../../api/axiosClient';
 import { useToast } from '../../../contexts/ToastContext';
 import { getApiErrorMessage } from '../../../utils/apiError';
 import StatusBadge from '../../../components/common/StatusBadge';
+import ConfirmActionModal from '../../../components/common/ConfirmActionModal';
+import AuditHistoryDrawer from '../../../components/common/AuditHistoryDrawer';
+
+/* ── Types ── */
 
 export interface BomLine {
   id?: number;
   lineNo: number;
   componentItemCode: string;
+  componentRevision: string;
   description: string;
   quantityPer: number;
   uom: string;
-  scrapPercentage: number;
+  componentType: string;
+  weightPerQty: number;
+  totalWeight: number;
+  bomLevel: string;
   warehouse: string;
+  scrapPercentage: number;
+  childBomId: number | null;
+  operationSequenceLink: number | null;
+  issueMethod: string;
+  supplyType: string;
+  isPhantom: boolean;
+  isActive: boolean;
   remarks: string;
 }
 
 export interface BomDoc {
   id: number;
+  docNo: string;
   bomNumber: string;
   bomVersion: string;
   itemCode: string;
@@ -28,70 +44,191 @@ export interface BomDoc {
   baseQuantity: number;
   baseUom: string;
   weight: number;
+  totalMaterialCost: number;
+  specifications: string;
+  salesOrderId: number | null;
   effectiveFrom: string;
   effectiveTo: string;
+  approvedBy: string;
+  releaseDate: string;
+  obsoleteDate: string;
+  parentBomId: number | null;
+  previousRevisionId: number | null;
+  revisionNo: number;
   status: string;
+  isActive: boolean;
   active: boolean;
+  remarks: string;
   lines: BomLine[];
 }
 
-const ITEM_TYPES = ['FG', 'SEMI_FG', 'RM'];
+interface ItemOption {
+  id: number;
+  code: string;
+  name: string;
+  weight: number;
+  uom: string;
+  itemType: string;
+  active: boolean;
+}
+
+interface SoOption {
+  id: number;
+  orderNo: string;
+  customerName: string;
+  status: string;
+}
+
+interface TreeNode {
+  id?: number;
+  bomNumber?: string;
+  itemCode: string;
+  itemType?: string;
+  lineNo?: number;
+  componentItemCode?: string;
+  componentRevision?: string;
+  description?: string;
+  quantityPer: number;
+  weightPerQty?: number;
+  totalWeight?: number;
+  level: number;
+  levelPath: string;
+  children?: TreeNode[];
+}
+
+interface BomRevision {
+  id: number;
+  revisionNo: number;
+  bomVersion: string;
+  createdAt: string;
+  createdBy: string;
+  remarks: string;
+}
+
+/* ── Constants ── */
+
+const ITEM_TYPES = ['FG', 'SEMI_FG'];
 const BOM_TYPES = ['Primary', 'Alternate'];
 
 const emptyBom = (): Omit<BomDoc, 'id'> => ({
-  bomNumber: '', bomVersion: '1.0', itemCode: '', itemRevision: '',
+  docNo: '', bomNumber: '', bomVersion: '1.0', itemCode: '', itemRevision: '',
   description: '', itemType: 'FG', bomType: 'Primary',
-  baseQuantity: 1, baseUom: 'PCS', weight: 0,
+  baseQuantity: 1, baseUom: 'PCS', weight: 0, totalMaterialCost: 0,
+  specifications: '', salesOrderId: null,
   effectiveFrom: new Date().toISOString().slice(0, 10), effectiveTo: '',
-  status: 'DRAFT', active: true, lines: [],
+  approvedBy: '', releaseDate: '', obsoleteDate: '',
+  parentBomId: null, previousRevisionId: null, revisionNo: 0,
+  status: 'DRAFT', isActive: true, active: true, remarks: '', lines: [],
 });
 
 const emptyLine = (n: number): BomLine => ({
-  lineNo: n, componentItemCode: '', description: '', quantityPer: 1,
-  uom: 'PCS', scrapPercentage: 0, warehouse: '', remarks: '',
+  lineNo: n, componentItemCode: '', componentRevision: '', description: '',
+  quantityPer: 1, uom: 'PCS', componentType: 'RAW_MATERIAL',
+  weightPerQty: 0, totalWeight: 0, bomLevel: '1',
+  warehouse: '', scrapPercentage: 0, childBomId: null,
+  operationSequenceLink: null, issueMethod: 'Manual', supplyType: 'Make',
+  isPhantom: false, isActive: true, remarks: '',
 });
 
-interface WhereUsedRow {
-  type: string;
-  reference: string;
-  itemCode: string;
-  status: string;
-  quantity: number;
-}
-
-interface VersionCompareRow {
-  currentVersion: string;
-  previousVersion: string;
-  componentCount: number;
-  changed: boolean;
-}
+/* ── Component ── */
 
 export default function BomMasterScreen() {
   const { toast } = useToast();
+
+  // List state
   const [rows, setRows] = useState<BomDoc[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchText, setSearchText] = useState('');
+
+  // Form state
   const [bom, setBom] = useState(emptyBom());
   const [editId, setEditId] = useState<number | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<BomDoc | null>(null);
   const [busy, setBusy] = useState(false);
   const [viewMode, setViewMode] = useState<'LIST' | 'FORM'>('LIST');
-  const [expandedLine, setExpandedLine] = useState<number | null>(null);
-  const [formTab, setFormTab] = useState<'details' | 'where-used' | 'version-compare'>('details');
-  const [whereUsedRows, setWhereUsedRows] = useState<WhereUsedRow[]>([]);
+  const [formTab, setFormTab] = useState<'details' | 'where-used' | 'version-compare' | 'revisions'>('details');
+
+  // Lookup data
+  const [items, setItems] = useState<ItemOption[]>([]);
+  const [salesOrders, setSalesOrders] = useState<SoOption[]>([]);
+  const [allBoms, setAllBoms] = useState<BomDoc[]>([]);
+
+  // Copy BOM
+  const [copyBomId, setCopyBomId] = useState('');
+
+  // Where-used & version compare
+  const [whereUsedRows, setWhereUsedRows] = useState<Array<{ type: string; reference: string; itemCode: string; status: string; quantity: number }>>([]);
   const [whereUsedLoading, setWhereUsedLoading] = useState(false);
-  const [versionRows, setVersionRows] = useState<VersionCompareRow[]>([]);
+  const [versionRows, setVersionRows] = useState<Array<{ currentVersion: string; previousVersion: string; componentCount: number; changed: boolean }>>([]);
   const [versionLoading, setVersionLoading] = useState(false);
 
-  const load = useCallback(async () => {
+  // Revision history
+  const [revisionRows, setRevisionRows] = useState<BomRevision[]>([]);
+  const [revisionLoading, setRevisionLoading] = useState(false);
+
+  // Tree view
+  const [treeOpen, setTreeOpen] = useState(false);
+  const [treeData, setTreeData] = useState<TreeNode | null>(null);
+  const [treeLoading, setTreeLoading] = useState(false);
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+
+  // Modals
+  const [deleteTarget, setDeleteTarget] = useState<BomDoc | null>(null);
+  const [reviseModal, setReviseModal] = useState(false);
+  const [reviseRemarks, setReviseRemarks] = useState('');
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{ action: string; danger: boolean; body: string } | null>(null);
+
+  /* ── Loaders ── */
+
+  const loadBoms = useCallback(async () => {
     setLoading(true);
     try {
       const { data } = await apiClient.get('/v1/planning/production-bom', { params: { size: 500, page: 0 } });
-      setRows(data.content ?? data ?? []);
+      const list = data.content ?? data ?? [];
+      setRows(list);
+      setAllBoms(list);
     } catch (e) { toast(getApiErrorMessage(e, 'Load failed.'), 'error'); }
     setLoading(false);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  const loadItems = useCallback(async () => {
+    try {
+      const { data } = await apiClient.get('/v1/master/items', { params: { size: 500, page: 0, active: true } });
+      const list = (data.content ?? data ?? []).map((i: Record<string, unknown>) => ({
+        id: i.id as number, code: i.code as string, name: i.name as string,
+        weight: (i.weight as number) || 0, uom: (i.uom as string) || 'PCS',
+        itemType: (i.itemType as string) || '', active: i.active as boolean,
+      }));
+      setItems(list);
+    } catch { /* silent */ }
+  }, []);
+
+  const loadSalesOrders = useCallback(async () => {
+    try {
+      const { data } = await apiClient.get('/v1/planning/sales-order', { params: { size: 500, page: 0 } });
+      const list = (data.content ?? data ?? []).map((s: Record<string, unknown>) => ({
+        id: s.id as number, orderNo: (s.orderNo ?? s.docNo ?? '') as string,
+        customerName: (s.customerName ?? '') as string, status: (s.status ?? '') as string,
+      }));
+      setSalesOrders(list);
+    } catch { /* silent */ }
+  }, []);
+
+  useEffect(() => { loadBoms(); loadItems(); loadSalesOrders(); }, [loadBoms, loadItems, loadSalesOrders]);
+
+  /* ── Derived ── */
+
+  const filteredRows = useMemo(() => {
+    if (!searchText.trim()) return rows;
+    const q = searchText.toLowerCase();
+    return rows.filter((r) => (r.bomNumber || r.docNo || '').toLowerCase().includes(q) || (r.itemCode || '').toLowerCase().includes(q) || (r.description || '').toLowerCase().includes(q));
+  }, [rows, searchText]);
+
+  const computedWeight = useMemo(() => {
+    return bom.lines.filter((l) => !l.isActive || true).reduce((sum, l) => sum + (l.totalWeight || 0), 0);
+  }, [bom.lines]);
+
+  /* ── Field setters ── */
 
   const setField = (k: string, v: unknown) => setBom((p) => ({ ...p, [k]: v }));
 
@@ -101,54 +238,167 @@ export default function BomMasterScreen() {
     return { ...p, lines };
   });
 
-  const addLine = () => setBom((p) => ({ ...p, lines: [...p.lines, emptyLine(p.lines.length + 1)] }));
+  const addLine = () => {
+    const n = bom.lines.length + 1;
+    const parentLevel = '1';
+    setBom((p) => ({ ...p, lines: [...p.lines, { ...emptyLine(n), bomLevel: parentLevel }] }));
+  };
 
   const removeLine = (idx: number) => setBom((p) => ({
     ...p,
     lines: p.lines.filter((_, i) => i !== idx).map((l, i) => ({ ...l, lineNo: i + 1 })),
   }));
 
-  const openNew = () => {
-    setBom(emptyBom());
-    setEditId(null);
-    setFormTab('details');
-    setViewMode('FORM');
+  /* ── Item selection on component line ── */
+
+  const onComponentItemSelect = (idx: number, itemCode: string) => {
+    const item = items.find((i) => i.code === itemCode);
+    setBom((p) => {
+      const lines = [...p.lines];
+      lines[idx] = {
+        ...lines[idx],
+        componentItemCode: itemCode,
+        description: item?.name ?? '',
+        weightPerQty: item?.weight ?? 0,
+        uom: item?.uom || 'PCS',
+        componentType: item?.itemType === 'FG' ? 'FINISHED_GOOD' : item?.itemType === 'SEMI_FG' ? 'SEMI_FG' : 'RAW_MATERIAL',
+        totalWeight: (item?.weight ?? 0) * (lines[idx].quantityPer || 0),
+      };
+      const totalWt = lines.reduce((s, l) => s + (l.totalWeight || 0), 0);
+      return { ...p, lines, weight: totalWt };
+    });
   };
 
-  const edit = (r: BomDoc) => {
-    setBom({ ...r, lines: r.lines ? [...r.lines] : [] });
-    setEditId(r.id);
-    setFormTab('details');
-    setViewMode('FORM');
+  const onComponentQtyChange = (idx: number, qty: number) => {
+    setBom((p) => {
+      const lines = [...p.lines];
+      lines[idx] = { ...lines[idx], quantityPer: qty, totalWeight: qty * (lines[idx].weightPerQty || 0) };
+      const totalWt = lines.reduce((s, l) => s + (l.totalWeight || 0), 0);
+      return { ...p, lines, weight: totalWt };
+    });
   };
+
+  /* ── Save ── */
 
   const save = async () => {
-    if (!bom.itemCode.trim()) { toast('Item Code is required.', 'error'); return; }
+    if (!bom.itemCode.trim()) { toast('BOM Item is mandatory.', 'error'); return; }
+    if (!bom.itemType) { toast('Item Type is mandatory.', 'error'); return; }
+    if (bom.baseQuantity <= 0) { toast('Quantity should be greater than zero.', 'error'); return; }
+    const activeLines = bom.lines.filter((l) => l.componentItemCode.trim());
+    if (activeLines.length === 0) { toast('At least one component is required.', 'error'); return; }
+    // Check duplicate components
+    const codes = new Set<string>();
+    for (const l of activeLines) {
+      const code = l.componentItemCode.trim();
+      if (codes.has(code)) { toast(`Duplicate component item is not allowed: ${code}`, 'error'); return; }
+      codes.add(code);
+    }
+    // Check parent = child
+    for (const l of activeLines) {
+      if (l.componentItemCode.trim() === bom.itemCode.trim()) {
+        toast('Parent item and component item cannot be same.', 'error'); return;
+      }
+    }
+    // Check qty > 0
+    for (const l of activeLines) {
+      if (l.quantityPer <= 0) { toast(`Component quantity must be greater than zero: ${l.componentItemCode}`, 'error'); return; }
+    }
+
     setBusy(true);
     try {
       const payload: Record<string, unknown> = {
         itemCode: bom.itemCode, itemRevision: bom.itemRevision, bomVersion: bom.bomVersion,
         description: bom.description, itemType: bom.itemType, bomType: bom.bomType,
         baseQuantity: bom.baseQuantity, baseUom: bom.baseUom,
+        weight: computedWeight, specifications: bom.specifications,
+        salesOrderId: bom.salesOrderId || null,
         effectiveFrom: bom.effectiveFrom, effectiveTo: bom.effectiveTo || null,
-        lines: bom.lines.map((l) => ({
-          lineNo: l.lineNo, componentItemCode: l.componentItemCode, description: l.description,
-          quantityPer: l.quantityPer, uom: l.uom, scrapPercentage: l.scrapPercentage,
-          warehouse: l.warehouse, remarks: l.remarks,
+        remarks: bom.remarks,
+        lines: activeLines.map((l, i) => ({
+          lineNo: i + 1, componentItemCode: l.componentItemCode,
+          componentRevision: l.componentRevision, description: l.description,
+          quantityPer: l.quantityPer, uom: l.uom, componentType: l.componentType,
+          weightPerQty: l.weightPerQty, totalWeight: l.totalWeight,
+          bomLevel: l.bomLevel, warehouse: l.warehouse,
+          scrapPercentage: l.scrapPercentage, childBomId: l.childBomId,
+          issueMethod: l.issueMethod, supplyType: l.supplyType,
+          isPhantom: l.isPhantom, isActive: true, remarks: l.remarks,
         })),
       };
       if (editId) {
-        await apiClient.put(`/v1/planning/production-bom/${editId}`, payload);
+        const { data } = await apiClient.put(`/v1/planning/production-bom/${editId}`, payload);
+        setBom({ ...data, lines: data.lines ?? [] });
         toast('BOM updated.');
       } else {
-        await apiClient.post('/v1/planning/production-bom', payload);
-        toast('BOM created.');
+        const { data } = await apiClient.post('/v1/planning/production-bom', payload);
+        setEditId(data.id);
+        setBom({ ...data, lines: data.lines ?? [] });
+        toast('BOM created. BOM Code: ' + (data.bomNumber || data.docNo));
       }
-      setViewMode('LIST');
-      load();
+      loadBoms();
     } catch (e) { toast(getApiErrorMessage(e, 'Save failed.'), 'error'); }
     setBusy(false);
   };
+
+  /* ── Workflow actions ── */
+
+  const runAction = async (action: string, note = '') => {
+    if (!editId) return;
+    setBusy(true);
+    try {
+      const body = note ? { note } : {};
+      const { data } = await apiClient.post(`/v1/planning/production-bom/${editId}/actions/${action}`, body);
+      setBom({ ...data, lines: data.lines ?? [] });
+      toast(`BOM ${action}d.`);
+      setConfirmAction(null);
+      loadBoms();
+    } catch (e) { toast(getApiErrorMessage(e, `${action} failed.`), 'error'); }
+    setBusy(false);
+  };
+
+  /* ── BOM Revision ── */
+
+  const createRevision = async () => {
+    if (!editId) return;
+    if (!reviseRemarks.trim()) { toast('Remarks are mandatory for a new revision.', 'error'); return; }
+    setBusy(true);
+    try {
+      const { data } = await apiClient.post(`/v1/planning/production-bom/${editId}/revise`, {
+        newVersion: String(Number(bom.bomVersion) + 1),
+        remarks: reviseRemarks,
+      });
+      setEditId(data.id);
+      setBom({ ...data, lines: data.lines ?? [] });
+      setReviseModal(false);
+      setReviseRemarks('');
+      toast('New revision created. New BOM Code: ' + (data.bomNumber || data.docNo));
+      loadBoms();
+    } catch (e) { toast(getApiErrorMessage(e, 'Revision failed.'), 'error'); }
+    setBusy(false);
+  };
+
+  /* ── Copy BOM ── */
+
+  const copyBom = async () => {
+    if (!copyBomId) { toast('Select a BOM to copy.', 'error'); return; }
+    setBusy(true);
+    try {
+      const source = allBoms.find((b) => String(b.id) === copyBomId || b.bomNumber === copyBomId || b.itemCode === copyBomId);
+      const sourceCode = source?.bomNumber || source?.itemCode || copyBomId;
+      const { data } = await apiClient.post('/v1/planning/production-bom/copy', {
+        sourceBomCode: sourceCode,
+        itemCode: bom.itemCode || undefined,
+      });
+      setEditId(data.id);
+      setBom({ ...data, lines: data.lines ?? [] });
+      setCopyBomId('');
+      toast('BOM copied. New BOM Code: ' + (data.bomNumber || data.docNo));
+      loadBoms();
+    } catch (e) { toast(getApiErrorMessage(e, 'Copy failed.'), 'error'); }
+    setBusy(false);
+  };
+
+  /* ── Delete ── */
 
   const del = async () => {
     if (!deleteTarget) return;
@@ -157,298 +407,533 @@ export default function BomMasterScreen() {
       await apiClient.delete(`/v1/planning/production-bom/${deleteTarget.id}`);
       toast('BOM deleted.');
       setDeleteTarget(null);
-      load();
+      loadBoms();
     } catch (e) { toast(getApiErrorMessage(e, 'Delete failed.'), 'error'); }
     setBusy(false);
   };
 
-  const submit = async (id: number) => {
-    setBusy(true);
-    try {
-      await apiClient.post(`/v1/planning/production-bom/${id}/actions/submit`, {});
-      toast('BOM submitted.');
-      load();
-    } catch (e) { toast(getApiErrorMessage(e, 'Submit failed.'), 'error'); }
-    setBusy(false);
-  };
-
-  const approve = async (id: number) => {
-    setBusy(true);
-    try {
-      await apiClient.post(`/v1/planning/production-bom/${id}/actions/approve`, {});
-      toast('BOM approved.');
-      load();
-    } catch (e) { toast(getApiErrorMessage(e, 'Approve failed.'), 'error'); }
-    setBusy(false);
-  };
+  /* ── Where-Used ── */
 
   const fetchWhereUsed = async (id: number) => {
     setWhereUsedLoading(true);
     try {
       const { data } = await apiClient.get(`/v1/planning/production-bom/${id}/where-used`);
       setWhereUsedRows(Array.isArray(data) ? data : data.content ?? []);
-    } catch (e) { toast(getApiErrorMessage(e, 'Failed to load where-used data.'), 'error'); }
+    } catch { setWhereUsedRows([]); }
     setWhereUsedLoading(false);
   };
+
+  /* ── Version Compare ── */
 
   const fetchVersionCompare = async (id: number) => {
     setVersionLoading(true);
     try {
       const { data } = await apiClient.get(`/v1/planning/production-bom/${id}/version-compare`);
       setVersionRows(Array.isArray(data) ? data : data.content ?? []);
-    } catch (e) { toast(getApiErrorMessage(e, 'Failed to load version compare data.'), 'error'); }
+    } catch { setVersionRows([]); }
     setVersionLoading(false);
   };
 
-  const openFormTab = (tab: 'details' | 'where-used' | 'version-compare') => {
-    setFormTab(tab);
-    if (tab === 'where-used' && editId) fetchWhereUsed(editId);
-    if (tab === 'version-compare' && editId) fetchVersionCompare(editId);
+  /* ── Revision History ── */
+
+  const fetchRevisions = async (id: number) => {
+    setRevisionLoading(true);
+    try {
+      const { data } = await apiClient.get(`/v1/planning/production-bom/${id}/revisions`);
+      setRevisionRows(Array.isArray(data) ? data : []);
+    } catch { setRevisionRows([]); }
+    setRevisionLoading(false);
   };
 
-  if (viewMode === 'FORM') {
+  /* ── Tree View ── */
+
+  const fetchTree = async (id: number) => {
+    setTreeLoading(true);
+    setTreeOpen(true);
+    try {
+      const { data } = await apiClient.get(`/v1/planning/production-bom/${id}/tree`);
+      setTreeData(data);
+      // Expand first two levels by default
+      const expanded = new Set<string>();
+      const expandLevel = (node: TreeNode, maxDepth: number) => {
+        if (node.level < maxDepth && node.children) {
+          for (const child of node.children) {
+            expanded.add(child.levelPath);
+            expandLevel(child, maxDepth);
+          }
+        }
+      };
+      expandLevel(data, 2);
+      setExpandedNodes(expanded);
+    } catch { toast('Failed to load BOM tree.', 'error'); }
+    setTreeLoading(false);
+  };
+
+  const toggleNode = (path: string) => setExpandedNodes((prev) => {
+    const next = new Set(prev);
+    if (next.has(path)) next.delete(path); else next.add(path);
+    return next;
+  });
+
+  /* ── Navigation ── */
+
+  const openNew = () => {
+    setBom(emptyBom());
+    setEditId(null);
+    setFormTab('details');
+    setViewMode('FORM');
+  };
+
+  const editBom = (r: BomDoc) => {
+    if (!r.isActive && r.status !== 'DRAFT') {
+      toast('This revision is inactive and cannot be edited.', 'error');
+      return;
+    }
+    setBom({ ...r, lines: r.lines ? r.lines.map((l) => ({ ...l })) : [] });
+    setEditId(r.id);
+    setFormTab('details');
+    setViewMode('FORM');
+  };
+
+  const openFormTab = (tab: typeof formTab) => {
+    setFormTab(tab);
+    if (!editId) return;
+    if (tab === 'where-used') fetchWhereUsed(editId);
+    if (tab === 'version-compare') fetchVersionCompare(editId);
+    if (tab === 'revisions') fetchRevisions(editId);
+  };
+
+  /* ── List View ── */
+
+  if (viewMode === 'LIST') {
     return (
       <>
         <div className="pg-head">
-          <h1>{editId ? 'Edit' : 'New'} Bill of Material (BOM)</h1>
-          <p>{editId ? `Editing ${bom.bomNumber || 'BOM'}` : 'Create a new Bill of Material'}</p>
-        </div>
-
-        {editId && (
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-            <button type="button" className={`btn btn-sm ${formTab === 'details' ? 'btn-p' : ''}`} onClick={() => openFormTab('details')}>Details</button>
-            <button type="button" className={`btn btn-sm ${formTab === 'where-used' ? 'btn-p' : ''}`} onClick={() => openFormTab('where-used')}>Where-Used</button>
-            <button type="button" className={`btn btn-sm ${formTab === 'version-compare' ? 'btn-p' : ''}`} onClick={() => openFormTab('version-compare')}>Version Compare</button>
+          <div>
+            <h1>Bill of Material (BOM)</h1>
+            <p>Multi-level BOM with components, quantities, and structure</p>
           </div>
-        )}
-
-        {formTab === 'details' && (<>
-          <div className="panel">
-            <div className="sec-head">
-              <span className="material-symbols-rounded" style={{ fontSize: '1.2rem' }}>info</span>
-              BOM Header
-            </div>
-          <div className="fgrid sec-body">
-            <label className="fld"><span>Item Code *</span><input className="in" value={bom.itemCode} onChange={(e) => setField('itemCode', e.target.value)} /></label>
-            <label className="fld"><span>Description</span><input className="in" value={bom.description} onChange={(e) => setField('description', e.target.value)} /></label>
-            <label className="fld"><span>Version</span><input className="in" value={bom.bomVersion} onChange={(e) => setField('bomVersion', e.target.value)} /></label>
-            <label className="fld"><span>Revision</span><input className="in" value={bom.itemRevision} onChange={(e) => setField('itemRevision', e.target.value)} /></label>
-            <label className="fld"><span>Item Type</span>
-              <select className="in" value={bom.itemType} onChange={(e) => setField('itemType', e.target.value)}>
-                {ITEM_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </label>
-            <label className="fld"><span>BOM Type</span>
-              <select className="in" value={bom.bomType} onChange={(e) => setField('bomType', e.target.value)}>
-                {BOM_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </label>
-            <label className="fld"><span>Base Quantity</span><input className="in" type="number" min="0.01" step="0.01" value={bom.baseQuantity} onChange={(e) => setField('baseQuantity', parseFloat(e.target.value) || 1)} /></label>
-            <label className="fld"><span>UOM</span><input className="in" value={bom.baseUom} onChange={(e) => setField('baseUom', e.target.value)} /></label>
-            <label className="fld"><span>Effective From</span><input className="in" type="date" value={bom.effectiveFrom} onChange={(e) => setField('effectiveFrom', e.target.value)} /></label>
-            <label className="fld"><span>Effective To</span><input className="in" type="date" value={bom.effectiveTo} onChange={(e) => setField('effectiveTo', e.target.value)} /></label>
-          </div>
+          <button className="btn btn-sm btn-p" onClick={openNew}><span className="material-symbols-rounded">add</span> New BOM</button>
         </div>
 
         <div className="panel">
-          <div className="sec-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span className="material-symbols-rounded" style={{ fontSize: '1.2rem' }}>list</span>
-              BOM Components ({bom.lines.length})
-            </span>
-            <button className="btn sm primary" onClick={addLine}>
-              <span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>add</span> Add Line
-            </button>
+          <div className="panel-h">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input className="in" placeholder="Search BOM No / Item / Description..." value={searchText} onChange={(e) => setSearchText(e.target.value)} style={{ width: 320 }} />
+            </div>
+            <span style={{ fontSize: '0.85em', color: '#6b7280' }}>{filteredRows.length} BOMs</span>
           </div>
-
-          {bom.lines.length > 0 ? (
-            <table className="tbl" style={{ marginTop: 8 }}>
+          <div className="twrap">
+            <table className="tbl">
               <thead>
                 <tr>
-                  <th>#</th>
-                  <th>Component Item *</th>
+                  <th>BOM No</th>
+                  <th>Version</th>
+                  <th>Item Code</th>
                   <th>Description</th>
-                  <th>Qty/Unit</th>
-                  <th>UOM</th>
-                  <th>Scrap %</th>
-                  <th>Warehouse</th>
+                  <th>Type</th>
+                  <th>BOM Type</th>
+                  <th>Base Qty</th>
+                  <th>Components</th>
+                  <th>Weight</th>
+                  <th>Status</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {bom.lines.map((line, idx) => (
-                  <tr key={idx}>
-                    <td>{line.lineNo}</td>
-                    <td><input className="in sm" value={line.componentItemCode} onChange={(e) => setLine(idx, 'componentItemCode', e.target.value)} /></td>
-                    <td><input className="in sm" value={line.description} onChange={(e) => setLine(idx, 'description', e.target.value)} /></td>
-                    <td><input className="in sm" type="number" min="0" step="0.01" value={line.quantityPer} onChange={(e) => setLine(idx, 'quantityPer', parseFloat(e.target.value) || 0)} /></td>
-                    <td><input className="in sm" value={line.uom} onChange={(e) => setLine(idx, 'uom', e.target.value)} style={{ width: 60 }} /></td>
-                    <td><input className="in sm" type="number" min="0" step="0.1" value={line.scrapPercentage} onChange={(e) => setLine(idx, 'scrapPercentage', parseFloat(e.target.value) || 0)} style={{ width: 60 }} /></td>
-                    <td><input className="in sm" value={line.warehouse} onChange={(e) => setLine(idx, 'warehouse', e.target.value)} style={{ width: 80 }} /></td>
-                    <td>
-                      <button className="btn sm danger" onClick={() => removeLine(idx)}>
-                        <span className="material-symbols-rounded" style={{ fontSize: '0.9rem' }}>delete</span>
-                      </button>
+                {loading ? (
+                  <tr><td colSpan={11} className="empty">Loading...</td></tr>
+                ) : filteredRows.length === 0 ? (
+                  <tr><td colSpan={11} className="empty">No BOMs found. Click "New BOM" to create one.</td></tr>
+                ) : filteredRows.map((r) => (
+                  <tr key={r.id}>
+                    <td style={{ fontWeight: 600 }}>{r.bomNumber || r.docNo || '\u2014'}</td>
+                    <td>{r.bomVersion}</td>
+                    <td>{r.itemCode}</td>
+                    <td>{r.description || '\u2014'}</td>
+                    <td><StatusBadge status={r.itemType === 'SEMI_FG' ? 'Semi-FG' : r.itemType || '\u2014'} /></td>
+                    <td>{r.bomType || '\u2014'}</td>
+                    <td>{r.baseQuantity} {r.baseUom}</td>
+                    <td>{r.lines?.length || 0}</td>
+                    <td>{r.weight ? `${r.weight} kg` : '\u2014'}</td>
+                    <td><StatusBadge status={r.status} /></td>
+                    <td style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      <button className="btn btn-sm" onClick={() => editBom(r)} title="Edit"><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>edit</span></button>
+                      {r.status === 'DRAFT' && <button className="btn btn-sm btn-g" onClick={() => { setConfirmAction({ action: 'submit', danger: false, body: 'Submit this BOM for review?' }); setEditId(r.id); setBom({ ...r, lines: r.lines ?? [] }); setViewMode('FORM'); }} title="Submit"><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>send</span></button>}
+                      {r.status === 'SUBMITTED' && <button className="btn btn-sm btn-g" onClick={() => { setConfirmAction({ action: 'approve', danger: false, body: 'Approve this BOM?' }); setEditId(r.id); setBom({ ...r, lines: r.lines ?? [] }); setViewMode('FORM'); }} title="Approve"><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>thumb_up</span></button>}
+                      <button className="btn btn-sm btn-d" onClick={() => setDeleteTarget(r)} title="Delete"><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>delete</span></button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          ) : (
-            <div className="empty" style={{ padding: 16 }}>No components added. Click "Add Line" to start.</div>
-          )}
-        </div>
-        </>)}
-
-        {formTab === 'where-used' && (
-          <div className="panel">
-            <div className="sec-head">
-              <span className="material-symbols-rounded" style={{ fontSize: '1.2rem' }}>search</span>
-              Where-Used — Items referencing this BOM
-            </div>
-            {whereUsedLoading ? <div className="empty" style={{ padding: 16 }}>Loading...</div> : (
-              whereUsedRows.length > 0 ? (
-                <table className="tbl" style={{ marginTop: 8 }}>
-                  <thead>
-                    <tr>
-                      <th>Type</th>
-                      <th>Reference</th>
-                      <th>Item Code</th>
-                      <th>Status</th>
-                      <th>Quantity</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {whereUsedRows.map((r, i) => (
-                      <tr key={i}>
-                        <td>{r.type}</td>
-                        <td>{r.reference}</td>
-                        <td>{r.itemCode}</td>
-                        <td><StatusBadge status={r.status} /></td>
-                        <td>{r.quantity}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <div className="empty" style={{ padding: 16 }}>No references found for this BOM.</div>
-              )
-            )}
           </div>
-        )}
-
-        {formTab === 'version-compare' && (
-          <div className="panel">
-            <div className="sec-head">
-              <span className="material-symbols-rounded" style={{ fontSize: '1.2rem' }}>compare</span>
-              Version Compare
-            </div>
-            {versionLoading ? <div className="empty" style={{ padding: 16 }}>Loading...</div> : (
-              versionRows.length > 0 ? (
-                <table className="tbl" style={{ marginTop: 8 }}>
-                  <thead>
-                    <tr>
-                      <th>Current Version</th>
-                      <th>Previous Version</th>
-                      <th>Component Count</th>
-                      <th>Changed</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {versionRows.map((r, i) => (
-                      <tr key={i}>
-                        <td>{r.currentVersion}</td>
-                        <td>{r.previousVersion}</td>
-                        <td>{r.componentCount}</td>
-                        <td>{r.changed ? 'Yes' : 'No'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <div className="empty" style={{ padding: 16 }}>No version comparison data available.</div>
-              )
-            )}
-          </div>
-        )}
-
-        <div className="actbar">
-          <button className="btn" onClick={() => setViewMode('LIST')}>
-            <span className="material-symbols-rounded">arrow_back</span> Back
-          </button>
-          <button className="btn btn-p" onClick={save} disabled={busy}>
-            <span className="material-symbols-rounded">save</span> {editId ? 'Update' : 'Create'}
-          </button>
         </div>
+
+        {deleteTarget && (
+          <ConfirmActionModal open title="Delete BOM" body={`Delete ${deleteTarget.bomNumber || deleteTarget.itemCode}? This action cannot be undone.`} okLabel="Delete" danger busy={busy} onClose={() => setDeleteTarget(null)} onConfirm={del} />
+        )}
       </>
     );
   }
 
+  /* ── Form View ── */
+
+  const isEditable = bom.status === 'DRAFT' || bom.status === 'REJECTED';
+  const canRevise = editId && (bom.status === 'APPROVED') && bom.isActive;
+  const docNo = editId ? (bom.bomNumber || bom.docNo || '\u2014') : '\u2014';
+
   return (
     <>
       <div className="pg-head">
-        <h1>Bill of Material (BOM)</h1>
-        <p>Master data for Bills of Material — components, quantities, and structure</p>
-        <button className="btn primary" onClick={openNew}>
-          <span className="material-symbols-rounded">add</span> New BOM
-        </button>
+        <div>
+          <h1>{editId ? 'Edit' : 'New'} Bill of Material (BOM) \u2014 {docNo}</h1>
+          <p>{editId ? `Status: ${bom.status} | Version: ${bom.bomVersion} | Rev: ${bom.revisionNo}` : 'Create a new Bill of Material'}</p>
+        </div>
       </div>
 
-      <div className="panel">
-        {loading ? <div className="empty">Loading...</div> : (
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>BOM No</th>
-                <th>Version</th>
-                <th>Item Code</th>
-                <th>Description</th>
-                <th>Type</th>
-                <th>BOM Type</th>
-                <th>Base Qty</th>
-                <th>Components</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id}>
-                  <td>{r.bomNumber || r.docNo}</td>
-                  <td>{r.bomVersion}</td>
-                  <td>{r.itemCode}</td>
-                  <td>{r.description || '—'}</td>
-                  <td><StatusBadge status={r.itemType || '—'} /></td>
-                  <td>{r.bomType || '—'}</td>
-                  <td>{r.baseQuantity} {r.baseUom}</td>
-                  <td>{r.lines?.length || 0}</td>
-                  <td><StatusBadge status={r.status} /></td>
-                  <td style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                    <button className="btn sm" onClick={() => edit(r)}>Edit</button>
-                    {r.status === 'DRAFT' && <button className="btn sm" onClick={() => submit(r.id)}>Submit</button>}
-                    {r.status === 'SUBMITTED' && <button className="btn sm primary" onClick={() => approve(r.id)}>Approve</button>}
-                    <button className="btn sm danger" onClick={() => setDeleteTarget(r)}>Delete</button>
-                  </td>
-                </tr>
-              ))}
-              {rows.length === 0 && <tr><td colSpan={10} className="empty">No BOMs found. Click "New BOM" to create one.</td></tr>}
-            </tbody>
-          </table>
+      {editId && (
+        <div className="panel-h" style={{ marginBottom: 8 }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <button type="button" className={`btn btn-sm ${formTab === 'details' ? 'btn-p' : ''}`} onClick={() => openFormTab('details')}>Details</button>
+            <button type="button" className={`btn btn-sm ${formTab === 'revisions' ? 'btn-p' : ''}`} onClick={() => openFormTab('revisions')}>Revisions</button>
+            <button type="button" className={`btn btn-sm ${formTab === 'where-used' ? 'btn-p' : ''}`} onClick={() => openFormTab('where-used')}>Where-Used</button>
+            <button type="button" className={`btn btn-sm ${formTab === 'version-compare' ? 'btn-p' : ''}`} onClick={() => openFormTab('version-compare')}>Version Compare</button>
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {editId && (bom.status === 'production-bom' || true) && (
+              <>
+                {isEditable && <button type="button" className="btn btn-sm btn-g" onClick={() => setConfirmAction({ action: 'submit', danger: false, body: 'Submit this BOM for review?' })} disabled={busy}><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>send</span> Submit</button>}
+                {bom.status === 'SUBMITTED' && <button type="button" className="btn btn-sm btn-g" onClick={() => setConfirmAction({ action: 'approve', danger: false, body: 'Approve this BOM?' })} disabled={busy}><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>thumb_up</span> Approve</button>}
+                {bom.status === 'SUBMITTED' && <button type="button" className="btn btn-sm btn-d" onClick={() => setConfirmAction({ action: 'reject', danger: true, body: 'Reason for rejection:' })} disabled={busy}><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>thumb_down</span> Reject</button>}
+                {canRevise && <button type="button" className="btn btn-sm btn-p" onClick={() => setReviseModal(true)} disabled={busy}><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>edit_note</span> Revise</button>}
+                {bom.status !== 'DRAFT' && bom.status !== 'CANCELLED' && <button type="button" className="btn btn-sm" onClick={() => setConfirmAction({ action: 'cancel', danger: true, body: 'Cancel this BOM?' })} disabled={busy}><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>block</span> Cancel</button>}
+              </>
+            )}
+            <a href={`/api/v1/planning/production-bom/${editId}/print`} target="_blank" rel="noopener noreferrer" className="btn btn-sm" title="Print PDF"><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>print</span> PDF</a>
+            <button type="button" className="btn btn-sm" onClick={() => fetchTree(editId!)} title="View BOM Tree"><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>account_tree</span> Tree</button>
+            <button type="button" className="btn btn-sm" title="Audit History" onClick={() => setAuditOpen(true)}><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>history</span></button>
+            <StatusBadge status={bom.status} />
+          </div>
+        </div>
+      )}
+
+      <form onSubmit={(e) => e.preventDefault()}>
+        {formTab === 'details' && (<>
+          {/* ── Header Section ── */}
+          <div className="panel">
+            <div className="panel-h"><h2><span className="material-symbols-rounded">description</span> BOM Header</h2></div>
+            <div className="fgrid">
+              <label className="fld"><span>Sales Order No</span>
+                <select className="in" value={bom.salesOrderId ?? ''} onChange={(e) => setField('salesOrderId', e.target.value ? Number(e.target.value) : null)} disabled={!isEditable && !!editId}>
+                  <option value="">\u2014 No SO (Standard BOM) \u2014</option>
+                  {salesOrders.map((s) => <option key={s.id} value={s.id}>{s.orderNo} {s.customerName ? `(${s.customerName})` : ''}</option>)}
+                </select>
+              </label>
+
+              <label className="fld"><span>BOM Item *</span>
+                <select className="in" value={bom.itemCode} onChange={(e) => setField('itemCode', e.target.value)} disabled={!isEditable && !!editId} required>
+                  <option value="">\u2014 Select Item \u2014</option>
+                  {items.map((i) => <option key={i.id} value={i.code}>{i.code} - {i.name}</option>)}
+                </select>
+              </label>
+
+              <label className="fld"><span>Item Type *</span>
+                <select className="in" value={bom.itemType} onChange={(e) => setField('itemType', e.target.value)} disabled={!isEditable && !!editId}>
+                  {ITEM_TYPES.map((t) => <option key={t} value={t}>{t === 'SEMI_FG' ? 'Semi FG' : t}</option>)}
+                </select>
+              </label>
+
+              <label className="fld"><span>Quantity *</span>
+                <input className="in" type="number" min="0.01" step="0.01" value={bom.baseQuantity} onChange={(e) => setField('baseQuantity', parseFloat(e.target.value) || 1)} disabled={!isEditable && !!editId} />
+              </label>
+
+              <label className="fld"><span>Weight (auto)</span>
+                <input className="in" value={computedWeight > 0 ? computedWeight.toFixed(4) : '0'} readOnly tabIndex={-1} style={{ background: '#f9fafb', fontWeight: 600 }} />
+              </label>
+
+              <label className="fld"><span>UOM</span>
+                <input className="in" value={bom.baseUom} onChange={(e) => setField('baseUom', e.target.value)} disabled={!isEditable && !!editId} />
+              </label>
+
+              <label className="fld" style={{ gridColumn: 'span 2' }}><span>Copy BOM</span>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <select className="in" value={copyBomId} onChange={(e) => setCopyBomId(e.target.value)} style={{ flex: 1 }}>
+                    <option value="">\u2014 Select BOM to Copy \u2014</option>
+                    {allBoms.filter((b) => b.id !== editId).map((b) => <option key={b.id} value={String(b.id)}>{b.bomNumber || b.docNo} - {b.itemCode} ({b.bomVersion})</option>)}
+                  </select>
+                  <button type="button" className="btn btn-sm btn-p" onClick={copyBom} disabled={busy || !copyBomId}><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>content_copy</span> Copy</button>
+                </div>
+              </label>
+
+              <label className="fld"><span>BOM Type</span>
+                <select className="in" value={bom.bomType} onChange={(e) => setField('bomType', e.target.value)} disabled={!isEditable && !!editId}>
+                  {BOM_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </label>
+
+              <label className="fld"><span>Version</span>
+                <input className="in" value={bom.bomVersion} onChange={(e) => setField('bomVersion', e.target.value)} disabled={!isEditable && !!editId} />
+              </label>
+
+              <label className="fld"><span>Revision</span>
+                <input className="in" value={String(bom.revisionNo ?? 0)} readOnly tabIndex={-1} style={{ background: '#f9fafb' }} />
+              </label>
+
+              <label className="fld"><span>Effective From</span>
+                <input className="in" type="date" value={bom.effectiveFrom} onChange={(e) => setField('effectiveFrom', e.target.value)} disabled={!isEditable && !!editId} />
+              </label>
+
+              <label className="fld"><span>Effective To</span>
+                <input className="in" type="date" value={bom.effectiveTo} onChange={(e) => setField('effectiveTo', e.target.value)} disabled={!isEditable && !!editId} />
+              </label>
+
+              <label className="fld" style={{ gridColumn: 'span 2' }}><span>Specifications</span>
+                <textarea className="in" rows={2} value={bom.specifications || ''} onChange={(e) => setField('specifications', e.target.value)} disabled={!isEditable && !!editId} />
+              </label>
+
+              <label className="fld" style={{ gridColumn: 'span 2' }}><span>Remarks {editId && bom.status !== 'DRAFT' ? '' : ''}</span>
+                <textarea className="in" rows={2} value={bom.remarks || ''} onChange={(e) => setField('remarks', e.target.value)} disabled={!editId} />
+              </label>
+            </div>
+          </div>
+
+          {/* ── Component Table ── */}
+          <div className="panel">
+            <div className="panel-h">
+              <h2><span className="material-symbols-rounded">table_view</span> BOM Components ({bom.lines.length})</h2>
+              {isEditable && <button type="button" className="btn btn-sm" onClick={addLine} disabled={busy}><span className="material-symbols-rounded">add</span> Add Row</button>}
+            </div>
+            {bom.lines.length > 0 ? (
+              <div className="twrap">
+                <table className="tbl lines">
+                  <thead>
+                    <tr>
+                      <th>S.No</th>
+                      <th>Level</th>
+                      <th>Item Name *</th>
+                      <th>Qty *</th>
+                      <th>Wt/Unit</th>
+                      <th>Total Wt</th>
+                      <th>Remarks</th>
+                      {isEditable && <th></th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bom.lines.map((line, idx) => (
+                      <tr key={idx}>
+                        <td>{line.lineNo}</td>
+                        <td>{line.bomLevel || '1'}</td>
+                        <td>
+                          <select className="in" value={line.componentItemCode} onChange={(e) => onComponentItemSelect(idx, e.target.value)} disabled={!isEditable}>
+                            <option value="">\u2014 Select Item \u2014</option>
+                            {items.map((i) => <option key={i.id} value={i.code}>{i.code} - {i.name}</option>)}
+                          </select>
+                        </td>
+                        <td>
+                          <input className="in" type="number" min="0.01" step="0.01" value={line.quantityPer} onChange={(e) => onComponentQtyChange(idx, parseFloat(e.target.value) || 0)} disabled={!isEditable} style={{ width: 80 }} />
+                        </td>
+                        <td style={{ background: '#f9fafb', fontWeight: 500 }}>{line.weightPerQty > 0 ? line.weightPerQty.toFixed(4) : '\u2014'}</td>
+                        <td style={{ background: '#f9fafb', fontWeight: 600 }}>{line.totalWeight > 0 ? line.totalWeight.toFixed(4) : '\u2014'}</td>
+                        <td>
+                          <input className="in" value={line.remarks || ''} onChange={(e) => setLine(idx, 'remarks', e.target.value)} disabled={!isEditable} style={{ width: 120 }} />
+                        </td>
+                        {isEditable && (
+                          <td>
+                            <button type="button" className="ibtn danger" onClick={() => removeLine(idx)} disabled={busy} title="Delete row">
+                              <span className="material-symbols-rounded">delete</span>
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="empty" style={{ padding: 20 }}>
+                <span className="material-symbols-rounded">playlist_add</span> No components added. Click "Add Row" to start.
+              </div>
+            )}
+          </div>
+        </>)}
+
+        {/* ── Revisions Tab ── */}
+        {formTab === 'revisions' && (
+          <div className="panel">
+            <div className="panel-h"><h2><span className="material-symbols-rounded">history</span> Revision History</h2></div>
+            {revisionLoading ? <div className="empty" style={{ padding: 16 }}>Loading...</div> : (
+              revisionRows.length > 0 ? (
+                <div className="twrap">
+                  <table className="tbl">
+                    <thead><tr><th>Rev #</th><th>Version</th><th>Created At</th><th>Created By</th><th>Remarks</th></tr></thead>
+                    <tbody>
+                      {revisionRows.map((r) => (
+                        <tr key={r.id}>
+                          <td>R{r.revisionNo}</td>
+                          <td>{r.bomVersion}</td>
+                          <td>{r.createdAt}</td>
+                          <td>{r.createdBy}</td>
+                          <td>{r.remarks || '\u2014'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : <div className="empty" style={{ padding: 16 }}>No revision history.</div>
+            )}
+          </div>
         )}
-      </div>
 
+        {/* ── Where-Used Tab ── */}
+        {formTab === 'where-used' && (
+          <div className="panel">
+            <div className="panel-h"><h2><span className="material-symbols-rounded">search</span> Where-Used</h2></div>
+            {whereUsedLoading ? <div className="empty" style={{ padding: 16 }}>Loading...</div> : (
+              whereUsedRows.length > 0 ? (
+                <div className="twrap">
+                  <table className="tbl">
+                    <thead><tr><th>Type</th><th>Reference</th><th>Item Code</th><th>Status</th><th>Quantity</th></tr></thead>
+                    <tbody>
+                      {whereUsedRows.map((r, i) => (
+                        <tr key={i}><td>{r.type}</td><td>{r.reference}</td><td>{r.itemCode}</td><td><StatusBadge status={r.status} /></td><td>{r.quantity}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : <div className="empty" style={{ padding: 16 }}>No references found.</div>
+            )}
+          </div>
+        )}
+
+        {/* ── Version Compare Tab ── */}
+        {formTab === 'version-compare' && (
+          <div className="panel">
+            <div className="panel-h"><h2><span className="material-symbols-rounded">compare</span> Version Compare</h2></div>
+            {versionLoading ? <div className="empty" style={{ padding: 16 }}>Loading...</div> : (
+              versionRows.length > 0 ? (
+                <div className="twrap">
+                  <table className="tbl">
+                    <thead><tr><th>Current Version</th><th>Previous Version</th><th>Components</th><th>Changed</th></tr></thead>
+                    <tbody>
+                      {versionRows.map((r, i) => (
+                        <tr key={i}><td>{r.currentVersion}</td><td>{r.previousVersion}</td><td>{r.componentCount}</td><td>{r.changed ? 'Yes' : 'No'}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : <div className="empty" style={{ padding: 16 }}>No version comparison data.</div>
+            )}
+          </div>
+        )}
+
+        {/* ── Action Bar ── */}
+        <div className="panel">
+          <div className="actbar">
+            <div className="lft">
+              <button type="button" className="btn btn-sm" onClick={() => setViewMode('LIST')} disabled={busy}><span className="material-symbols-rounded">arrow_back</span> Back</button>
+              <span className="material-symbols-rounded">lock</span>{editId ? 'Audited document' : 'New document'}
+            </div>
+            <div className="rgt">
+              {isEditable && (
+                <button type="button" className="btn btn-sm btn-p" onClick={save} disabled={busy}><span className="material-symbols-rounded">save</span> {editId ? 'Update' : 'Create Draft'}</button>
+              )}
+              {!editId && (
+                <button type="button" className="btn btn-sm btn-p" onClick={save} disabled={busy}><span className="material-symbols-rounded">save</span> Create Draft</button>
+              )}
+            </div>
+          </div>
+        </div>
+      </form>
+
+      {/* ── Delete Modal ── */}
       {deleteTarget && (
-        <div className="modal-overlay" onClick={() => setDeleteTarget(null)}>
+        <ConfirmActionModal open title="Delete BOM" body={`Delete ${deleteTarget.bomNumber || deleteTarget.itemCode}? This action cannot be undone.`} okLabel="Delete" danger busy={busy} onClose={() => setDeleteTarget(null)} onConfirm={del} />
+      )}
+
+      {/* ── Revise Modal ── */}
+      {reviseModal && (
+        <div className="modal-overlay" onClick={() => setReviseModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Delete BOM</h3>
-            <p>Delete <b>{deleteTarget.bomNumber || deleteTarget.docNo}</b> ({deleteTarget.itemCode})?</p>
+            <h3>Create BOM Revision</h3>
+            <p style={{ marginBottom: 12, color: '#6b7280' }}>This will deactivate the current BOM and create a new revision.</p>
+            <label className="fld" style={{ marginBottom: 12 }}>
+              <span>Remarks (required)</span>
+              <textarea className="in" rows={3} value={reviseRemarks} onChange={(e) => setReviseRemarks(e.target.value)} placeholder="Enter reason for revision..." autoFocus />
+            </label>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button className="btn" onClick={() => setDeleteTarget(null)}>Cancel</button>
-              <button className="btn danger" onClick={del} disabled={busy}>Delete</button>
+              <button className="btn btn-sm" onClick={() => { setReviseModal(false); setReviseRemarks(''); }}>Cancel</button>
+              <button className="btn btn-sm btn-p" onClick={createRevision} disabled={busy || !reviseRemarks.trim()}><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>edit_note</span> Create Revision</button>
             </div>
           </div>
         </div>
       )}
+
+      {/* ── Workflow Action Modal ── */}
+      {confirmAction && (
+        <ConfirmActionModal
+          open title={`${confirmAction.action.charAt(0).toUpperCase() + confirmAction.action.slice(1)} BOM`}
+          body={confirmAction.body}
+          okLabel={confirmAction.action.charAt(0).toUpperCase() + confirmAction.action.slice(1)}
+          danger={confirmAction.danger} busy={busy}
+          onClose={() => setConfirmAction(null)}
+          onConfirm={(note) => { if (confirmAction.action === 'reject') { runAction(confirmAction.action, note); } else { runAction(confirmAction.action, note); } }}
+        />
+      )}
+
+      {/* ── Tree View Modal ── */}
+      {treeOpen && (
+        <div className="modal-overlay" onClick={() => setTreeOpen(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 800, maxHeight: '80vh', overflow: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h3>BOM Tree \u2014 {bom.bomNumber || bom.docNo}</h3>
+              <button className="btn btn-sm" onClick={() => setTreeOpen(false)}><span className="material-symbols-rounded">close</span></button>
+            </div>
+            {treeLoading ? <div className="empty" style={{ padding: 20 }}>Loading tree...</div> : treeData ? (
+              <table className="tbl" style={{ fontSize: '0.85em' }}>
+                <thead><tr><th style={{ width: 50 }}>Level</th><th>Item Code</th><th>Description</th><th style={{ width: 60 }}>Qty</th><th style={{ width: 80 }}>Wt/Unit</th><th style={{ width: 80 }}>Total Wt</th></tr></thead>
+                <tbody>
+                  {renderTreeRows(treeData, expandedNodes, toggleNode)}
+                </tbody>
+              </table>
+            ) : <div className="empty" style={{ padding: 20 }}>No tree data.</div>}
+          </div>
+        </div>
+      )}
+
+      {/* ── Audit Drawer ── */}
+      <AuditHistoryDrawer open={auditOpen} entityType="production_bom" entityId={editId ?? undefined} onClose={() => setAuditOpen(false)} />
     </>
   );
+}
+
+/* ── Tree Row Renderer ── */
+
+function renderTreeRows(node: TreeNode, expanded: Set<string>, toggle: (path: string) => void): React.ReactNode[] {
+  const rows: React.ReactNode[] = [];
+  const isLeaf = !node.children || node.children.length === 0;
+  const isExpanded = expanded.has(node.levelPath);
+  const indent = node.level * 20;
+
+  rows.push(
+    <tr key={node.levelPath} style={{ cursor: isLeaf ? 'default' : 'pointer' }} onClick={() => !isLeaf && toggle(node.levelPath)}>
+      <td style={{ paddingLeft: indent, fontWeight: node.level === 0 ? 700 : 400 }}>
+        {!isLeaf && <span className="material-symbols-rounded" style={{ fontSize: '1rem', verticalAlign: 'middle', marginRight: 4 }}>{isExpanded ? 'expand_more' : 'chevron_right'}</span>}
+        {node.levelPath || '0'}
+      </td>
+      <td style={{ fontWeight: node.level === 0 ? 700 : 500 }}>{node.itemCode || node.componentItemCode}</td>
+      <td>{node.description || '\u2014'}</td>
+      <td>{node.quantityPer}</td>
+      <td>{node.weightPerQty && node.weightPerQty > 0 ? node.weightPerQty.toFixed(4) : '\u2014'}</td>
+      <td style={{ fontWeight: 600 }}>{node.totalWeight && node.totalWeight > 0 ? node.totalWeight.toFixed(4) : '\u2014'}</td>
+    </tr>
+  );
+
+  if (isExpanded && node.children) {
+    for (const child of node.children) {
+      rows.push(...renderTreeRows(child, expanded, toggle));
+    }
+  }
+
+  return rows;
 }

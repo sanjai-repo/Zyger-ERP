@@ -83,6 +83,14 @@ public class PlanningService {
 
     private void validateBeforeCreate(String key, Map<String, Object> body) {
         if ("production-bom".equals(key)) {
+            String itemType = body.get("itemType") != null ? String.valueOf(body.get("itemType")).trim() : "";
+            if (itemType.isEmpty()) {
+                throw new IllegalArgumentException("Item Type is mandatory.");
+            }
+            String itemCode = body.get("itemCode") != null ? String.valueOf(body.get("itemCode")).trim() : "";
+            if (itemCode.isEmpty()) {
+                throw new IllegalArgumentException("BOM Item is mandatory.");
+            }
             Object parentBomId = body.get("parentBomId");
             Object bomId = body.get("id");
             if (parentBomId != null) {
