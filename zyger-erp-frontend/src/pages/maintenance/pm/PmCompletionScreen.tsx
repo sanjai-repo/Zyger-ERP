@@ -58,7 +58,6 @@ export default function PmCompletionScreen() {
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<'list' | 'form'>('list');
-  const [openActionMenu, setOpenActionMenu] = useState<number | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -181,21 +180,21 @@ export default function PmCompletionScreen() {
                       <td>{(r.result ?? '-').replace(/_/g, ' ')}</td>
                       <td><StatusBadge status={r.status} variant={SC} /></td>
                       <td>{r.verified ? <span className="material-symbols-rounded" style={{ color: '#22c55e', fontSize: 18 }}>check_circle</span> : <span className="material-symbols-rounded" style={{ color: '#ccc', fontSize: 18 }}>radio_button_unchecked</span>}</td>
-                      <td style={{ position: 'relative' }}>
-                        <button className="ibtn" title="Actions" onClick={(e) => { e.stopPropagation(); setOpenActionMenu(openActionMenu === r.id ? null : r.id); }}>
-                          <span className="material-symbols-rounded">more_vert</span>
-                        </button>
-                        {openActionMenu === r.id && (
-                          <div style={{ position: 'absolute', right: 0, top: '100%', zIndex: 20, background: 'var(--card-bg, #fff)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.12)', minWidth: 180, padding: '4px 0' }} onClick={(e) => e.stopPropagation()}>
-                            {r.status === 'DRAFT' && can('maintenance', 'Edit') && <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); action(r.id, 'submit'); }}><span className="material-symbols-rounded" style={{ fontSize: 18, color: '#2563eb' }}>send</span> Submit</button>}
-                            {r.status === 'SUBMITTED' && <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); action(r.id, 'complete'); }}><span className="material-symbols-rounded" style={{ fontSize: 18, color: '#22c55e' }}>check_circle</span> Complete</button>}
-                            {r.status === 'COMPLETED' && !r.verified && <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); action(r.id, 'verify'); }}><span className="material-symbols-rounded" style={{ fontSize: 18, color: '#0d9488' }}>verified</span> Verify</button>}
-                            {r.status === 'SUBMITTED' && <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); action(r.id, 'fail'); }}><span className="material-symbols-rounded" style={{ fontSize: 18, color: '#ef4444' }}>cancel</span> Fail</button>}
-                            <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '4px 0' }} />
-                            <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); setForm(r as unknown as Record<string, unknown>); setEditId(r.id); setTab('form'); }}><span className="material-symbols-rounded" style={{ fontSize: 18 }}>edit</span> Edit</button>
-                            {r.status === 'DRAFT' && <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left', color: '#ef4444' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(239,68,68,0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); setDeleteTarget(r); }}><span className="material-symbols-rounded" style={{ fontSize: 18 }}>delete</span> Delete</button>}
-                          </div>
-                        )}
+                      <td>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                          {r.status === 'DRAFT' && can('maintenance', 'Edit') && <button className="btn btn-sm" onClick={() => action(r.id, 'submit')} disabled={busy}>Submit</button>}
+                          {r.status === 'SUBMITTED' && <button className="btn btn-sm btn-g" onClick={() => action(r.id, 'complete')} disabled={busy}>Complete</button>}
+                          {r.status === 'SUBMITTED' && <button className="btn btn-sm btn-d" onClick={() => action(r.id, 'fail')} disabled={busy}>Fail</button>}
+                          {r.status === 'COMPLETED' && !r.verified && <button className="btn btn-sm" onClick={() => action(r.id, 'verify')} disabled={busy}>Verify</button>}
+                          <button className="ibtn" title="Edit" onClick={() => { setForm(r as unknown as Record<string, unknown>); setEditId(r.id); setTab('form'); }}>
+                            <span className="material-symbols-rounded">edit</span>
+                          </button>
+                          {r.status === 'DRAFT' && (
+                            <button className="ibtn" title="Delete" onClick={() => setDeleteTarget(r)}>
+                              <span className="material-symbols-rounded" style={{ color: '#ef4444' }}>delete</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
