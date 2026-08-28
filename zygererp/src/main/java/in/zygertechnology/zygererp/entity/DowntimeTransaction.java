@@ -20,6 +20,7 @@ public class DowntimeTransaction {
     @Column(name = "start_time") Instant startTime;
     @Column(name = "end_time") Instant endTime;
     @Column(name = "duration_minutes") BigDecimal durationMinutes;
+    @Column(name = "is_data_quality_flagged") @Builder.Default Boolean dataQualityFlag = false;
     @Column(name = "created_at") Instant createdAt = Instant.now();
     @Version Long version;
 }

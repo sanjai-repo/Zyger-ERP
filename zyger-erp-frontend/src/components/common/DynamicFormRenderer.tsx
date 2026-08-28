@@ -109,22 +109,24 @@ export default function DynamicFormRenderer({ characteristics, draftLines, onUpd
           fontSize: 12,
           borderCollapse: 'collapse',
           tableLayout: 'fixed',
+          border: '1px solid #313244',
+          minWidth: 900,
         }}
       >
         <thead>
-          <tr style={{ borderBottom: '2px solid #313244' }}>
-            <th style={thStyle}>#</th>
-            <th style={{ ...thStyle, width: 160 }}>Characteristic</th>
-            <th style={{ ...thStyle, width: 60 }}>UOM</th>
-            <th style={thStyle}>Nominal</th>
-            <th style={thStyle}>Lo</th>
-            <th style={thStyle}>Hi</th>
+          <tr style={{ background: 'rgba(49,50,68,0.35)' }}>
+            <th style={{ ...thStyle, width: 32, textAlign: 'center' }}>#</th>
+            <th style={{ ...thStyle, width: 170 }}>Characteristic</th>
+            <th style={{ ...thStyle, width: 50, textAlign: 'center' }}>UOM</th>
+            <th style={{ ...thStyle, width: 80, textAlign: 'right' }}>Nominal</th>
+            <th style={{ ...thStyle, width: 60, textAlign: 'right' }}>Lo</th>
+            <th style={{ ...thStyle, width: 60, textAlign: 'right' }}>Hi</th>
             <th style={{ ...thStyle, width: 100 }}>Actual</th>
-            <th style={{ ...thStyle, width: 70 }}>Status</th>
-            <th style={thStyle}>Spec</th>
-            <th style={{ ...thStyle, width: 140 }}>Instrument</th>
-            <th style={{ ...thStyle, width: 30 }}>M</th>
-            <th style={{ ...thStyle, width: 30 }}>C</th>
+            <th style={{ ...thStyle, width: 72, textAlign: 'center' }}>Status</th>
+            <th style={{ ...thStyle, width: 120 }}>Spec</th>
+            <th style={{ ...thStyle, width: 130 }}>Instrument</th>
+            <th style={{ ...thStyle, width: 28, textAlign: 'center' }}>M</th>
+            <th style={{ ...thStyle, width: 28, textAlign: 'center' }}>C</th>
           </tr>
         </thead>
         <tbody>
@@ -137,20 +139,19 @@ export default function DynamicFormRenderer({ characteristics, draftLines, onUpd
               <tr
                 key={idx}
                 style={{
-                  borderBottom: '1px solid #1e1e2e',
                   background: evalResult === 'FAIL' ? 'rgba(243,139,168,0.06)' : 'transparent',
                 }}
               >
-                <td style={tdStyle}>
+                <td style={{ ...tdStyle, textAlign: 'center', color: '#6c7086' }}>
                   {line.balloonNo || (ch?.balloonNo ?? idx + 1)}
                 </td>
                 <td style={{ ...tdStyle, fontWeight: ch?.isCritical ? 600 : 400, color: ch?.isCritical ? '#f38ba8' : '#cdd6f4' }}>
                   {line.characteristicName}
                 </td>
-                <td style={tdStyle}>{line.uom || ch?.uom || ''}</td>
-                <td style={tdStyle}>{line.nominalValue || ch?.nominalValue || ''}</td>
-                <td style={tdStyle}>{line.lowerLimit || ch?.lowerLimit || ''}</td>
-                <td style={tdStyle}>{line.upperLimit || ch?.upperLimit || ''}</td>
+                <td style={{ ...tdStyle, textAlign: 'center' }}>{line.uom || ch?.uom || ''}</td>
+                <td style={{ ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{line.nominalValue || ch?.nominalValue || ''}</td>
+                <td style={{ ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{line.lowerLimit || ch?.lowerLimit || ''}</td>
+                <td style={{ ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{line.upperLimit || ch?.upperLimit || ''}</td>
 
                 {/* Actual value input */}
                 <td style={tdStyle}>
@@ -179,6 +180,8 @@ export default function DynamicFormRenderer({ characteristics, draftLines, onUpd
                         fontSize: 12,
                         padding: '2px 4px',
                         fontWeight: 600,
+                        textAlign: dt === 'NUMERIC' ? 'right' : 'left',
+                        fontVariantNumeric: dt === 'NUMERIC' ? 'tabular-nums' : 'normal',
                         color: evalResult === 'PASS' ? '#a6e3a1' : evalResult === 'FAIL' ? '#f38ba8' : '#cdd6f4',
                       }}
                     />
@@ -244,14 +247,18 @@ export default function DynamicFormRenderer({ characteristics, draftLines, onUpd
 export type { InspectionCharacteristic, DraftLine };
 
 const thStyle: React.CSSProperties = {
-  padding: '6px 4px',
-  textAlign: 'left',
+  padding: '6px 6px',
   fontWeight: 600,
   fontSize: 11,
   color: '#a6adc8',
+  whiteSpace: 'nowrap',
+  borderRight: '1px solid #313244',
   borderBottom: '1px solid #313244',
 };
 
 const tdStyle: React.CSSProperties = {
-  padding: '4px',
+  padding: '4px 6px',
+  borderRight: '1px solid #262637',
+  borderBottom: '1px solid #262637',
+  verticalAlign: 'middle',
 };

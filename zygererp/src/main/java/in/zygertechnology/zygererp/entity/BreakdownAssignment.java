@@ -16,5 +16,6 @@ public class BreakdownAssignment {
     @Column(name = "assigned_by", length = 60) String assignedBy;
     @Column(name = "assigned_at") Instant assignedAt = Instant.now();
     @Column(length = 30) @Builder.Default String status = "ASSIGNED";
+    @Column(name = "secondary_assignee") @Builder.Default Boolean secondaryAssignee = false;
     @Version Long version;
 }

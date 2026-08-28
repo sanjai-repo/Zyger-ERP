@@ -131,11 +131,11 @@ export default function PmCompletionScreen() {
             <label className="fld"><span>Technician Code</span><input className="in" value={String(form.technicianCode ?? '')} onChange={(e) => set('technicianCode', e.target.value)} /></label>
             <label className="fld"><span>Start Time</span><input className="in" type="datetime-local" value={String(form.startTime ?? '').slice(0, 16)} onChange={(e) => set('startTime', e.target.value)} /></label>
             <label className="fld"><span>End Time</span><input className="in" type="datetime-local" value={String(form.endTime ?? '').slice(0, 16)} onChange={(e) => set('endTime', e.target.value)} /></label>
-            <label className="fld"><span>Duration (hrs)</span><input className="in" type="number" step="0.5" value={String(form.durationHours ?? '')} onChange={(e) => set('durationHours', Number(e.target.value))} /></label>
+            <label className="fld"><span>Duration (hrs)</span><input className="in" type="number" min={0} step="0.5" value={String(form.durationHours ?? '')} onChange={(e) => set('durationHours', Math.max(0, Number(e.target.value)))} /></label>
             <label className="fld" style={{ gridColumn: 'span 2' }}><span>Checklist Completed</span><textarea className="in" rows={3} value={String(form.checklistCompleted ?? '')} onChange={(e) => set('checklistCompleted', e.target.value)} /></label>
             <label className="fld" style={{ gridColumn: 'span 2' }}><span>Measurements Recorded</span><textarea className="in" rows={3} value={String(form.measurementsRecorded ?? '')} onChange={(e) => set('measurementsRecorded', e.target.value)} /></label>
             <label className="fld" style={{ gridColumn: 'span 2' }}><span>Spare Parts Used</span><textarea className="in" rows={3} value={String(form.sparePartsUsed ?? '')} onChange={(e) => set('sparePartsUsed', e.target.value)} /></label>
-            <label className="fld"><span>Labour Hours</span><input className="in" type="number" step="0.5" value={String(form.labourHours ?? '')} onChange={(e) => set('labourHours', Number(e.target.value))} /></label>
+            <label className="fld"><span>Labour Hours</span><input className="in" type="number" min={0} step="0.5" value={String(form.labourHours ?? '')} onChange={(e) => set('labourHours', Math.max(0, Number(e.target.value)))} /></label>
             <label className="fld"><span>Result</span>
               <select className="in" value={String(form.result ?? '')} onChange={(e) => set('result', e.target.value)}>
                 <option value="">Select...</option>

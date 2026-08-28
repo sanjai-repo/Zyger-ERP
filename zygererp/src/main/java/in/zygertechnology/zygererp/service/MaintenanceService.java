@@ -51,6 +51,8 @@ public class MaintenanceService {
     private final DowntimeTransactionRepository downtimeTransactions;
     private final MaintenanceAttachmentRepository maintenanceAttachments;
     private final NotificationLogRepository notificationLogs;
+    private final NotificationService notificationService;
+    private final InstrumentMasterRepository instruments;
 
     // ===========================
     // ---- HELPER METHODS -------
@@ -101,11 +103,19 @@ public class MaintenanceService {
         if (machineCode == null || start == null || end == null) return;
         var machine = machines.findByCode(machineCode).orElse(null);
         if (machine == null) return;
-        BigDecimal duration = BigDecimal.valueOf(ChronoUnit.MINUTES.between(start, end));
+        BigDecimal rawDuration = BigDecimal.valueOf(ChronoUnit.MINUTES.between(start, end));
+        boolean flagged = false;
+        BigDecimal duration = rawDuration;
+        BigDecimal ceiling = BigDecimal.valueOf(43200); // 30 days — BR-14 ceiling
+        if (rawDuration.compareTo(ceiling) > 0) {
+            duration = ceiling;
+            flagged = true;
+        }
         DowntimeTransaction dt = DowntimeTransaction.builder()
                 .machineId(machine.getId()).machineCode(machineCode)
                 .sourceType(sourceType).sourceId(sourceId)
                 .startTime(start).endTime(end).durationMinutes(duration)
+                .dataQualityFlag(flagged)
                 .build();
         downtimeTransactions.save(dt);
     }
@@ -168,6 +178,9 @@ public class MaintenanceService {
         if (bd.getMachineCode() != null && !bd.getMachineCode().isBlank()) {
             if (!machines.existsByCode(bd.getMachineCode())) {
                 throw new RuntimeException("Machine code '" + bd.getMachineCode() + "' does not exist");
+            }
+            if (!breakdowns.findActiveByMachineCode(bd.getMachineCode()).isEmpty()) {
+                throw new IllegalStateException("Breakdown already open for machine '" + bd.getMachineCode() + "' (BR-12)");
             }
         }
         setCreated(bd, principalName(principal));
@@ -309,15 +322,29 @@ public class MaintenanceService {
                 releaseMachineFromBreakdown(r.getBreakdownId(), r.getMachineCode());
                 createDowntimeTransaction(r.getMachineCode(), "BREAKDOWN", r.getBreakdownId(), r.getStartTime(), r.getEndTime());
                 break;
+            case "pass":
+                if (!"COMPLETED".equals(r.getStatus())) {
+                    throw new IllegalStateException("Cannot PASS before rectification is COMPLETED (BR-01)");
+                }
+                r.setTestingResult("PASS");
+                break;
+            case "fail":
+                r.setTestingResult("FAIL");
+                if ("COMPLETED".equals(r.getStatus())) {
+                    r.setStatus("IN_PROGRESS"); // rework — return to in-progress
+                }
+                break;
             case "close":
+                if (!"COMPLETED".equals(r.getStatus()) || !"PASS".equals(r.getTestingResult())) {
+                    throw new IllegalStateException(
+                        "Cannot CLOSE: rectification must be COMPLETED with testingResult=PASS (BR-01)");
+                }
                 r.setStatus("CLOSED");
                 releaseMachineFromBreakdown(r.getBreakdownId(), r.getMachineCode());
                 if (r.getStartTime() != null && r.getEndTime() != null) {
                     createDowntimeTransaction(r.getMachineCode(), "BREAKDOWN", r.getBreakdownId(), r.getStartTime(), r.getEndTime());
                 }
                 break;
-            case "pass": r.setTestingResult("PASS"); break;
-            case "fail": r.setTestingResult("FAIL"); break;
             default: throw new RuntimeException("Unknown action: " + action);
         }
         audit(r, principalName(principal));
@@ -535,14 +562,22 @@ public class MaintenanceService {
                     createDowntimeTransaction(c.getMachineCode(), "PM", c.getId(), c.getStartTime(), c.getEndTime());
                 }
                 break;
-            case "verify":
+            case "verify": {
+                List<PmCompletionChecklistItem> checklist = pmChecklistItems.findByCompletionId(id);
+                boolean allAnswered = !checklist.isEmpty() && checklist.stream().allMatch(i -> i.getResult() != null && !i.getResult().isBlank());
+                if (!allAnswered) {
+                    throw new IllegalStateException("Cannot VERIFY: all checklist items must have a result (BR-15)");
+                }
                 c.setVerified(true);
                 c.setStatus("VERIFIED");
                 break;
-            case "fail":
+            }
+            case "fail": {
                 c.setResult("FAILED");
                 c.setStatus("COMPLETED");
+                autoRcaOnPmFail(c, principalName(principal));
                 break;
+            }
             default:
                 throw new RuntimeException("Unknown action: " + action);
         }
@@ -564,6 +599,35 @@ public class MaintenanceService {
         result.put("success", true);
         result.put("data", pmCompletions.findById(id).orElse(c));
         return result;
+    }
+
+    // BR-15: when a PM completion is marked FAILED, auto-create an RCA and notify.
+    private void autoRcaOnPmFail(PMCompletion c, String user) {
+        try {
+            RootCauseAnalysis rca = RootCauseAnalysis.builder()
+                    .rcaNumber(numbers.next("root-cause-analysis", "RCA"))
+                    .machineCode(c.getMachineCode())
+                    .problemDescription("Auto-generated from failed PM completion #" + c.getId())
+                    .status("OPEN")
+                    .build();
+            rootCauseAnalyses.save(rca);
+
+            NotificationLog nl = new NotificationLog();
+            nl.setRecipient("maintenance-supervisor");
+            nl.setSourceType("PM");
+            nl.setSourceId(c.getId());
+            nl.setSubject("PM completion " + c.getId() + " failed");
+            nl.setBody("PM completion " + c.getId() + " failed; RCA " + rca.getRcaNumber() + " auto-created (BR-15)");
+            nl.setStatus("SENT");
+            nl.setSentAt(Instant.now());
+            notificationLogs.save(nl);
+
+            notificationService.notify("PM_FAIL", "MAINTENANCE", "PM_COMPLETION", c.getId(),
+                    "ERROR", "PM completion " + c.getId() + " failed; RCA " + rca.getRcaNumber() + " created (BR-15)",
+                    c.getMachineCode());
+        } catch (Exception ex) {
+            log.error("autoRcaOnPmFail failed for PM completion id={}", c.getId(), ex);
+        }
     }
 
     // ===========================
@@ -770,14 +834,50 @@ public class MaintenanceService {
 
     public CalibrationEntry calEntryAction(Long id, String action, Principal principal) {
         CalibrationEntry ce = calEntries.findById(id).orElseThrow(() -> new RuntimeException("Calibration Entry not found"));
+        String user = principalName(principal);
         switch (action.toLowerCase()) {
-            case "pass": ce.setResult("PASS"); ce.setStatus("COMPLETED"); break;
-            case "fail": ce.setResult("FAIL"); ce.setStatus("COMPLETED"); break;
+            case "pass": { ce.setResult("PASS"); ce.setStatus("COMPLETED"); applyCalPass(ce); break; }
+            case "fail": { ce.setResult("FAIL"); ce.setStatus("COMPLETED"); applyCalFail(ce, user); break; }
             case "submit": ce.setStatus("SUBMITTED"); break;
             default: throw new RuntimeException("Unknown action: " + action);
         }
-        audit(ce, principalName(principal));
+        audit(ce, user);
         return calEntries.save(ce);
+    }
+
+    // BR-16: on PASS, bump the schedule's next-due by its calibration frequency.
+    private void applyCalPass(CalibrationEntry ce) {
+        if (ce.getScheduleId() == null) return;
+        CalibrationSchedule cs = calSchedules.findById(ce.getScheduleId()).orElse(null);
+        if (cs == null) return;
+        LocalDate base = ce.getCalibrationDate() != null ? ce.getCalibrationDate() : LocalDate.now();
+        LocalDate next = calculateNextDate(base, cs.getCalibrationFrequency());
+        cs.setCalibrationStatus("VALID");
+        cs.setLastCalibrationDate(base);
+        cs.setNextDueDate(next);
+        cs.setStatus("ACTIVE");
+        audit(cs, "system");
+        calSchedules.save(cs);
+    }
+
+    // BR-17: on FAIL, mark the schedule failed/inactive AND quarantine the instrument (gauge).
+    private void applyCalFail(CalibrationEntry ce, String user) {
+        if (ce.getScheduleId() != null) {
+            CalibrationSchedule cs = calSchedules.findById(ce.getScheduleId()).orElse(null);
+            if (cs != null) {
+                cs.setCalibrationStatus("FAILED");
+                cs.setStatus("INACTIVE");
+                audit(cs, user);
+                calSchedules.save(cs);
+            }
+        }
+        if (ce.getInstrumentId() != null) {
+            instruments.findByCode(ce.getInstrumentId()).ifPresent(instr -> {
+                instr.setCurrentStatus("QUARANTINED");
+                instr.setCalibrationStatus("FAILED");
+                instruments.save(instr);
+            });
+        }
     }
 
     // ===========================
@@ -1444,6 +1544,12 @@ public class MaintenanceService {
         a.setId(null); a.setBreakdownId(breakdownId); a.setAssignedBy(principalName(principal)); a.setAssignedAt(Instant.now());
         breakdowns.findById(breakdownId).orElseThrow(() -> new RuntimeException("Breakdown not found"));
         technicians.findById(a.getTechnicianId()).orElseThrow(() -> new RuntimeException("Technician not found"));
+        boolean secondary = Boolean.TRUE.equals(a.getSecondaryAssignee());
+        if (!secondary && breakdownAssignments.countActiveByTechnicianId(a.getTechnicianId(), breakdownId) > 0) {
+            throw new IllegalStateException(
+                "Technician '" + a.getTechnicianId() + "' already assigned to another active breakdown (BR-13); "
+                + "mark as secondary assignee to override");
+        }
         BreakdownAssignment saved = breakdownAssignments.save(a);
         BreakdownIntimation bd = breakdowns.findById(breakdownId).orElse(null);
         if (bd != null) { bd.setStatus("ASSIGNED"); audit(bd, principalName(principal)); breakdowns.save(bd); }

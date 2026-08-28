@@ -140,7 +140,7 @@ export default function CalibrationEntryScreen() {
               </select>
             </label>
             <label className="fld"><span>Next Due Date *</span><input className="in" type="date" value={String(form.nextDueDate ?? '').slice(0, 10)} onChange={(e) => set('nextDueDate', e.target.value)} /></label>
-            <label className="fld"><span>Calibration Cost</span><input className="in" type="number" value={String(form.calibrationCost ?? 0)} onChange={(e) => set('calibrationCost', Number(e.target.value))} /></label>
+            <label className="fld"><span>Calibration Cost</span><input className="in" type="number" min={0} step="0.01" value={String(form.calibrationCost ?? 0)} onChange={(e) => set('calibrationCost', Math.max(0, Number(e.target.value)))} /></label>
             <label className="fld"><span>Status</span><input className="in" value={String(form.status ?? '')} readOnly /></label>
             <label className="fld"><span>Remarks</span><input className="in" value={String(form.remarks ?? '')} onChange={(e) => set('remarks', e.target.value)} /></label>
           </div>
