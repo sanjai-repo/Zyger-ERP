@@ -62,7 +62,6 @@ export default function BreakdownRectificationScreen() {
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<'list' | 'form'>('list');
-  const [openActionMenu, setOpenActionMenu] = useState<number | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -239,22 +238,24 @@ export default function BreakdownRectificationScreen() {
                       <td>{r.serviceCost != null ? Number(r.serviceCost).toLocaleString() : '-'}</td>
                       <td><StatusBadge status={r.status} variant={SC} /></td>
                       <td>{r.testingResult ?? '-'}</td>
-                      <td style={{ position: 'relative' }}>
-                        <button className="ibtn" title="Actions" onClick={(e) => { e.stopPropagation(); setOpenActionMenu(openActionMenu === r.id ? null : r.id); }}>
-                          <span className="material-symbols-rounded">more_vert</span>
-                        </button>
-                        {openActionMenu === r.id && (
-                          <div style={{ position: 'absolute', right: 0, top: '100%', zIndex: 20, background: 'var(--card-bg, #fff)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.12)', minWidth: 180, padding: '4px 0' }} onClick={(e) => e.stopPropagation()}>
-                            {r.status === 'DRAFT' && <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); action(r.id, 'start'); }}><span className="material-symbols-rounded" style={{ fontSize: 18, color: '#f59e0b' }}>play_arrow</span> Start</button>}
-                            {r.status === 'IN_PROGRESS' && <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); action(r.id, 'complete'); }}><span className="material-symbols-rounded" style={{ fontSize: 18, color: '#22c55e' }}>check_circle</span> Complete</button>}
-                            {r.status === 'COMPLETED' && <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); action(r.id, 'pass'); }}><span className="material-symbols-rounded" style={{ fontSize: 18, color: '#22c55e' }}>thumb_up</span> Pass</button>}
-                            {r.status === 'COMPLETED' && <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); action(r.id, 'fail'); }}><span className="material-symbols-rounded" style={{ fontSize: 18, color: '#ef4444' }}>thumb_down</span> Fail</button>}
-                            {r.status === 'COMPLETED' && r.testingResult === 'PASS' && <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); action(r.id, 'close'); }}><span className="material-symbols-rounded" style={{ fontSize: 18, color: '#6b7280' }}>lock</span> Close</button>}
-                            <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '4px 0' }} />
-                            <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); openEdit(r); }}><span className="material-symbols-rounded" style={{ fontSize: 18 }}>edit</span> Edit</button>
-                            {r.status === 'DRAFT' && <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left', color: '#ef4444' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(239,68,68,0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); setDeleteTarget(r); }}><span className="material-symbols-rounded" style={{ fontSize: 18 }}>delete</span> Delete</button>}
-                          </div>
-                        )}
+                      <td>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                          {r.status === 'DRAFT' && <button className="btn btn-sm" onClick={() => action(r.id, 'start')} disabled={busy}>Start</button>}
+                          {r.status === 'IN_PROGRESS' && <button className="btn btn-sm" onClick={() => action(r.id, 'complete')} disabled={busy}>Complete</button>}
+                          {r.status === 'COMPLETED' && <button className="btn btn-sm btn-g" onClick={() => action(r.id, 'pass')} disabled={busy}>Pass</button>}
+                          {r.status === 'COMPLETED' && <button className="btn btn-sm btn-d" onClick={() => action(r.id, 'fail')} disabled={busy}>Fail</button>}
+                          {r.status === 'COMPLETED' && r.testingResult === 'PASS' && <button className="btn btn-sm" onClick={() => action(r.id, 'close')} disabled={busy}>Case Close</button>}
+                          {r.status === 'DRAFT' || r.status === 'IN_PROGRESS' || r.status === 'COMPLETED' ? (
+                            <button className="ibtn" title="Edit" onClick={() => openEdit(r)}>
+                              <span className="material-symbols-rounded">edit</span>
+                            </button>
+                          ) : null}
+                          {r.status === 'DRAFT' && (
+                            <button className="ibtn" title="Delete" onClick={() => setDeleteTarget(r)}>
+                              <span className="material-symbols-rounded" style={{ color: '#ef4444' }}>delete</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
