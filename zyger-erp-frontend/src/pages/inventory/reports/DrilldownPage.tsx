@@ -97,6 +97,7 @@ export default function DrilldownPage({ drilldownType }: DrilldownPageProps) {
   const [status, setStatus] = useState('');
   const [txType, setTxType] = useState('');
   const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [includeZero, setIncludeZero] = useState(false);
   const [page, setPage] = useState(0);
 
   useEffect(() => {
@@ -106,7 +107,7 @@ export default function DrilldownPage({ drilldownType }: DrilldownPageProps) {
 
   useEffect(() => {
     setPage(0);
-  }, [search, fromDate, toDate, itemCode, location, category, status, txType, lowStockOnly]);
+  }, [search, fromDate, toDate, itemCode, location, category, status, txType, lowStockOnly, includeZero]);
 
   const params = useMemo<ReportQueryParams>(
     () => ({
@@ -121,8 +122,9 @@ export default function DrilldownPage({ drilldownType }: DrilldownPageProps) {
       status,
       txType,
       lowStockOnly,
+      includeZero,
     }),
-    [page, search, fromDate, toDate, itemCode, location, category, status, txType, lowStockOnly]
+    [page, search, fromDate, toDate, itemCode, location, category, status, txType, lowStockOnly, includeZero]
   );
 
   const { data, isPending, isError, error, refetch } = useDrilldown(
@@ -321,6 +323,17 @@ export default function DrilldownPage({ drilldownType }: DrilldownPageProps) {
                 onChange={(event) => setLowStockOnly(event.target.checked)}
               />
               Low stock only
+            </label>
+          )}
+
+          {has('includeZero') && (
+            <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={includeZero}
+                onChange={(event) => setIncludeZero(event.target.checked)}
+              />
+              Include not available
             </label>
           )}
 

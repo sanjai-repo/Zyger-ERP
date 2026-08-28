@@ -166,7 +166,14 @@ export default function QuotationComparisonPage() {
 
   const getQuotationTotal = (q: QuotationDoc): number => getQuotationLineTotal(q) + headerCharges(q);
 
-  const sortedByCost = [...comparables].sort((a, b) => getQuotationTotal(a) - getQuotationTotal(b));
+  const sortedByCost = [...comparables].sort((a, b) => {
+    const totA = getQuotationTotal(a);
+    const totB = getQuotationTotal(b);
+    if (totA > 0 && totB > 0) return totA - totB;
+    if (totA > 0) return -1;
+    if (totB > 0) return 1;
+    return 0;
+  });
 
   const matrixItems = useMemo<MatrixItem[]>(() => {
     const map = new Map<string, MatrixItem>();
@@ -189,17 +196,17 @@ export default function QuotationComparisonPage() {
       display: 'inline-flex',
       alignItems: 'center',
       gap: 6,
-      padding: '2px 10px',
+      padding: '3px 10px',
       borderRadius: 99,
       fontSize: 11,
-      fontWeight: 700,
+      fontWeight: 800,
       letterSpacing: '.03em',
     };
     if (idx === 0) {
       return (
-        <span style={{ ...style, background: '#e6f9ef', color: '#1f9d58' }}>
+        <span style={{ ...style, background: '#22c55e', color: '#ffffff', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
           <span className="material-symbols-rounded" style={{ fontSize: 14 }}>workspace_premium</span>
-          L1 · Lowest Bidder
+          L1 · LOWEST BIDDER
         </span>
       );
     }
@@ -456,15 +463,16 @@ export default function QuotationComparisonPage() {
 
           {/* Comparative matrix table */}
           <div className="panel">
-            <div className="twrap scroll" style={{ maxHeight: 640 }}>
-              <table className="tbl">
+            <div className="twrap">
+              <table className="tbl qc-table">
                 <thead>
                   <tr>
                     <th style={{ minWidth: 240 }}>Commercial / Technical Parameter</th>
                     {filteredQuotations.map((q) => {
                       const rank = rankOf(q.id);
+                      const isL1 = sortedByCost[0]?.id === q.id;
                       return (
-                        <th key={q.id} style={{ textAlign: 'center', minWidth: 220 }}>
+                        <th key={q.id} className={isL1 ? 'l1-col-head' : undefined} style={{ textAlign: 'center', minWidth: 220 }}>
                           {getRankBadge(rank)}
                           <div style={{ color: '#fff', fontWeight: 700, fontSize: 13, marginTop: 8, textTransform: 'none', letterSpacing: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                             <span>{q.supplier}</span>
@@ -488,38 +496,53 @@ export default function QuotationComparisonPage() {
                 <tbody>
                   <tr>
                     <td style={{ fontWeight: 600, color: 'var(--text)' }}>Supplier Code</td>
-                    {filteredQuotations.map((q) => (
-                      <td key={q.id} style={{ textAlign: 'center', fontFamily: 'monospace' }}>{q.supplierCode || '—'}</td>
-                    ))}
+                    {filteredQuotations.map((q) => {
+                      const isL1 = sortedByCost[0]?.id === q.id;
+                      return (
+                        <td key={q.id} className={isL1 ? 'l1-col-cell' : undefined} style={{ textAlign: 'center', fontFamily: 'monospace' }}>{q.supplierCode || '—'}</td>
+                      );
+                    })}
                   </tr>
                   <tr>
                     <td>Quote Date &amp; Validity</td>
-                    {filteredQuotations.map((q) => (
-                      <td key={q.id} style={{ textAlign: 'center' }}>
-                        <div>{q.date || '—'}</div>
-                        <div className="mut">Valid till {q.validUntil || '—'}</div>
-                      </td>
-                    ))}
+                    {filteredQuotations.map((q) => {
+                      const isL1 = sortedByCost[0]?.id === q.id;
+                      return (
+                        <td key={q.id} className={isL1 ? 'l1-col-cell' : undefined} style={{ textAlign: 'center' }}>
+                          <div>{q.date || '—'}</div>
+                          <div className="mut">Valid till {q.validUntil || '—'}</div>
+                        </td>
+                      );
+                    })}
                   </tr>
                   <tr>
                     <td>Enquiry Reference</td>
-                    {filteredQuotations.map((q) => (
-                      <td key={q.id} style={{ textAlign: 'center' }}>{q.enquiryNumber || '—'}</td>
-                    ))}
+                    {filteredQuotations.map((q) => {
+                      const isL1 = sortedByCost[0]?.id === q.id;
+                      return (
+                        <td key={q.id} className={isL1 ? 'l1-col-cell' : undefined} style={{ textAlign: 'center' }}>{q.enquiryNumber || '—'}</td>
+                      );
+                    })}
                   </tr>
                   <tr>
                     <td>Payment Terms</td>
-                    {filteredQuotations.map((q) => (
-                      <td key={q.id} style={{ textAlign: 'center', fontWeight: 600 }}>{q.paymentTerms || '—'}</td>
-                    ))}
+                    {filteredQuotations.map((q) => {
+                      const isL1 = sortedByCost[0]?.id === q.id;
+                      return (
+                        <td key={q.id} className={isL1 ? 'l1-col-cell' : undefined} style={{ textAlign: 'center', fontWeight: 600 }}>{q.paymentTerms || '—'}</td>
+                      );
+                    })}
                   </tr>
                   <tr>
                     <td>Status</td>
-                    {filteredQuotations.map((q) => (
-                      <td key={q.id} style={{ textAlign: 'center' }}>
-                        <StatusBadge status={q.status || 'SUBMITTED'} />
-                      </td>
-                    ))}
+                    {filteredQuotations.map((q) => {
+                      const isL1 = sortedByCost[0]?.id === q.id;
+                      return (
+                        <td key={q.id} className={isL1 ? 'l1-col-cell' : undefined} style={{ textAlign: 'center' }}>
+                          <StatusBadge status={q.status || 'SUBMITTED'} />
+                        </td>
+                      );
+                    })}
                   </tr>
 
                   {matrixItems.length === 0 ? (
@@ -529,44 +552,58 @@ export default function QuotationComparisonPage() {
                       </td>
                     </tr>
                   ) : (
-                    matrixItems.map((item) => (
-                      <tr key={item.itemCode}>
-                        <td style={{ fontWeight: 600, color: 'var(--text)' }}>
-                          {item.itemCode} — {item.itemName}
-                          <div className="mut">Req Qty: {item.qty} {item.uom}</div>
-                        </td>
-                        {filteredQuotations.map((q) => {
-                          const l = item.lines[q.id];
-                          if (!l) {
+                    matrixItems.map((item) => {
+                      const validLines = filteredQuotations
+                        .map((q) => ({ qId: q.id, line: item.lines[q.id] }))
+                        .filter((x) => x.line);
+                      const minNet = validLines.length > 0 ? Math.min(...validLines.map((x) => lineNet(x.line))) : 0;
+
+                      return (
+                        <tr key={item.itemCode}>
+                          <td style={{ fontWeight: 600, color: 'var(--text)' }}>
+                            {item.itemCode} — {item.itemName}
+                            <div className="mut">Req Qty: {item.qty} {item.uom}</div>
+                          </td>
+                          {filteredQuotations.map((q) => {
+                            const l = item.lines[q.id];
+                            const isL1 = sortedByCost[0]?.id === q.id;
+                            if (!l) {
+                              return (
+                                <td key={q.id} className={isL1 ? 'l1-col-cell' : undefined} style={{ textAlign: 'center', color: 'var(--muted)' }}>—</td>
+                              );
+                            }
+                            const isLowestLine = validLines.length > 1 && lineNet(l) === minNet && minNet > 0;
                             return (
-                              <td key={q.id} style={{ textAlign: 'center', color: 'var(--muted)' }}>—</td>
+                              <td key={q.id} className={isL1 ? 'l1-col-cell' : undefined} style={{ textAlign: 'center' }}>
+                                <div style={{ fontWeight: 700, color: 'var(--text)' }}>
+                                  ₹{formatNumber(lineRate(l))} / {lineUom(l)}
+                                </div>
+                                {lineDiscountAmt(l) > 0 && (
+                                  <div style={{ fontSize: 11, color: '#1f9d58', fontWeight: 600 }}>
+                                    Disc ₹{formatNumber(lineDiscountAmt(l))}
+                                  </div>
+                                )}
+                                {lineTaxAmt(l) > 0 && (
+                                  <div style={{ fontSize: 11, color: '#7c3aed', fontWeight: 600 }}>
+                                    Tax ₹{formatNumber(lineTaxAmt(l))}
+                                  </div>
+                                )}
+                                <div className="mut" style={{ marginTop: 2 }}>Net ₹{formatNumber(lineNet(l))}</div>
+                                {isLowestLine && (
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: '#15803d', background: '#dcfce7', border: '1px solid #bbf7d0', padding: '1px 6px', borderRadius: 4, display: 'inline-block', marginTop: 3 }}>
+                                    Lowest Item Rate
+                                  </div>
+                                )}
+                                <div style={{ fontSize: 11, color: '#b7791f', fontWeight: 600, marginTop: 4 }}>
+                                  <span className="material-symbols-rounded" style={{ fontSize: 12, verticalAlign: 'middle' }}>local_shipping</span>{' '}
+                                  Lead {lineLead(l)} days
+                                </div>
+                              </td>
                             );
-                          }
-                          return (
-                            <td key={q.id} style={{ textAlign: 'center' }}>
-                              <div style={{ fontWeight: 700, color: 'var(--text)' }}>
-                                ₹{formatNumber(lineRate(l))} / {lineUom(l)}
-                              </div>
-                              {lineDiscountAmt(l) > 0 && (
-                                <div style={{ fontSize: 11, color: '#1f9d58', fontWeight: 600 }}>
-                                  Disc ₹{formatNumber(lineDiscountAmt(l))}
-                                </div>
-                              )}
-                              {lineTaxAmt(l) > 0 && (
-                                <div style={{ fontSize: 11, color: '#7c3aed', fontWeight: 600 }}>
-                                  Tax ₹{formatNumber(lineTaxAmt(l))}
-                                </div>
-                              )}
-                              <div className="mut" style={{ marginTop: 2 }}>Net ₹{formatNumber(lineNet(l))}</div>
-                              <div style={{ fontSize: 11, color: '#b7791f', fontWeight: 600, marginTop: 4 }}>
-                                <span className="material-symbols-rounded" style={{ fontSize: 12, verticalAlign: 'middle' }}>local_shipping</span>{' '}
-                                Lead {lineLead(l)} days
-                              </div>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))
+                          })}
+                        </tr>
+                      );
+                    })
                   )}
 
                   {/* Total row */}
@@ -577,16 +614,16 @@ export default function QuotationComparisonPage() {
                       const isL1 = sortedByCost[0]?.id === q.id;
                       const hc = headerCharges(q);
                       return (
-                        <td key={q.id} style={{ textAlign: 'center', fontWeight: 800, color: isL1 ? '#4fce8f' : '#fff' }}>
+                        <td key={q.id} className={isL1 ? 'l1-col-total' : undefined} style={{ textAlign: 'center', fontWeight: 800, color: isL1 ? '#86efac' : '#fff' }}>
                           ₹{formatNumber(total)}
                           {hc > 0 && (
-                            <div style={{ fontSize: 10, fontWeight: 500, color: '#a5b4fc', letterSpacing: 0, textTransform: 'none' }}>
+                            <div style={{ fontSize: 10, fontWeight: 500, color: isL1 ? '#bbf7d0' : '#a5b4fc', letterSpacing: 0, textTransform: 'none' }}>
                               + charges ₹{formatNumber(hc)}
                             </div>
                           )}
                           {isL1 && total > 0 && (
-                            <div style={{ fontSize: 11, fontWeight: 600, color: '#4fce8f', letterSpacing: 0, textTransform: 'none' }}>
-                              Lowest Commercial Price
+                            <div style={{ fontSize: 11, fontWeight: 700, color: '#86efac', letterSpacing: 0, textTransform: 'none', marginTop: 2 }}>
+                              ★ Lowest Commercial Price (L1)
                             </div>
                           )}
                         </td>
@@ -600,11 +637,11 @@ export default function QuotationComparisonPage() {
                       const hasLines = (q.lines ?? []).length > 0;
                       const isL1 = sortedByCost[0]?.id === q.id;
                       return (
-                        <td key={q.id} style={{ textAlign: 'center' }}>
+                        <td key={q.id} className={isL1 ? 'l1-col-cell' : undefined} style={{ textAlign: 'center' }}>
                           {hasLines ? (
                             <button
                               className="btn btn-sm"
-                              style={isL1 ? { background: '#1f9d58', borderColor: '#1f9d58', color: '#fff' } : undefined}
+                              style={isL1 ? { background: '#16a34a', borderColor: '#16a34a', color: '#fff', fontWeight: 700, boxShadow: '0 2px 6px rgba(22, 163, 74, 0.4)' } : undefined}
                               onClick={() => handleCreatePO(q)}
                               disabled={creatingPO}
                             >

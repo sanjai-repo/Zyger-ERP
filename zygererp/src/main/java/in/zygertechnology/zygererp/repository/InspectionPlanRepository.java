@@ -9,4 +9,10 @@ public interface InspectionPlanRepository extends JpaRepository<InspectionPlan, 
     Optional<InspectionPlan> findFirstByPlantIdAndItemCodeAndDrawingNumberAndDrawingRevisionAndOperationAndInspectionTypeAndActiveTrue(
             Long plantId, String itemCode, String drawingNumber, String drawingRevision, String operation, String inspectionType);
     List<InspectionPlan> findByPlantIdAndItemCodeAndActiveTrue(Long plantId, String itemCode);
+    /** Latest published (or default) revision for an item + inspection type. */
+    Optional<InspectionPlan> findFirstByPlantIdAndItemCodeAndInspectionTypeAndPlanStatusAndActiveTrueOrderByRevisionNoDesc(
+            Long plantId, String itemCode, String inspectionType, String planStatus);
+
+    List<InspectionPlan> findByPlantIdAndItemCodeAndInspectionTypeOrderByRevisionNoDesc(
+            Long plantId, String itemCode, String inspectionType);
 }

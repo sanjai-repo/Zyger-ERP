@@ -28,6 +28,6 @@ public class StockBalance {
     @Builder.Default BigDecimal qty = BigDecimal.ZERO;
 
     public enum StockStatus {
-        FREE, QC_HOLD, BLOCKED
+        FREE, QC_HOLD, BLOCKED, REJECTED, QUARANTINE, SCRAP
     }
 }

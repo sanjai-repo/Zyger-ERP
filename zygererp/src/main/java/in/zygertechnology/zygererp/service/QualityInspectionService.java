@@ -7,6 +7,7 @@ import in.zygertechnology.zygererp.entity.QualityInspectionLine;
 import in.zygertechnology.zygererp.entity.QualityInspectionType;
 import in.zygertechnology.zygererp.entity.QualityInspectionStatusHistory;
 import in.zygertechnology.zygererp.entity.QualityNcr;
+import in.zygertechnology.zygererp.entity.QualityDisposition;
 import in.zygertechnology.zygererp.entity.DocEntity;
 import in.zygertechnology.zygererp.entity.InspectionPlan;
 import in.zygertechnology.zygererp.entity.InspectionPlanCharacteristic;
@@ -15,6 +16,7 @@ import in.zygertechnology.zygererp.doc.DocTypes;
 import in.zygertechnology.zygererp.repo.InstrumentMasterRepository;
 import in.zygertechnology.zygererp.repo.QualityCalibrationInstrumentRepository;
 import in.zygertechnology.zygererp.repo.QualityInspectionStatusHistoryRepository;
+import in.zygertechnology.zygererp.repo.QualityDispositionRepository;
 import in.zygertechnology.zygererp.repo.LedgerRepository;
 import in.zygertechnology.zygererp.repository.InspectionPlanRepository;
 import in.zygertechnology.zygererp.repository.QualityCharacteristicMeasurementRepository;
@@ -27,6 +29,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.event.EventListener;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
@@ -51,13 +55,19 @@ public class QualityInspectionService {
     private final InspectionPlanRepository inspectionPlanRepo;
     private final QualityCharacteristicMeasurementRepository spcRepo;
     private final QualityInspectionStatusHistoryRepository statusHistoryRepo;
+    private final QualityDispositionRepository dispositionRepo;
     private final CalibrationGuardService calibrationGuard;
     private final DocumentWorkflowEngine workflowEngine;
     private final EmailService emailService;
+    private final StockService stockService;
+    private final ApplicationEventPublisher publisher;
 
     public static final String KEY = "quality-inspection";
     private static final String INSPECT = "SUBMITTED";
     private static final String APPROVED = "APPROVED";
+
+    public static final List<String> MRB_DISPOSITIONS =
+            List.of("USE_AS_IS", "REWORK", "RTV", "SCRAP", "QUARANTINE");
 
     public QualityInspection get(Long id) {
         return (QualityInspection) docs.get(KEY, id);
@@ -296,6 +306,7 @@ public class QualityInspectionService {
                 within = actual.compareTo(lo) >= 0;
             }
 
+            l.setOotFlag(!within);
             l.setResult(within ? "PASS" : "FAIL");
             BigDecimal nom = l.getNominalValue();
             if (nom != null) {
@@ -340,6 +351,8 @@ public class QualityInspectionService {
             throw new IllegalArgumentException("Cannot submit: " + pendingMandatory.size() + " mandatory characteristic(s) still pending measurement.");
         }
         validateQuantities(ins);
+        ins.setSubmittedBy(user);
+        ins.setSubmittedAt(Instant.now());
         ins.setInspectionStatus(INSPECT);
         ins.setDecisionStatus("PENDING");
         ins.setUpdatedAt(Instant.now());
@@ -381,6 +394,7 @@ public class QualityInspectionService {
         if (List.of("FAIL", "REJECT", "FAILING").contains(d)) {
             ins.setInspectionStatus("FAIL");
             ins.setDecisionStatus("FAIL");
+            autoCreateNcr(ins, user);
         } else if (d.equals("HOLD")) {
             ins.setInspectionStatus("HOLD");
             ins.setDecisionStatus("HOLD");
@@ -396,7 +410,6 @@ public class QualityInspectionService {
         }
         ins.setFinalDecision(ins.getInspectionStatus());
         ins.setDecisionRemarks(safe(remarks));
-        ins.setApprovedBy(ins.getInspectionStatus().equals("PASS") ? user : ins.getApprovedBy());
         ins.setUpdatedAt(Instant.now());
         recordStatusChange(ins, from, ins.getInspectionStatus(), user, remarks);
         return ins;
@@ -406,6 +419,35 @@ public class QualityInspectionService {
     public QualityInspection approve(Long id, String user) {
         QualityInspection ins = get(id);
         String from = ins.getInspectionStatus();
+        boolean isFailPath = "FAIL".equals(from) || "REJECTED".equals(from) || hasFailedLine(ins);
+
+        if (isFailPath) {
+            // VAL-APR-02 / VAL-NCR-01: fail path requires a resolved MRB disposition before approve
+            QualityNcr ncr = findNcrFor(ins);
+            List<QualityDisposition> disps = ncr != null ? dispositionRepo.findByNcrId(ncr.getId()) : List.of();
+            QualityDisposition disp = disps.isEmpty() ? null : disps.get(0);
+            if (disp == null || disp.getDispositionType() == null
+                    || "PENDING".equalsIgnoreCase(disp.getDispositionType())) {
+                throw new IllegalStateException(
+                        "Cannot approve: failed inspection requires a resolved MRB disposition before approval.");
+            }
+            validateWorkflowTransition(ins, "APPROVE");
+            ins.setInspectionStatus(APPROVED);
+            ins.setDecisionStatus(ins.getDecisionStatus());
+            ins.setApprovedBy(user);
+            ins.setApprovedAt(Instant.now());
+            ins.setSignedAt(Instant.now());
+            ins.setIsLocked(true);
+            ins.setUpdatedAt(Instant.now());
+            recordStatusChange(ins, from, APPROVED, user, null);
+            sendQualityNotification(ins, APPROVED, null);
+            ins.setStockSyncKey(ins.getDocNo() + ":QC_REJECT");
+            ins.setStockSyncStatus("PENDING");
+            publisher.publishEvent(new QualityInspectionApprovedEvent(
+                    ins.getId(), "DISPOSE", ins.getStockSyncKey(), user));
+            return ins;
+        }
+
         require(ins, INSPECT);
         validateWorkflowTransition(ins, "APPROVE");
         if (hasCriticalFail(ins)) {
@@ -416,11 +458,144 @@ public class QualityInspectionService {
         ins.setDecisionStatus(ins.getDecisionStatus());
         ins.setApprovedBy(user);
         ins.setApprovedAt(Instant.now());
+        ins.setSignedAt(Instant.now());
         ins.setIsLocked(true);
+        ins.setStockSyncKey(ins.getDocNo() + ":QC_RELEASE");
+        ins.setStockSyncStatus("PENDING");
         ins.setUpdatedAt(Instant.now());
         recordStatusChange(ins, from, APPROVED, user, null);
         sendQualityNotification(ins, APPROVED, null);
+        autoCreateTestCertificate(ins, user);
+        publisher.publishEvent(new QualityInspectionApprovedEvent(
+                ins.getId(), "RELEASE", ins.getStockSyncKey(), user));
         return ins;
+    }
+
+    /** Applies the resolved MRB disposition's stock mapping on approve of a failed inspection. */
+    private void applyDispositionStock(QualityInspection ins, QualityDisposition disp, String user) {
+        try {
+            if (disp == null) return;
+            if (ins.getItemCode() == null || ins.getItemCode().isBlank()) return;
+            String d = disp.getDispositionType() == null ? "" : disp.getDispositionType().toUpperCase();
+            String targetStatus;
+            switch (d) {
+                case "USE_AS_IS", "REWORK" -> targetStatus = "REJECTED";
+                case "RTV" -> targetStatus = "REJECTED";
+                case "SCRAP" -> targetStatus = "SCRAP";
+                case "QUARANTINE" -> targetStatus = "QUARANTINE";
+                default -> targetStatus = "REJECTED";
+            }
+            BigDecimal qty = disp.getQuantity() != null ? disp.getQuantity() : ins.getRejectedQuantity();
+            if (qty == null || qty.compareTo(BigDecimal.ZERO) <= 0) return;
+            String batch = ins.getBatchNumber() != null ? ins.getBatchNumber() : "";
+            String heat = ins.getHeatNumber() != null ? ins.getHeatNumber() : "";
+            stockService.disposeHeldForItem(
+                    ins.getDocNo(), KEY, "QC_REJECT", ins.getItemCode(), batch, heat,
+                    qty, targetStatus, LocalDate.now(), user);
+        } catch (Exception ex) {
+            log.warn("Disposition stock mapping skipped for inspection {}: {}", ins.getId(), ex.getMessage());
+        }
+    }
+
+    private void releaseHeldStockToStore(QualityInspection ins, String user) {
+        try {
+            if (ins.getItemCode() == null || ins.getItemCode().isBlank()) return;
+            BigDecimal accepted = ins.getAcceptedQuantity() != null ? ins.getAcceptedQuantity()
+                    : ins.getInspectionQuantity();
+            if (accepted == null || accepted.compareTo(BigDecimal.ZERO) <= 0) return;
+            String batch = ins.getBatchNumber() != null ? ins.getBatchNumber() : "";
+            String heat = ins.getHeatNumber() != null ? ins.getHeatNumber() : "";
+            stockService.releaseQcHoldForItem(
+                    ins.getDocNo(), KEY, "QC_RELEASE", ins.getItemCode(), batch, heat,
+                    accepted, LocalDate.now(), user);
+        } catch (Exception ex) {
+            log.warn("QC auto-release skipped for inspection {}: {}", ins.getId(), ex.getMessage());
+        }
+    }
+
+    /** CoC (OUTWARD test certificate) auto-generation on OQC-type approval. */
+    private void autoCreateTestCertificate(QualityInspection ins, String user) {
+        try {
+            if (ins.getInspectionType() == null) return;
+            String t = ins.getInspectionType().name();
+            if (!List.of("FINAL", "LAST_OFF", "LINE").contains(t)) return;
+            if (ins.getId() == null) return;
+            long existing = em.createQuery(
+                            "select count(c) from QualityTestCertificate c where c.inspectionId = :id", Long.class)
+                    .setParameter("id", ins.getId()).getSingleResult();
+            if (existing > 0) return;
+
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("certificateType", "OUTWARD");
+            body.put("certificateDate", LocalDate.now().toString());
+            body.put("inspectionId", ins.getId());
+            body.put("itemCode", ins.getItemCode());
+            body.put("customerPartNumber", ins.getItemCode());
+            body.put("drawingNumber", ins.getDrawingNumber());
+            body.put("drawingRevision", ins.getDrawingRevision());
+            body.put("batchNumber", ins.getBatchNumber());
+            body.put("lotNumber", ins.getLotNumber());
+            body.put("heatNumber", ins.getHeatNumber());
+            body.put("salesOrderNumber", ins.getSalesOrderNumber());
+            body.put("jobOrderNumber", ins.getJobOrderNumber());
+            body.put("overallResult", "PASS");
+            body.put("preparedBy", user);
+
+            List<Map<String, Object>> lines = new ArrayList<>();
+            for (QualityInspectionLine l : ins.getLines()) {
+                Map<String, Object> line = new LinkedHashMap<>();
+                line.put("parameterName", l.getCharacteristicName() != null ? l.getCharacteristicName() : l.getCharacteristicCode());
+                line.put("specification", l.getSpecificationText());
+                line.put("nominalValue", l.getNominalValue());
+                line.put("resultValue", l.getActualValue());
+                line.put("uom", l.getUom());
+                line.put("instrumentCode", l.getInstrumentCode());
+                line.put("result", "NA".equals(l.getResult()) ? "NA" : l.getResult());
+                line.put("remark", l.getRemark());
+                lines.add(line);
+            }
+            body.put("lines", lines);
+
+            docs.create("quality-test-certificate", body, user);
+            log.info("CoC auto-generated for OQC inspection {}", ins.getId());
+        } catch (Exception ex) {
+            log.warn("CoC auto-generation failed for inspection {}: {}", ins.getId(), ex.getMessage());
+        }
+    }
+
+    @EventListener
+    @Transactional
+    public void onQualityApproved(QualityInspectionApprovedEvent evt) {
+        try {
+            QualityInspection ins = get(evt.getInspectionId());
+            if (ins == null) return;
+            // Idempotency guard: only apply each stock sync once per inspection
+            if ("SYNCED".equals(ins.getStockSyncStatus())) return;
+            if ("RELEASE".equals(evt.getAction())) {
+                releaseHeldStockToStore(ins, evt.getUser());
+            } else {
+                applyDispositionStock(ins, resolvedDisposition(ins), evt.getUser());
+            }
+            ins.setStockSyncStatus("SYNCED");
+            em.persist(ins);
+        } catch (Exception ex) {
+            log.warn("Stock sync failed for inspection {}: {}", evt.getInspectionId(), ex.getMessage());
+            try {
+                QualityInspection ins = get(evt.getInspectionId());
+                if (ins != null) {
+                    ins.setStockSyncStatus("SYNC_ERROR");
+                    em.persist(ins);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private QualityDisposition resolvedDisposition(QualityInspection ins) {
+        QualityNcr ncr = findNcrFor(ins);
+        if (ncr == null) return null;
+        List<QualityDisposition> disps = dispositionRepo.findByNcrId(ncr.getId());
+        return disps.isEmpty() ? null : disps.get(0);
     }
 
     @Transactional
@@ -613,6 +788,177 @@ public class QualityInspectionService {
         return c != null && c > 0;
     }
 
+    /** FRS FR-Q-07 / VAL-NCR-01: auto-create an NCR (1:1) when a FAIL decision is recorded. */
+    private void autoCreateNcr(QualityInspection ins, String user) {
+        try {
+            if (ins.getId() == null || hasNcr(ins)) return;
+
+            String severity = "MAJOR";
+            for (QualityInspectionLine l : ins.getLines()) {
+                if (!"FAIL".equals(l.getResult())) continue;
+                if (Boolean.TRUE.equals(l.getIsCritical())) { severity = "CRITICAL"; break; }
+            }
+
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("inspectionId", ins.getId());
+            body.put("sourceType", "quality-inspection");
+            body.put("sourceId", String.valueOf(ins.getId()));
+            body.put("sourceNumber", ins.getInspectionNumber());
+            body.put("itemCode", ins.getItemCode());
+            body.put("itemDescription", ins.getItemDescription());
+            body.put("batchNumber", ins.getBatchNumber());
+            body.put("lotNumber", ins.getLotNumber());
+            body.put("heatNumber", ins.getHeatNumber());
+            body.put("quantityAffected", ins.getRejectedQuantity() != null ? ins.getRejectedQuantity()
+                    : ins.getInspectionQuantity());
+            body.put("severity", severity);
+            body.put("identifiedBy", user);
+            body.put("identifiedAt", Instant.now().toString());
+            body.put("defectDescription", safe(ins.getDecisionRemarks()));
+            body.put("status", "MRB_DISPOSITION");
+            body.put("createdBy", user);
+
+            QualityNcr ncr = (QualityNcr) docs.create("quality-ncr", body, user);
+            ncr.setStatus("MRB_DISPOSITION");
+            em.persist(ncr);
+            List<QualityDisposition> existing = dispositionRepo.findByNcrId(ncr.getId());
+            if (existing.isEmpty()) {
+                dispose(ins, ncr, "PENDING", "Awaiting MRB disposition", user, false);
+            }
+            recordStatusChange(ins, ins.getInspectionStatus(), ins.getInspectionStatus(), user,
+                    "Auto-created NCR " + ncr.getDocNo() + " on FAIL");
+        } catch (Exception ex) {
+            log.warn("Auto-NCR creation failed for inspection {}: {}", ins.getId(), ex.getMessage());
+        }
+    }
+
+    private String inspectTypeName(QualityInspection ins) {
+        return ins.getInspectionType() == null ? "" : ins.getInspectionType().name();
+    }
+
+    /** FRS FR-Q-08 / MRB: record the disposition for a failed inspection against its NCR. */
+    @Transactional
+    public QualityDisposition setDisposition(Long id, String disposition, String reason, String user) {
+        QualityInspection ins = get(id);
+        if (ins.getInspectionStatus() == null
+                || !(ins.getInspectionStatus().equals("FAIL") || ins.getInspectionStatus().equals("REJECTED"))) {
+            throw new BusinessRuleException("INVALID_STATE",
+                    "MRB disposition is only valid for a FAILED inspection.", null);
+        }
+        if (disposition == null || !MRB_DISPOSITIONS.contains(disposition.toUpperCase())) {
+            throw new BusinessRuleException("INVALID_DISPOSITION",
+                    "Disposition must be one of " + MRB_DISPOSITIONS + ".", null);
+        }
+        String disp = disposition.toUpperCase();
+
+        // VAL-NCR-02: RTV only valid for IQC
+        if ("RTV".equals(disp) && !"IQC".equalsIgnoreCase(inspectTypeName(ins))) {
+            throw new BusinessRuleException("VALIDATION_FAILED",
+                    "RTV (return to vendor) disposition is only permitted for IQC inspections.", null);
+        }
+
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessRuleException("VALIDATION_FAILED",
+                    "Disposition reason is mandatory.", null);
+        }
+
+        QualityNcr ncr = findNcrFor(ins);
+        List<QualityDisposition> existing = ncr != null
+                ? dispositionRepo.findByNcrId(ncr.getId()) : List.of();
+
+        QualityDisposition dispRow;
+        if (existing.isEmpty()) {
+            dispRow = new QualityDisposition();
+            dispRow.setInspectionId(ins.getId());
+            if (ncr != null) dispRow.setNcrId(ncr.getId());
+            dispRow.setCreatedBy(user);
+        } else {
+            dispRow = existing.get(0);
+        }
+        dispRow.setDispositionType(disp);
+        dispRow.setQuantity(ins.getRejectedQuantity() != null ? ins.getRejectedQuantity()
+                : ins.getInspectionQuantity());
+        dispRow.setReason(reason);
+        dispRow.setAuthorizedBy(user);
+        dispRow.setAuthorizedAt(Instant.now());
+        em.persist(dispRow);
+        em.flush();
+
+        if (ncr != null) {
+            ncr.setDispositionType(disp);
+            ncr.setDisposition(disp);
+            ncr.setStatus("MRB_RESOLVED");
+            em.persist(ncr);
+        }
+
+        if ("REWORK".equals(disp)) {
+            spawnChildInspection(ins, user);
+            dispRow.setDownstreamReference("REWORK_CHILD");
+        }
+
+        recordStatusChange(ins, ins.getInspectionStatus(), ins.getInspectionStatus(), user,
+                "MRB disposition: " + disp + (reason == null ? "" : " - " + reason));
+        return dispRow;
+    }
+
+    private QualityNcr findNcrFor(QualityInspection ins) {
+        try {
+            String q = "select n from in.zygertechnology.zygererp.entity.QualityNcr n " +
+                    "where n.inspectionId = :id order by n.id desc";
+            return em.createQuery(q, QualityNcr.class)
+                    .setParameter("id", ins.getId()).setMaxResults(1).getSingleResult();
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private void dispose(QualityInspection ins, QualityNcr ncr, String type, String reason, String user,
+                         boolean authoritative) {
+        List<QualityDisposition> existing = ncr != null
+                ? dispositionRepo.findByNcrId(ncr.getId()) : List.of();
+        QualityDisposition row;
+        if (authoritative && !existing.isEmpty()) {
+            row = existing.get(0);
+        } else if (!authoritative && !existing.isEmpty()) {
+            return;
+        } else {
+            row = new QualityDisposition();
+            row.setInspectionId(ins.getId());
+            if (ncr != null) row.setNcrId(ncr.getId());
+            row.setCreatedBy(user);
+        }
+        row.setDispositionType(type);
+        row.setQuantity(ins.getRejectedQuantity() != null ? ins.getRejectedQuantity() : ins.getInspectionQuantity());
+        row.setReason(reason);
+        row.setAuthorizedBy(user);
+        row.setAuthorizedAt(Instant.now());
+        em.persist(row);
+    }
+
+    /** FRS FR-Q-08: REWORK spawns a child inspection in DRAFT with parentInspectionId set. */
+    private void spawnChildInspection(QualityInspection parent, String user) {
+        try {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("inspectionType", inspectTypeName(parent));
+            body.put("sourceType", "quality-inspection");
+            body.put("sourceId", String.valueOf(parent.getId()));
+            body.put("sourceNumber", parent.getInspectionNumber());
+            body.put("itemCode", parent.getItemCode());
+            body.put("itemDescription", parent.getItemDescription());
+            body.put("batchNumber", parent.getBatchNumber());
+            body.put("lotNumber", parent.getLotNumber());
+            body.put("heatNumber", parent.getHeatNumber());
+            body.put("parentInspectionId", parent.getId());
+            body.put("inspectionQuantity", parent.getRejectedQuantity());
+            body.put("date", LocalDate.now().toString());
+            body.put("assignedInspector", parent.getAssignedInspector());
+            QualityInspection child = create(body, user);
+            log.info("REWORK: spawned child inspection {} for parent {}", child.getId(), parent.getId());
+        } catch (Exception ex) {
+            log.warn("REWORK: child inspection spawn failed for parent {}: {}", parent.getId(), ex.getMessage());
+        }
+    }
+
     /** FRS §4.6 + §6.5: BLOCK when instrument calibration is expired/failed (hard enforcement). */
     private void calibGuard(String code, QualityInspection ins, String overrideReason, String overrideUser) {
         QualityCalibrationInstrument i = instruments.findByInstrumentCode(code).orElse(null);
@@ -655,13 +1001,21 @@ public class QualityInspectionService {
         if (e.getItemCode() == null || e.getInspectionType() == null) return;
 
         String inspTypeStr = e.getInspectionType().name();
+        InspectionPlan plan = null;
+        // Prefer the published revision; fall back to any active plan for backward compat.
         Optional<InspectionPlan> planOpt = inspectionPlanRepo
-                .findFirstByPlantIdAndItemCodeAndDrawingNumberAndDrawingRevisionAndOperationAndInspectionTypeAndActiveTrue(
-                        1L, e.getItemCode(), null, null, null, inspTypeStr);
-
+                .findFirstByPlantIdAndItemCodeAndInspectionTypeAndPlanStatusAndActiveTrueOrderByRevisionNoDesc(
+                        1L, e.getItemCode(), inspTypeStr, "PUBLISHED");
+        if (planOpt.isEmpty()) {
+            planOpt = inspectionPlanRepo
+                    .findFirstByPlantIdAndItemCodeAndDrawingNumberAndDrawingRevisionAndOperationAndInspectionTypeAndActiveTrue(
+                            1L, e.getItemCode(), null, null, null, inspTypeStr);
+        }
         if (planOpt.isEmpty()) return;
 
-        InspectionPlan plan = planOpt.get();
+        plan = planOpt.get();
+        e.setInspectionPlanId(String.valueOf(plan.getId()));
+        e.setInspectionPlanRevision(plan.getRevisionNo());
         int lineNo = 1;
         for (InspectionPlanCharacteristic pc : plan.getCharacteristics()) {
             QualityInspectionLine l = new QualityInspectionLine();
@@ -669,9 +1023,17 @@ public class QualityInspectionService {
             l.setCharacteristicName(pc.getCharacteristicName());
             l.setBalloonNo(pc.getBalloonNo());
             l.setItemCode(e.getItemCode());
+            l.setDataType(pc.getDataType());
             l.setLowerLimit(pc.getLowerLimit());
             l.setUpperLimit(pc.getUpperLimit());
             l.setNominalValue(pc.getNominalValue());
+            l.setTolerance(pc.getTolerance());
+            l.setUom(pc.getUom());
+            l.setIsSpecial(pc.getIsSpecial());
+            l.setMeasurementMethod(pc.getMeasurementMethod());
+            if (pc.getRequiredInstrumentType() != null) {
+                l.setRequiredInstrumentId(pc.getRequiredInstrumentType());
+            }
             l.setSpecificationText(pc.getSpecificationText());
             l.setIsMandatory(pc.getIsMandatory());
             l.setIsCritical(pc.getIsCritical());

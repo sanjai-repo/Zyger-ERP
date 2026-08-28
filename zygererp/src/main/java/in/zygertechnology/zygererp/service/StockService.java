@@ -239,6 +239,115 @@ public class StockService {
         }
     }
 
+    @Transactional
+    public void releaseQcHold(String docNo, String docType, String txType, String itemCode,
+                              String location, String batchNo, String heatNo,
+                              BigDecimal qty, LocalDate txDate, String user) {
+        String loc = location != null ? location : "MAIN";
+        String batch = batchNo != null ? batchNo : "";
+        String heat = heatNo != null ? heatNo : "";
+        BigDecimal toRelease = qty != null ? qty : BigDecimal.ZERO;
+        if (toRelease.compareTo(BigDecimal.ZERO) <= 0) return;
+        Optional<StockBalance> held = balances
+                .findByItemCodeAndLocationAndBatchNoAndHeatNoAndStockStatus(itemCode, loc, batch, heat, "QC_HOLD");
+        if (held.isEmpty()) return;
+        StockBalance sb = held.get();
+        BigDecimal heldQty = sb.getQty();
+        if (heldQty.compareTo(toRelease) < 0) toRelease = heldQty;
+        // reduce QC_HOLD
+        sb.setQty(heldQty.subtract(toRelease));
+        if (sb.getQty().compareTo(BigDecimal.ZERO) <= 0) {
+            balances.delete(sb);
+        } else {
+            balances.save(sb);
+        }
+        // add FREE
+        updateBalance(itemCode, loc, batch, heat, "FREE", toRelease, BigDecimal.ZERO);
+        ledger.save(StockLedger.builder()
+                .docNo(docNo).docType(docType).txType(txType)
+                .itemCode(itemCode).location(loc).batchNo(batch).heatNo(heat)
+                .stockStatus("FREE")
+                .inQty(toRelease).outQty(BigDecimal.ZERO)
+                .txDate(txDate != null ? txDate : LocalDate.now())
+                .createdBy(user).createdAt(Instant.now())
+                .build());
+    }
+
+    @Transactional
+    public void releaseQcHoldForItem(String docNo, String docType, String txType, String itemCode,
+                                     String batchNo, String heatNo, BigDecimal qty,
+                                     LocalDate txDate, String user) {
+        BigDecimal remaining = qty != null ? qty : BigDecimal.ZERO;
+        if (remaining.compareTo(BigDecimal.ZERO) <= 0) return;
+        String batch = batchNo != null ? batchNo : "";
+        String heat = heatNo != null ? heatNo : "";
+        for (StockBalance sb : balances.findByStockStatus("QC_HOLD")) {
+            if (remaining.compareTo(BigDecimal.ZERO) <= 0) break;
+            if (!itemCode.equals(sb.getItemCode())) continue;
+            if (!batch.isEmpty() && !batch.equals(sb.getBatchNo())) continue;
+            if (!heat.isEmpty() && !heat.equals(sb.getHeatNo())) continue;
+            BigDecimal take = remaining;
+            if (sb.getQty().compareTo(take) < 0) take = sb.getQty();
+            releaseQcHold(docNo, docType, txType, itemCode, sb.getLocation(), sb.getBatchNo(), sb.getHeatNo(),
+                    take, txDate, user);
+            remaining = remaining.subtract(take);
+        }
+    }
+
+    @Transactional
+    public void disposeHeldStock(String docNo, String docType, String txType, String itemCode,
+                                 String location, String batchNo, String heatNo,
+                                 BigDecimal qty, String disposition, LocalDate txDate, String user) {
+        String status = disposition == null || disposition.isBlank() ? "REJECTED" : disposition.toUpperCase();
+        String loc = location != null ? location : "MAIN";
+        String batch = batchNo != null ? batchNo : "";
+        String heat = heatNo != null ? heatNo : "";
+        BigDecimal toDispose = qty != null ? qty : BigDecimal.ZERO;
+        if (toDispose.compareTo(BigDecimal.ZERO) <= 0) return;
+        Optional<StockBalance> held = balances
+                .findByItemCodeAndLocationAndBatchNoAndHeatNoAndStockStatus(itemCode, loc, batch, heat, "QC_HOLD");
+        if (held.isEmpty()) return;
+        StockBalance sb = held.get();
+        BigDecimal heldQty = sb.getQty();
+        if (heldQty.compareTo(toDispose) < 0) toDispose = heldQty;
+        sb.setQty(heldQty.subtract(toDispose));
+        if (sb.getQty().compareTo(BigDecimal.ZERO) <= 0) {
+            balances.delete(sb);
+        } else {
+            balances.save(sb);
+        }
+        updateBalance(itemCode, loc, batch, heat, status, toDispose, BigDecimal.ZERO);
+        ledger.save(StockLedger.builder()
+                .docNo(docNo).docType(docType).txType(txType)
+                .itemCode(itemCode).location(loc).batchNo(batch).heatNo(heat)
+                .stockStatus(status)
+                .inQty(BigDecimal.ZERO).outQty(toDispose)
+                .txDate(txDate != null ? txDate : LocalDate.now())
+                .createdBy(user).createdAt(Instant.now())
+                .build());
+    }
+
+    @Transactional
+    public void disposeHeldForItem(String docNo, String docType, String txType, String itemCode,
+                                   String batchNo, String heatNo, BigDecimal qty,
+                                   String disposition, LocalDate txDate, String user) {
+        BigDecimal remaining = qty != null ? qty : BigDecimal.ZERO;
+        if (remaining.compareTo(BigDecimal.ZERO) <= 0) return;
+        String batch = batchNo != null ? batchNo : "";
+        String heat = heatNo != null ? heatNo : "";
+        for (StockBalance sb : balances.findByStockStatus("QC_HOLD")) {
+            if (remaining.compareTo(BigDecimal.ZERO) <= 0) break;
+            if (!itemCode.equals(sb.getItemCode())) continue;
+            if (!batch.isEmpty() && !batch.equals(sb.getBatchNo())) continue;
+            if (!heat.isEmpty() && !heat.equals(sb.getHeatNo())) continue;
+            BigDecimal take = remaining;
+            if (sb.getQty().compareTo(take) < 0) take = sb.getQty();
+            disposeHeldStock(docNo, docType, txType, itemCode, sb.getLocation(), sb.getBatchNo(), sb.getHeatNo(),
+                    take, disposition, txDate, user);
+            remaining = remaining.subtract(take);
+        }
+    }
+
     private void updateBalance(String itemCode, String location, String batchNo, String heatNo,
                                String stockStatus, BigDecimal addQty, BigDecimal subtractQty) {
         Optional<StockBalance> existing = balances

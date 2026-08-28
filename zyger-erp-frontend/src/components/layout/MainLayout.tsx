@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import type { PermissionModule, PermissionAction } from '../../config/rbac';
 import { useTabs } from '../../contexts/TabsContext';
 import Navigation, { type NavigationNavigatePayload } from './Navigation';
 import { getScreenComponent } from '../../config/screenRegistry';
@@ -150,9 +149,16 @@ export default function MainLayout() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [companyLogo, setCompanyLogo] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState<string>('Zyger ERP');
+  const [now, setNow] = useState(() => new Date());
 
   const notifRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
+
+  // Live clock for the top bar.
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -590,6 +596,11 @@ export default function MainLayout() {
                 ))}
               </div>
             )}
+          </div>
+
+          <div className="top-clock">
+            <b>{now.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</b>
+            <small>{now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</small>
           </div>
 
           <div ref={profileRef} className="pop-wrap">

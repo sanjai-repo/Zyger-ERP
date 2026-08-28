@@ -1,8 +1,11 @@
 import { useMemo, useState } from 'react';
 import { useTabs } from '../../../contexts/TabsContext';
+import { useToast } from '../../../contexts/ToastContext';
 import { getScreenComponent } from '../../../config/screenRegistry';
-import { useReportsOverview } from '../../../hooks/useInventoryReports';
+import { useReportsOverview, useStockSummary } from '../../../hooks/useInventoryReports';
+import { inventoryReportsService } from '../../../services/inventoryReportsService';
 import { getApiErrorMessage } from '../../../utils/apiError';
+import { formatCurrency, formatNumber } from '../../../utils/format';
 import ReportKpiCards from './ReportKpiCards';
 import type { KpiCardConfig } from './reportsConfig';
 import DrilldownPage from './DrilldownPage';
@@ -46,12 +49,15 @@ function getRange(period: Period): { fromDate: string; toDate: string } {
 
 export default function InventoryReportsPage() {
   const { openTab } = useTabs();
+  const { toast } = useToast();
 
   const [period, setPeriod] = useState<Period>('LAST_30');
+  const [view, setView] = useState<'overview' | 'simple'>('overview');
 
   const { fromDate, toDate } = useMemo(() => getRange(period), [period]);
 
   const overviewQuery = useReportsOverview(fromDate, toDate);
+  const stockSummaryQuery = useStockSummary();
 
   const handleCardClick = (card: KpiCardConfig) => {
     if (card.screenId) {
@@ -86,7 +92,39 @@ export default function InventoryReportsPage() {
     });
   };
 
+  const openDrilldownTab = (type: string, label: string, icon: string) => {
+    openTab({
+      id: `drilldown-${type}`,
+      label,
+      icon,
+      component: DrilldownPage,
+      props: { drilldownType: type },
+    });
+  };
+
+  const handleSimpleExport = async (format: 'xlsx' | 'pdf') => {
+    try {
+      await inventoryReportsService.exportFile(
+        'simple',
+        'Stock Snapshot',
+        { page: 0, size: 10 },
+        format
+      );
+      toast('Stock snapshot downloaded.');
+    } catch (exportError) {
+      toast(
+        getApiErrorMessage(
+          exportError,
+          'Export failed. Backend export endpoint is not available.'
+        ),
+        'error'
+      );
+    }
+  };
+
   const overview = overviewQuery.data;
+  const stockSummary = stockSummaryQuery.data;
+  const totals = stockSummary?.totals;
 
   return (
     <>
@@ -109,6 +147,19 @@ export default function InventoryReportsPage() {
               <option value="LAST_30">Last 30 Days</option>
               <option value="THIS_MONTH">This Month</option>
               <option value="THIS_YEAR">This Year</option>
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--muted)' }}>View:</span>
+            <select
+              className="in"
+              value={view}
+              onChange={(event) => setView(event.target.value as 'overview' | 'simple')}
+              style={{ width: '150px' }}
+            >
+              <option value="overview">Detailed Report</option>
+              <option value="simple">Simple Report</option>
             </select>
           </div>
 
@@ -136,7 +187,152 @@ export default function InventoryReportsPage() {
         </div>
       </div>
 
-      {overviewQuery.isPending ? (
+      {view === 'simple' ? (
+        stockSummaryQuery.isPending ? (
+          <div className="panel">
+            <div className="empty">
+              <span className="material-symbols-rounded">hourglass_empty</span>
+              Loading simple inventory report...
+            </div>
+          </div>
+        ) : stockSummaryQuery.isError ? (
+          <div className="panel">
+            <div className="empty">
+              <span className="material-symbols-rounded">error</span>
+              {getApiErrorMessage(
+                stockSummaryQuery.error,
+                'Unable to load the simple inventory report.'
+              )}
+              <div style={{ marginTop: '14px' }}>
+                <button className="btn" onClick={() => stockSummaryQuery.refetch()}>
+                  <span className="material-symbols-rounded">refresh</span>
+                  Retry
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                gap: 14,
+              }}
+            >
+              <div className="panel" style={{ background: 'var(--green-bg, #e7f6ec)', borderLeft: '5px solid var(--green)' }}>
+                <div className="panel-h"><h2><span className="material-symbols-rounded">inventory_2</span> Items in Store</h2></div>
+                <div style={{ padding: 8, fontSize: 28, fontWeight: 800 }}>{formatNumber(totals?.itemCount)}</div>
+                <div style={{ padding: '0 8px 8px', color: 'var(--muted)' }}>
+                  {formatNumber(totals?.qtyOnHand)} pieces total
+                </div>
+              </div>
+
+              <div className="panel" style={{ background: 'var(--purple-bg, #f0ecfb)', borderLeft: '5px solid var(--purple)' }}>
+                <div className="panel-h"><h2><span className="material-symbols-rounded">payments</span> Stock Value</h2></div>
+                <div style={{ padding: 8, fontSize: 28, fontWeight: 800 }}>{formatCurrency(totals?.value)}</div>
+                <div style={{ padding: '0 8px 8px', color: 'var(--muted)' }}>Total value of items in store</div>
+              </div>
+
+              <div className="panel" style={{ background: '#fdf3e7', borderLeft: '5px solid var(--yellow)' }}>
+                <div className="panel-h"><h2><span className="material-symbols-rounded">warning</span> Low Stock</h2></div>
+                <div style={{ padding: 8, fontSize: 28, fontWeight: 800 }}>{formatNumber(totals?.lowStockCount)}</div>
+                <div style={{ padding: '0 8px 8px', color: 'var(--muted)' }}>Items running low, need reorder</div>
+              </div>
+
+              <div className="panel" style={{ background: '#fdecec', borderLeft: '5px solid var(--red)' }}>
+                <div className="panel-h"><h2><span className="material-symbols-rounded">block</span> Not Available</h2></div>
+                <div style={{ padding: 8, fontSize: 28, fontWeight: 800 }}>{formatNumber(totals?.notAvailableCount)}</div>
+                <div style={{ padding: '0 8px 8px', color: 'var(--muted)' }}>Items not in store right now</div>
+              </div>
+            </div>
+
+            <div className="panel">
+              <div className="panel-h">
+                <h2><span className="material-symbols-rounded">category</span> Stock by Item Group</h2>
+              </div>
+              <div className="twrap">
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      <th>Item Group</th>
+                      <th className="num">Items</th>
+                      <th className="num">Qty in Store</th>
+                      <th className="num">Value</th>
+                      <th className="num">Not Available</th>
+                      <th className="num">Low Stock</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(stockSummary?.groups ?? []).map((group) => (
+                      <tr key={group.group}>
+                        <td>{group.group}</td>
+                        <td className="num">{formatNumber(group.itemCount)}</td>
+                        <td className="num">{formatNumber(group.qtyOnHand)}</td>
+                        <td className="num">{formatCurrency(group.value)}</td>
+                        <td className="num" style={{ color: group.notAvailableCount > 0 ? 'var(--red)' : undefined }}>
+                          {formatNumber(group.notAvailableCount)}
+                        </td>
+                        <td className="num" style={{ color: group.lowStockCount > 0 ? 'var(--yellow)' : undefined }}>
+                          {formatNumber(group.lowStockCount)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {(stockSummary?.notAvailableItems?.length ?? 0) > 0 && (
+              <div className="panel">
+                <div className="panel-h">
+                  <h2><span className="material-symbols-rounded">block</span> Items Not Available</h2>
+                  <button className="btn" onClick={() => openDrilldownTab('not-available', 'Not Available', 'inventory_2')}>
+                    <span className="material-symbols-rounded">open_in_new</span>
+                    View All
+                  </button>
+                </div>
+                <div className="twrap">
+                  <table className="tbl">
+                    <thead>
+                      <tr>
+                        <th>Item</th>
+                        <th>Name</th>
+                        <th>Group</th>
+                        <th>Location</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(stockSummary?.notAvailableItems ?? []).slice(0, 8).map((item) => (
+                        <tr key={item.itemCode}>
+                          <td>{item.itemCode}</td>
+                          <td>{item.itemName}</td>
+                          <td>{item.itemGroup}</td>
+                          <td>{item.defaultWarehouse || '—'}</td>
+                          <td><span className="badge" style={{ background: 'var(--red-bg, #fdecec)', color: 'var(--red)' }}>Not Available</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <div className="panel" style={{ textAlign: 'center' }}>
+              <button className="btn" onClick={() => handleSimpleExport('pdf')}>
+                <span className="material-symbols-rounded">print</span>
+                Print / Save PDF
+              </button>
+              <span style={{ width: 8, display: 'inline-block' }} />
+              <button className="btn" onClick={() => handleSimpleExport('xlsx')}>
+                <span className="material-symbols-rounded">download</span>
+                Excel
+              </button>
+            </div>
+          </>
+        )
+      ) : overviewQuery.isPending ? (
         <div className="panel">
           <div className="empty">
             <span className="material-symbols-rounded">hourglass_empty</span>
@@ -227,7 +423,7 @@ export default function InventoryReportsPage() {
             <div className="panel">
               <div className="panel-h">
                 <h2>
-                  <span className="material-symbols-rounded">speed</span>
+                  <span className="material-symbols-rounded">warning</span>
                   Inventory Accuracy
                 </h2>
               </div>
@@ -235,6 +431,56 @@ export default function InventoryReportsPage() {
                 <AccuracyGauge value={overview?.kpis?.accuracyPct ?? 0} />
               </div>
             </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel-h">
+              <h2>
+                <span className="material-symbols-rounded">category</span>
+                Stock by Item Group
+              </h2>
+              <button className="btn" onClick={() => openDrilldownTab('current-stock', 'Current Stock', 'inventory')}>
+                <span className="material-symbols-rounded">open_in_new</span>
+                Current Stock
+              </button>
+            </div>
+            {stockSummaryQuery.isPending ? (
+              <div className="empty">
+                <span className="material-symbols-rounded">hourglass_empty</span>
+                Loading item group summary...
+              </div>
+            ) : (
+              <div className="twrap">
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      <th>Item Group</th>
+                      <th className="num">Items</th>
+                      <th className="num">Qty in Store</th>
+                      <th className="num">Value</th>
+                      <th className="num">Not Available</th>
+                      <th className="num">Low Stock</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(stockSummary?.groups ?? []).map((group) => (
+                      <tr key={group.group}>
+                        <td>{group.group}</td>
+                        <td className="num">{formatNumber(group.itemCount)}</td>
+                        <td className="num">{formatNumber(group.qtyOnHand)}</td>
+                        <td className="num">{formatCurrency(group.value)}</td>
+                        <td className="num" style={{ color: group.notAvailableCount > 0 ? 'var(--red)' : undefined }}>
+                          {formatNumber(group.notAvailableCount)}
+                        </td>
+                        <td className="num" style={{ color: group.lowStockCount > 0 ? 'var(--yellow)' : undefined }}>
+                          {formatNumber(group.lowStockCount)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </>
       )}

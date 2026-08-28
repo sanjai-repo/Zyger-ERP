@@ -61,9 +61,53 @@ export interface ReportQueryParams {
   status?: string;
   txType?: string;
   lowStockOnly?: boolean;
+  includeZero?: boolean;
 }
 
 export type DrilldownRow = { id: string } & Record<
   string,
   string | number | null | undefined
 >;
+
+export interface ItemGroupSummary {
+  group: string;
+  itemCount: number;
+  qtyOnHand: number;
+  qtyAvailable: number;
+  value: number;
+  notAvailableCount: number;
+  lowStockCount: number;
+}
+
+export interface StockSummaryTotals {
+  itemCount: number;
+  qtyOnHand: number;
+  qtyAvailable: number;
+  value: number;
+  notAvailableCount: number;
+  lowStockCount: number;
+}
+
+export interface NotAvailableItem {
+  itemCode: string;
+  itemName: string;
+  category: string;
+  itemType: string;
+  itemGroup: string;
+  uom: string;
+  defaultWarehouse: string;
+  available: number;
+  status: string;
+}
+
+export interface StockSummaryDto {
+  groups: ItemGroupSummary[];
+  totals: StockSummaryTotals;
+  notAvailableItems: NotAvailableItem[];
+}
+
+export interface SimpleReportDto {
+  totals: StockSummaryTotals;
+  groups: ItemGroupSummary[];
+  reorderList: DrilldownRow[];
+}

@@ -145,6 +145,9 @@ public class QualityInspection extends BaseDoc implements DocEntity {
     String approvedBy;
     @Column(name = "approved_at")
     java.time.Instant approvedAt;
+    @Column(name = "signed_at")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    java.time.Instant signedAt;
     @Column(name = "closed_at")
     java.time.Instant closedAt;
     @Column(name = "cancelled_at")
@@ -170,6 +173,10 @@ public class QualityInspection extends BaseDoc implements DocEntity {
     @Column(name = "inspection_plan_id", length = 60)
     String inspectionPlanId;
 
+    /** Frozen plan revision this inspection was executed against. */
+    @Column(name = "inspection_plan_revision")
+    Integer inspectionPlanRevision;
+
     // --- spec §4.1 trackability fields ---
     @Column(name = "priority", length = 20)
     String priority = "Normal";                // Critical / High / Normal / Low
@@ -185,6 +192,12 @@ public class QualityInspection extends BaseDoc implements DocEntity {
     Instant completedAt;
     @Column(name = "is_locked")
     Boolean isLocked = false;
+
+    /** Idempotency guard for QC stock sync. PENDING (not yet processed) / SYNCED (done) / SYNC_ERROR. */
+    @Column(name = "stock_sync_status", length = 30)
+    String stockSyncStatus = "PENDING";
+    @Column(name = "stock_sync_key", length = 120)
+    String stockSyncKey;
 
     @OneToMany(mappedBy = "doc", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     List<QualityInspectionLine> lines = new ArrayList<>();

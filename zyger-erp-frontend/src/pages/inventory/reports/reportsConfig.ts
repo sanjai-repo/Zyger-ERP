@@ -83,7 +83,8 @@ export type DrilldownFilterKey =
   | 'category'
   | 'status'
   | 'txType'
-  | 'lowStockOnly';
+  | 'lowStockOnly'
+  | 'includeZero';
 
 export interface DrilldownColumn {
   key: string;
@@ -113,15 +114,39 @@ export const DRILLDOWN_CONFIGS: Record<string, DrilldownConfig> = {
       { key: 'itemCode', label: 'Item' },
       { key: 'itemName', label: 'Name' },
       { key: 'category', label: 'Category' },
+      { key: 'itemType', label: 'Type' },
+      { key: 'itemGroup', label: 'Group' },
       { key: 'location', label: 'Location' },
       { key: 'batchNo', label: 'Batch' },
       { key: 'heatNo', label: 'Heat' },
+      { key: 'safetyStock', label: 'Safety', numeric: true },
       { key: 'onHand', label: 'On Hand', numeric: true },
       { key: 'reserved', label: 'Reserved', numeric: true },
+      { key: 'qcHold', label: 'QC Hold', numeric: true },
       { key: 'available', label: 'Available', numeric: true },
       { key: 'value', label: 'Value', money: true },
+      { key: 'status', label: 'Status', badge: true },
     ],
-    filters: ['search', 'item', 'location', 'category', 'lowStockOnly'],
+    filters: ['search', 'item', 'location', 'category', 'lowStockOnly', 'includeZero'],
+  },
+
+  'not-available': {
+    type: 'not-available',
+    title: 'Not Available',
+    subtitle: 'Items in the item master not currently in store (stock unavailable)',
+    icon: 'inventory_2',
+    columns: [
+      { key: 'itemCode', label: 'Item' },
+      { key: 'itemName', label: 'Name' },
+      { key: 'category', label: 'Category' },
+      { key: 'itemType', label: 'Type' },
+      { key: 'itemGroup', label: 'Group' },
+      { key: 'uom', label: 'UOM' },
+      { key: 'defaultWarehouse', label: 'Location' },
+      { key: 'available', label: 'Available', numeric: true },
+      { key: 'status', label: 'Status', badge: true },
+    ],
+    filters: ['search', 'item', 'category'],
   },
 
   'low-stock': {

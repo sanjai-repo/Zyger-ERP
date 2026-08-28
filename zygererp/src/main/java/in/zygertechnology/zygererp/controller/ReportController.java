@@ -249,10 +249,149 @@ public class ReportController {
                 q.getOrDefault("format", "xlsx"), "current-stock");
     }
 
+    @GetMapping("/api/inventory/reports/stock-summary")
+    Map<String, Object> stockSummary() {
+        Map<String, StockService.Balance> bal = stock.balances();
+        Map<String, Double> onHand = new LinkedHashMap<>();
+        Map<String, Double> available = new LinkedHashMap<>();
+        for (StockService.Balance b : bal.values()) {
+            onHand.merge(b.item(), b.onHand(), Double::sum);
+            available.merge(b.item(), b.available(), Double::sum);
+        }
+        Map<String, double[]> byGroup = new LinkedHashMap<>();
+        for (ItemMaster it : items.findAll()) {
+            String g = groupName(it);
+            double oh = onHand.getOrDefault(it.getCode(), 0d);
+            double avail = available.getOrDefault(it.getCode(), 0d);
+            double safety = it.getSafetyStock() == null ? 0 : it.getSafetyStock().doubleValue();
+            double rate = it.getDefaultRate() == null ? 0 : it.getDefaultRate().doubleValue();
+            double[] a = byGroup.computeIfAbsent(g, x -> new double[6]);
+            a[0] += 1;                             // itemCount
+            a[1] += oh;                            // qtyOnHand
+            a[2] += oh * rate;                     // value
+            if (avail <= 0) a[3] += 1;             // notAvailableCount
+            if (oh < safety) a[4] += 1;            // lowStockCount
+            a[5] += avail;                         // qtyAvailable
+        }
+        List<Map<String, Object>> groups = new ArrayList<>();
+        double[] totals = new double[6];
+        for (Map.Entry<String, double[]> en : byGroup.entrySet()) {
+            Map<String, Object> r = new LinkedHashMap<>();
+            double[] a = en.getValue();
+            r.put("group", en.getKey());
+            r.put("itemCount", (long) a[0]);
+            r.put("qtyOnHand", round(a[1]));
+            r.put("qtyAvailable", round(a[5]));
+            r.put("value", round(a[2]));
+            r.put("notAvailableCount", (long) a[3]);
+            r.put("lowStockCount", (long) a[4]);
+            for (int i = 0; i < 6; i++) totals[i] += a[i];
+            groups.add(r);
+        }
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("groups", groups);
+        m.put("totals", Map.of(
+                "itemCount", (long) totals[0],
+                "qtyOnHand", round(totals[1]),
+                "qtyAvailable", round(totals[5]),
+                "value", round(totals[2]),
+                "notAvailableCount", (long) totals[3],
+                "lowStockCount", (long) totals[4]));
+        m.put("notAvailableItems", notAvailableRows());
+        return m;
+    }
+
+    private List<Map<String, Object>> notAvailableRows() {
+        Map<String, StockService.Balance> bal = stock.balances();
+        Map<String, Double> available = new LinkedHashMap<>();
+        for (StockService.Balance b : bal.values())
+            available.merge(b.item(), b.available(), Double::sum);
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (ItemMaster it : items.findAll()) {
+            double avail = available.getOrDefault(it.getCode(), 0d);
+            if (avail > 0) continue;
+            out.add(itemSummaryRow(it, 0));
+        }
+        return out;
+    }
+
+    private Map<String, Object> itemSummaryRow(ItemMaster it, double avail) {
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("itemCode", it.getCode());
+        r.put("itemName", it.getDescription());
+        r.put("category", str(it.getCategory()));
+        r.put("itemType", str(it.getItemType()));
+        r.put("itemGroup", str(groupName(it)));
+        r.put("uom", str(it.getUom()));
+        r.put("defaultWarehouse", str(it.getDefaultWarehouse()));
+        r.put("available", round(avail));
+        r.put("status", avail <= 0 ? "NOT_AVAILABLE" : "AVAILABLE");
+        return r;
+    }
+
+    private String groupName(ItemMaster it) {
+        if (it == null) return "Uncategorized";
+        ItemGroup g = it.getItemGroup();
+        if (g == null) return "Uncategorized";
+        String nm = g.getName();
+        if (nm == null || nm.isBlank()) nm = g.getCode();
+        return nm == null || nm.isBlank() ? "Uncategorized" : nm;
+    }
+
+    @GetMapping("/api/inventory/reports/simple")
+    Map<String, Object> simple() {
+        Map<String, Object> summary = stockSummary();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> totals = (Map<String, Object>) summary.get("totals");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> groups = (List<Map<String, Object>>) summary.get("groups");
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("totals", totals);
+        m.put("groups", groups);
+        m.put("reorderList", lowStockItems());
+        return m;
+    }
+
+    @GetMapping("/api/inventory/reports/not-available")
+    Map<String, Object> notAvailable(@RequestParam Map<String, String> q) {
+        return docs.paginate(notAvailableRows(), q);
+    }
+
+    @GetMapping("/api/inventory/reports/simple/export")
+    ResponseEntity<byte[]> simpleExport(@RequestParam(defaultValue = "pdf") String format) {
+        List<Map<String, Object>> rows = simpleExportRows();
+        return file(export.build(rows, format, "stock-snapshot"), format, "stock-snapshot");
+    }
+
+    private List<Map<String, Object>> simpleExportRows() {
+        Map<String, Object> simple = simple();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> t = (Map<String, Object>) simple.get("totals");
+        List<Map<String, Object>> rows = new ArrayList<>();
+        rows.add(Map.of("Section", "STOCK SNAPSHOT", "Item", "", "Qty", "", "Value", ""));
+        rows.add(Map.of("Section", "Total items", "Item", t.get("itemCount"), "Qty", "", "Value", ""));
+        rows.add(Map.of("Section", "Total quantity in store", "Item", "", "Qty", t.get("qtyOnHand"), "Value", ""));
+        rows.add(Map.of("Section", "Total stock value", "Item", "", "Qty", "", "Value", t.get("value")));
+        rows.add(Map.of("Section", "Items not available", "Item", t.get("notAvailableCount"), "Qty", "", "Value", ""));
+        rows.add(Map.of("Section", "Low stock items", "Item", t.get("lowStockCount"), "Qty", "", "Value", ""));
+        rows.add(Map.of("Section", "", "Item", "", "Qty", "", "Value", ""));
+        rows.add(Map.of("Section", "GROUP WISE BREAKDOWN", "Item", "", "Qty", "", "Value", ""));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> groups = (List<Map<String, Object>>) simple.get("groups");
+        for (Map<String, Object> g : groups) {
+            rows.add(Map.of("Section", "  " + g.get("group"),
+                    "Item", g.get("itemCount"),
+                    "Qty", g.get("qtyOnHand"),
+                    "Value", g.get("value")));
+        }
+        return rows;
+    }
+
     private List<Map<String, Object>> drilldownRows(String type, Map<String, String> q) {
         return switch (type) {
             case "current-stock" -> currentStockRows(q);
             case "low-stock" -> lowStockRows();
+            case "not-available" -> notAvailableRows();
             case "reservations" -> reservationRows();
             case "pending-inward" -> pendingRows(false, q);
             case "pending-approvals" -> pendingRows(true, q);
@@ -303,35 +442,96 @@ public class ReportController {
 
     private List<Map<String, Object>> currentStockRows(Map<String, String> q) {
         List<Map<String, Object>> rows = new ArrayList<>();
+        boolean includeZero = "true".equals(q.get("includeZero"));
+        Set<String> seenItems = new LinkedHashSet<>();
         long n = 0;
         for (Map.Entry<String, StockService.Balance> en : stock.balances().entrySet()) {
             StockService.Balance b = en.getValue();
             if (b.onHand() <= 0 && b.reserved() <= 0) continue;
             if (!isEmpty(q.get("location")) && !q.get("location").equals(b.loc())) continue;
             if (!isEmpty(q.get("itemCode")) && !q.get("itemCode").equals(b.item())) continue;
-            if ("true".equals(q.get("lowStockOnly"))) {
-                ItemMaster it = items.findByCode(b.item()).orElse(null);
-                if (it == null || b.onHand() >= (it.getSafetyStock() == null ? 0 : it.getSafetyStock().doubleValue())) continue;
-            }
             ItemMaster it = items.findByCode(b.item()).orElse(null);
+            boolean low = it != null && b.onHand() < (it.getSafetyStock() == null ? 0 : it.getSafetyStock().doubleValue());
+            if ("true".equals(q.get("lowStockOnly")) && !low) continue;
             double rate = it == null || it.getDefaultRate() == null ? 0 : it.getDefaultRate().doubleValue();
             Map<String, Object> r = new LinkedHashMap<>();
             r.put("id", "s" + (++n));
             r.put("itemCode", b.item());
             r.put("itemName", it == null ? "" : it.getDescription());
             r.put("category", it == null ? "" : it.getCategory());
+            r.put("itemType", it == null ? "" : str(it.getItemType()));
+            r.put("itemGroup", it == null ? "" : groupName(it));
             r.put("uom", it == null ? "" : it.getUom());
             r.put("location", b.loc());
             r.put("batchNo", b.batch());
             r.put("heatNo", b.heat());
             r.put("onHand", round(b.onHand()));
             r.put("reserved", round(b.reserved()));
+            r.put("qcHold", round(b.qcHold()));
             r.put("available", round(b.available()));
             r.put("rate", rate);
             r.put("value", round(b.onHand() * rate));
+            r.put("safetyStock", it == null ? 0 : round(it.getSafetyStock() == null ? 0 : it.getSafetyStock().doubleValue()));
+            r.put("reorderPoint", it == null ? 0 : (it.getReorderPoint() == null ? 0 : round(it.getReorderPoint().doubleValue())));
+            r.put("lowStock", low);
+            r.put("status", availabilityStatus(b.onHand(), b.available(), low));
             rows.add(r);
+            seenItems.add(b.item());
+        }
+        if (includeZero) {
+            Map<String, StockService.Balance> bal = stock.balances();
+            Map<String, Double> onByItem = new HashMap<>();
+            Map<String, Double> availByItem = new HashMap<>();
+            for (StockService.Balance b : bal.values()) {
+                onByItem.merge(b.item(), b.onHand(), Double::sum);
+                availByItem.merge(b.item(), b.available(), Double::sum);
+            }
+            Set<String> withStock = new LinkedHashSet<>(onByItem.keySet());
+            for (ItemMaster it : items.findAll()) {
+                if (hasStockOnHand(it.getCode(), onByItem)) continue;
+                if (withStock.contains(it.getCode())) continue;
+                if (seenItems.contains(it.getCode())) continue;
+                if (!isEmpty(q.get("location"))) continue;
+                if ("true".equals(q.get("lowStockOnly"))) continue;
+                double rate = it.getDefaultRate() == null ? 0 : it.getDefaultRate().doubleValue();
+                double safety = it.getSafetyStock() == null ? 0 : it.getSafetyStock().doubleValue();
+                boolean low = 0 < safety;
+                Map<String, Object> r = new LinkedHashMap<>();
+                r.put("id", "z" + (++n));
+                r.put("itemCode", it.getCode());
+                r.put("itemName", it.getDescription());
+                r.put("category", str(it.getCategory()));
+                r.put("itemType", str(it.getItemType()));
+                r.put("itemGroup", groupName(it));
+                r.put("uom", str(it.getUom()));
+                r.put("location", it.getDefaultWarehouse() == null ? "" : it.getDefaultWarehouse());
+                r.put("batchNo", "");
+                r.put("heatNo", "");
+                r.put("onHand", 0d);
+                r.put("reserved", 0d);
+                r.put("qcHold", 0d);
+                r.put("available", 0d);
+                r.put("rate", rate);
+                r.put("value", 0d);
+                r.put("safetyStock", round(safety));
+                r.put("reorderPoint", it.getReorderPoint() == null ? 0 : round(it.getReorderPoint().doubleValue()));
+                r.put("lowStock", low);
+                r.put("status", "NOT_AVAILABLE");
+                rows.add(r);
+            }
         }
         return rows;
+    }
+
+    private boolean hasStockOnHand(String item, Map<String, Double> onByItem) {
+        Double v = onByItem.get(item);
+        return v != null && v > 0;
+    }
+
+    private String availabilityStatus(double onHand, double available, boolean low) {
+        if (available <= 0 && onHand <= 0) return "NOT_AVAILABLE";
+        if (low) return "LOW";
+        return "AVAILABLE";
     }
 
     private List<Map<String, Object>> lowStockRows() {
@@ -550,6 +750,8 @@ public class ReportController {
     }
 
     private boolean isEmpty(String s) { return s == null || s.isEmpty(); }
+
+    private static String str(String s) { return s == null ? "" : s; }
 
     private double round(double v) { return Math.round(v * 100.0) / 100.0; }
 

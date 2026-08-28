@@ -160,7 +160,7 @@ export default function PurchaseDashboard() {
                     <span className="material-symbols-rounded" style={{ fontSize: 24, color: kpi.color }}>{kpi.icon}</span>
                   </div>
                   <div>
-                    <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1 }}>{data[kpi.key]}</div>
+                    <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1 }}>{typeof data[kpi.key] === 'number' ? (data[kpi.key] as number) : 0}</div>
                     <div style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>{kpi.label}</div>
                   </div>
                 </div>

@@ -4,6 +4,8 @@ import type {
   DrilldownRow,
   ReportQueryParams,
   ReportsOverviewDto,
+  SimpleReportDto,
+  StockSummaryDto,
 } from '../types/inventory/reports.types';
 
 const BASE = '/inventory/reports';
@@ -24,6 +26,7 @@ function buildParams(params: ReportQueryParams) {
     status: params.status || undefined,
     txType: params.txType || undefined,
     lowStockOnly: params.lowStockOnly || undefined,
+    includeZero: params.includeZero || undefined,
   };
 }
 
@@ -86,6 +89,21 @@ export const inventoryReportsService = {
       }
     );
 
+    return response.data;
+  },
+
+  async getStockSummary(signal?: AbortSignal): Promise<StockSummaryDto> {
+    const response = await apiClient.get<StockSummaryDto>(
+      `${BASE}/stock-summary`,
+      { signal }
+    );
+    return response.data;
+  },
+
+  async getSimple(signal?: AbortSignal): Promise<SimpleReportDto> {
+    const response = await apiClient.get<SimpleReportDto>(`${BASE}/simple`, {
+      signal,
+    });
     return response.data;
   },
 

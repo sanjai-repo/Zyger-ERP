@@ -89,7 +89,13 @@ export default function InspectionPendingPage() {
   useEffect(() => { checkGate(); }, [itemFilter]);
 
   const openInspection = (id: number) => {
-    openTab(`quality-inspection-${id}`, `Inspection ${id}`, getScreenComponent('quality-inspection'), { initialDocId: id });
+    openTab({
+      id: `quality-inspection-${id}`,
+      label: `Inspection ${id}`,
+      icon: 'fact_check',
+      component: getScreenComponent('quality-inspection'),
+      props: { initialDocId: id },
+    });
   };
 
   return (
@@ -161,7 +167,7 @@ export default function InspectionPendingPage() {
                       {r.priority}
                     </span>
                   </td>
-                  <td>{r.inspector || r.assignedInspector || '-'}</td>
+                  <td>{r.inspector || '-'}</td>
                   <td>{r.receivedQuantity}</td>
                   <td><StatusBadge status={r.inspectionStatus} /></td>
                   <td style={{ fontSize: 12 }}>{r.dueDate || '-'}</td>

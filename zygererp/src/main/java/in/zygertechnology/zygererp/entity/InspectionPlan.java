@@ -45,6 +45,14 @@ public class InspectionPlan {
 
     @Builder.Default Boolean active = Boolean.TRUE;
 
+    /** Business revision number. Increments each time the plan is published. */
+    @Column(name = "revision_no")
+    @Builder.Default Integer revisionNo = 1;
+
+    /** DRAFT / PUBLISHED / RETIRED */
+    @Column(name = "plan_status", length = 20)
+    @Builder.Default String planStatus = "DRAFT";
+
     String createdBy;
     Instant createdAt;
     String updatedBy;

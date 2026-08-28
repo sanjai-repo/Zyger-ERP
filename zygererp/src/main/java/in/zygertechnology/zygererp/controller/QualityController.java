@@ -5,6 +5,7 @@ import in.zygertechnology.zygererp.entity.QualityNcr;
 import in.zygertechnology.zygererp.service.DocumentFacade;
 import in.zygertechnology.zygererp.service.QualityInspectionService;
 import in.zygertechnology.zygererp.service.ExportService;
+import in.zygertechnology.zygererp.service.StockService;
 import in.zygertechnology.zygererp.repo.QualityInspectionStatusHistoryRepository;
 import in.zygertechnology.zygererp.security.RequirePermission;
 import jakarta.persistence.EntityManager;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
 import java.time.Instant;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -32,6 +34,7 @@ public class QualityController {
     private final DocumentFacade docs;
     private final ExportService export;
     private final QualityInspectionStatusHistoryRepository statusHistoryRepo;
+    private final StockService stockService;
 
     @PersistenceContext
     private EntityManager em;
@@ -91,11 +94,13 @@ public class QualityController {
     // ---------- Workflow actions (spec 6.4) ----------
 
     @PostMapping("/inspections/{id}/start")
+    @RequirePermission(module = "QUALITY", screen = "*", action = "EDIT")
     public Map<String, Object> start(@PathVariable Long id, Principal p) {
         return docs.toRow(quality.start(id, principalName(p)));
     }
 
     @PostMapping("/inspections/{id}/save-measurements")
+    @RequirePermission(module = "QUALITY", screen = "*", action = "EDIT")
     public Map<String, Object> saveMeasurements(@PathVariable Long id,
                                                 @RequestBody List<Map<String, Object>> body,
                                                 @RequestParam(required = false) String overrideReason,
@@ -106,11 +111,13 @@ public class QualityController {
     }
 
     @PostMapping("/inspections/{id}/submit")
+    @RequirePermission(module = "QUALITY", screen = "*", action = "EDIT")
     public Map<String, Object> submit(@PathVariable Long id, Principal p) {
         return docs.toRow(quality.submit(id, principalName(p)));
     }
 
     @PostMapping("/inspections/{id}/decision")
+    @RequirePermission(module = "QUALITY", screen = "*", action = "EDIT")
     public Map<String, Object> decision(@PathVariable Long id,
                                         @RequestBody Map<String, String> body, Principal p) {
         return docs.toRow(quality.decide(id,
@@ -119,33 +126,101 @@ public class QualityController {
     }
 
     @PostMapping("/inspections/{id}/approve")
+    @RequirePermission(module = "QUALITY", screen = "*", action = "APPROVE")
     public Map<String, Object> approve(@PathVariable Long id, Principal p) {
         return docs.toRow(quality.approve(id, principalName(p)));
     }
 
     @PostMapping("/inspections/{id}/hold")
+    @RequirePermission(module = "QUALITY", screen = "*", action = "EDIT")
     public Map<String, Object> hold(@PathVariable Long id,
                                     @RequestBody(required = false) Map<String, String> body, Principal p) {
         return docs.toRow(quality.hold(id, body == null ? null : body.get("reason"), principalName(p)));
     }
 
     @PostMapping("/inspections/{id}/release-hold")
+    @RequirePermission(module = "QUALITY", screen = "*", action = "EDIT")
     public Map<String, Object> releaseHold(@PathVariable Long id, Principal p) {
         return docs.toRow(quality.releaseHold(id, principalName(p)));
     }
 
+    @PostMapping("/inspections/{id}/release-stock")
+    @RequirePermission(module = "QUALITY", screen = "*", action = "APPROVE")
+    public Map<String, Object> releaseStock(@PathVariable Long id,
+                                            @RequestBody(required = false) Map<String, Object> body,
+                                            Principal p) {
+        QualityInspection ins = quality.get(id);
+        BigDecimal accepted = ins.getAcceptedQuantity() != null ? ins.getAcceptedQuantity()
+                : ins.getInspectionQuantity();
+        if (accepted == null || accepted.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalStateException("No accepted quantity to release to store");
+        }
+        String batch = ins.getBatchNumber() != null ? ins.getBatchNumber() : "";
+        String heat = ins.getHeatNumber() != null ? ins.getHeatNumber() : "";
+        stockService.releaseQcHoldForItem(
+                ins.getDocNo(), QualityInspectionService.KEY, "QC_RELEASE",
+                ins.getItemCode(), batch, heat, accepted, java.time.LocalDate.now(), principalName(p));
+        return Map.of("message", "QC-held stock released to store", "releasedQty", accepted);
+    }
+
+    @PostMapping("/inspections/{id}/dispose-stock")
+    @RequirePermission(module = "QUALITY", screen = "*", action = "APPROVE")
+    public Map<String, Object> disposeStock(@PathVariable Long id,
+                                            @RequestBody(required = false) Map<String, String> body,
+                                            Principal p) {
+        QualityInspection ins = quality.get(id);
+        String disposition = body != null && body.get("disposition") != null
+                ? body.get("disposition").toUpperCase() : "REJECTED";
+        if (!List.of("REJECTED", "SCRAP", "QUARANTINE", "BLOCKED").contains(disposition)) {
+            throw new IllegalStateException("Invalid disposition: " + disposition);
+        }
+        BigDecimal qty = ins.getRejectedQuantity() != null ? ins.getRejectedQuantity()
+                : (ins.getInspectionQuantity() != null ? ins.getInspectionQuantity() : BigDecimal.ZERO);
+        if (qty.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalStateException("No rejected quantity to dispose");
+        }
+        String batch = ins.getBatchNumber() != null ? ins.getBatchNumber() : "";
+        String heat = ins.getHeatNumber() != null ? ins.getHeatNumber() : "";
+        stockService.disposeHeldForItem(
+                ins.getDocNo(), QualityInspectionService.KEY, "QC_DISPOSE",
+                ins.getItemCode(), batch, heat, qty, disposition,
+                java.time.LocalDate.now(), principalName(p));
+        return Map.of("message", "QC-held stock moved to " + disposition, "disposedQty", qty, "disposition", disposition);
+    }
+
+    @PostMapping("/inspections/{id}/disposition")
+    @RequirePermission(module = "QUALITY", screen = "*", action = "APPROVE")
+    public Map<String, Object> setDisposition(@PathVariable Long id,
+                                              @RequestBody Map<String, String> body, Principal p) {
+        String disposition = body != null ? body.get("disposition") : null;
+        String reason = body != null ? body.get("reason") : null;
+        var row = quality.setDisposition(id, disposition, reason, principalName(p));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("inspectionId", row.getInspectionId());
+        out.put("ncrId", row.getNcrId());
+        out.put("dispositionType", row.getDispositionType());
+        out.put("quantity", row.getQuantity());
+        out.put("reason", row.getReason());
+        out.put("authorizedBy", row.getAuthorizedBy());
+        out.put("authorizedAt", row.getAuthorizedAt());
+        return out;
+    }
+
     @PostMapping("/inspections/{id}/close")
+    @RequirePermission(module = "QUALITY", screen = "*", action = "APPROVE")
     public Map<String, Object> close(@PathVariable Long id, Principal p) {
         return docs.toRow(quality.close(id, principalName(p)));
     }
 
     @PostMapping("/inspections/{id}/cancel")
+    @RequirePermission(module = "QUALITY", screen = "*", action = "CANCEL")
     public Map<String, Object> cancel(@PathVariable Long id,
                                       @RequestBody(required = false) Map<String, String> body, Principal p) {
         return docs.toRow(quality.cancel(id, body == null ? null : body.get("reason"), principalName(p)));
     }
 
     @PostMapping("/inspections/{id}/reopen")
+    @RequirePermission(module = "QUALITY", screen = "*", action = "EDIT")
     public Map<String, Object> reopen(@PathVariable Long id,
                                       @RequestBody(required = false) Map<String, String> body, Principal p) {
         return docs.toRow(quality.reopen(id, body == null ? null : body.get("reason"), principalName(p)));

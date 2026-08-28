@@ -86,6 +86,10 @@ public class QualityInspectionLine extends BaseLine implements LineEntity {
     @Column(length = 20)
     String result = "PENDING";
 
+    /** Out-of-tolerance flag — computed and stored at measure/save time (VAL-MEA-03). */
+    @Column(name = "oot_flag")
+    Boolean ootFlag = false;
+
     BigDecimal deviation;
 
     @Column(name = "measured_by", length = 60)

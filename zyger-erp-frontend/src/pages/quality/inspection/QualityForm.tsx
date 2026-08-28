@@ -268,7 +268,7 @@ export default function QualityForm({ documentId, viewOnly = false, onBack, defa
   const [initializedForId, setInitializedForId] = useState('');
   const [spcData, setSpcData] = useState<any[] | null>(null);
   const [spcLoading, setSpcLoading] = useState(false);
-  const [spcCharFilter, setSpcCharFilter] = useState('');
+  const [spcCharFilter] = useState('');
 
   useEffect(() => {
     if (isCreateMode) {
@@ -1322,7 +1322,6 @@ export default function QualityForm({ documentId, viewOnly = false, onBack, defa
                   const samples: any[] = ch.samples ?? [];
                   const values = samples.map((s) => Number(s.value)).filter((v) => !isNaN(v));
                   if (values.length === 0) return null;
-                  const nom = Number(ch.nominalValue) || 0;
                   const lsl = Number(ch.lowerLimit);
                   const usl = Number(ch.upperLimit);
                   const mean = values.reduce((a, b) => a + b, 0) / values.length;

@@ -44,3 +44,21 @@ export function useDrilldown(type: string, params: ReportQueryParams) {
     retry: 1,
   });
 }
+
+export function useStockSummary() {
+  return useQuery({
+    queryKey: ['inventory-reports', 'stock-summary'],
+    queryFn: ({ signal }) => inventoryReportsService.getStockSummary(signal),
+    staleTime: 1000 * 30,
+    retry: 1,
+  });
+}
+
+export function useSimpleReport() {
+  return useQuery({
+    queryKey: ['inventory-reports', 'simple'],
+    queryFn: ({ signal }) => inventoryReportsService.getSimple(signal),
+    staleTime: 1000 * 30,
+    retry: 1,
+  });
+}

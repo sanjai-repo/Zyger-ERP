@@ -209,6 +209,8 @@ public class MasterDataController {
             m.put("operation", ip.getOperation());
             m.put("inspectionType", ip.getInspectionType());
             m.put("aql", ip.getAql());
+            m.put("revisionNo", ip.getRevisionNo());
+            m.put("planStatus", ip.getPlanStatus());
             List<InspectionPlanCharacteristic> chars = ipcRepo.findByPlanIdAndActiveTrueOrderByLineNoAsc(ip.getId());
             m.put("characteristics", chars.stream().map(c -> {
                 Map<String, Object> cm = new LinkedHashMap<>();
@@ -233,14 +235,36 @@ public class MasterDataController {
     @PostMapping("/inspection-plans")
     public Map<String, Object> saveInspectionPlan(@RequestBody Map<String, Object> body) {
         PlantMaster plant = plantRepo.findById(((Number) body.getOrDefault("plantId", 1L)).longValue()).orElseThrow();
+        String itemCode = (String) body.get("itemCode");
+        String inspectionType = (String) body.get("inspectionType");
+
+        // Retirement policy (VAL-PLAN-03): a new save is a new published revision.
+        // Retire any active plan with the same natural key (item + inspection type) so the
+        // unique business key stays unique, while the old revision remains read-only (RETIRED).
+        List<InspectionPlan> existing = itemCode != null && inspectionType != null
+                ? ipRepo.findByPlantIdAndItemCodeAndInspectionTypeOrderByRevisionNoDesc(
+                        plant.getId(), itemCode, inspectionType)
+                : List.of();
+        int nextRevision = 1;
+        for (InspectionPlan p : existing) {
+            if (p.getRevisionNo() != null) nextRevision = Math.max(nextRevision, p.getRevisionNo() + 1);
+            if (Boolean.TRUE.equals(p.getActive())) {
+                p.setActive(false);
+                p.setPlanStatus("RETIRED");
+                ipRepo.save(p);
+            }
+        }
+
         InspectionPlan ip = InspectionPlan.builder()
                 .plant(plant)
-                .itemCode((String) body.get("itemCode"))
+                .itemCode(itemCode)
                 .drawingNumber((String) body.get("drawingNumber"))
                 .drawingRevision((String) body.get("drawingRevision"))
                 .operation((String) body.get("operation"))
-                .inspectionType((String) body.get("inspectionType"))
+                .inspectionType(inspectionType)
                 .active(true)
+                .planStatus("PUBLISHED")
+                .revisionNo(nextRevision)
                 .build();
         ipRepo.save(ip);
 
@@ -259,16 +283,21 @@ public class MasterDataController {
                         .nominalValue(cb.get("nominalValue") != null ? new java.math.BigDecimal(cb.get("nominalValue").toString()) : null)
                         .lowerLimit(cb.get("lowerLimit") != null ? new java.math.BigDecimal(cb.get("lowerLimit").toString()) : null)
                         .upperLimit(cb.get("upperLimit") != null ? new java.math.BigDecimal(cb.get("upperLimit").toString()) : null)
+                        .tolerance(cb.get("tolerance") != null ? new java.math.BigDecimal(cb.get("tolerance").toString()) : null)
                         .uom((String) cb.get("uom"))
                         .isMandatory(Boolean.TRUE.equals(cb.get("isMandatory")))
                         .isCritical(Boolean.TRUE.equals(cb.get("isCritical")))
+                        .isSpecial(Boolean.TRUE.equals(cb.get("isSpecial")))
+                        .measurementMethod((String) cb.get("measurementMethod"))
+                        .requiredInstrumentType((String) cb.get("requiredInstrumentType"))
                         .lineNo(i + 1)
                         .active(true)
                         .build();
                 ipcRepo.save(c);
             }
         }
-        return Map.of("id", ip.getId(), "itemCode", ip.getItemCode());
+        return Map.of("id", ip.getId(), "itemCode", ip.getItemCode(),
+                "revisionNo", ip.getRevisionNo(), "planStatus", ip.getPlanStatus());
     }
 
     // ── AQL AUTO-CALCULATE ──
