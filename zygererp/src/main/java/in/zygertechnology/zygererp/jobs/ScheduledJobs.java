@@ -295,12 +295,22 @@ public class ScheduledJobs {
         try {
             // Quality inspections
             List<Object[]> openInspecs = em.createQuery(
-                    "SELECT i.id, i.inspectionNumber, i.createdAt FROM QualityInspection i " +
+                    "SELECT i.id, i.inspectionNumber, i.createdAt, i.inspectionStatus, i.holdSince " +
+                    "FROM QualityInspection i " +
                     "WHERE i.inspectionStatus NOT IN ('CLOSED', 'CANCELLED') AND i.createdAt IS NOT NULL",
                     Object[].class).getResultList();
             for (Object[] row : openInspecs) {
+                Instant anchor = row[2] instanceof Instant ? (Instant) row[2] : null;
+                String status = row[3] instanceof String ? (String) row[3] : "";
+                Instant holdSince = row[4] instanceof Instant ? (Instant) row[4] : null;
+                // HOLD SLA/aging: anchor on holdSince so HOLD aging is tracked from the hold start,
+                // not the inspection creation time.
+                if ("HOLD".equals(status) && holdSince != null) {
+                    anchor = holdSince;
+                }
+                if (anchor == null) anchor = Instant.now();
                 escalationEngine.checkAndEscalate("QUALITY_INSPECTION", ((Number) row[0]).longValue(),
-                        (String) row[1], row[2] instanceof Instant ? (Instant) row[2] : Instant.now());
+                        (String) row[1], anchor);
             }
 
             // Breakdown intimations

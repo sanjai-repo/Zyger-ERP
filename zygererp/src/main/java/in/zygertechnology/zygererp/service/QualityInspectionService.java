@@ -7,10 +7,12 @@ import in.zygertechnology.zygererp.entity.QualityInspectionLine;
 import in.zygertechnology.zygererp.entity.QualityInspectionType;
 import in.zygertechnology.zygererp.entity.QualityInspectionStatusHistory;
 import in.zygertechnology.zygererp.entity.QualityNcr;
+import in.zygertechnology.zygererp.entity.QualityScar;
 import in.zygertechnology.zygererp.entity.QualityDisposition;
 import in.zygertechnology.zygererp.entity.DocEntity;
 import in.zygertechnology.zygererp.entity.InspectionPlan;
 import in.zygertechnology.zygererp.entity.InspectionPlanCharacteristic;
+import in.zygertechnology.zygererp.entity.SamplingPlanMaster;
 import in.zygertechnology.zygererp.entity.QualityCharacteristicMeasurement;
 import in.zygertechnology.zygererp.doc.DocTypes;
 import in.zygertechnology.zygererp.repo.InstrumentMasterRepository;
@@ -20,6 +22,7 @@ import in.zygertechnology.zygererp.repo.QualityDispositionRepository;
 import in.zygertechnology.zygererp.repo.LedgerRepository;
 import in.zygertechnology.zygererp.repository.InspectionPlanRepository;
 import in.zygertechnology.zygererp.repository.QualityCharacteristicMeasurementRepository;
+import in.zygertechnology.zygererp.repository.SamplingPlanMasterRepository;
 import in.zygertechnology.zygererp.config.BusinessRuleException;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.TypedQuery;
@@ -53,6 +56,7 @@ public class QualityInspectionService {
     private final QualityCalibrationInstrumentRepository instruments;
     private final InstrumentMasterRepository instrumentMasters;
     private final InspectionPlanRepository inspectionPlanRepo;
+    private final SamplingPlanMasterRepository samplingRepo;
     private final QualityCharacteristicMeasurementRepository spcRepo;
     private final QualityInspectionStatusHistoryRepository statusHistoryRepo;
     private final QualityDispositionRepository dispositionRepo;
@@ -110,6 +114,9 @@ public class QualityInspectionService {
         if (e.getLines().isEmpty() && e.getItemCode() != null) {
             autoLoadInspectionPlan(e);
         }
+
+        // FRS §?: Apply AQL / ANSI Z1.4 sampling plan to derive sample size + acceptance criteria.
+        applySamplingPlan(e);
 
         for (QualityInspectionLine l : e.getLines()) evaluate(l);
         em.persist(e);
@@ -379,13 +386,14 @@ public class QualityInspectionService {
         String from = ins.getInspectionStatus();
         require(ins, "HOLD");
         ins.setInspectionStatus(INSPECT);
+        ins.setHoldSince(null);
         ins.setUpdatedAt(Instant.now());
         recordStatusChange(ins, from, INSPECT, user, "Hold released");
         return ins;
     }
 
     @Transactional
-    public QualityInspection decide(Long id, String decision, String remarks, String user) {
+    public QualityInspection decide(Long id, String decision, String remarks, String severity, String user) {
         QualityInspection ins = get(id);
         String from = ins.getInspectionStatus();
         require(ins, INSPECT);
@@ -394,18 +402,22 @@ public class QualityInspectionService {
         if (List.of("FAIL", "REJECT", "FAILING").contains(d)) {
             ins.setInspectionStatus("FAIL");
             ins.setDecisionStatus("FAIL");
-            autoCreateNcr(ins, user);
+            ins.setHoldSince(null);
+            autoCreateNcr(ins, severity, user);
         } else if (d.equals("HOLD")) {
             ins.setInspectionStatus("HOLD");
             ins.setDecisionStatus("HOLD");
+            ins.setHoldSince(Instant.now());
         } else {
             if (hasCriticalFail(ins)) {
                 ins.setInspectionStatus("HOLD");
                 ins.setDecisionStatus("HOLD");
+                ins.setHoldSince(Instant.now());
                 ins.setDecisionRemarks("Critical characteristic failed; requires review. " + safe(remarks));
             } else {
                 ins.setInspectionStatus("PASS");
                 ins.setDecisionStatus("PASS");
+                ins.setHoldSince(null);
             }
         }
         ins.setFinalDecision(ins.getInspectionStatus());
@@ -416,20 +428,32 @@ public class QualityInspectionService {
     }
 
     @Transactional
-    public QualityInspection approve(Long id, String user) {
+    public QualityInspection approve(Long id, String minorAcceptanceReason, String user) {
         QualityInspection ins = get(id);
         String from = ins.getInspectionStatus();
         boolean isFailPath = "FAIL".equals(from) || "REJECTED".equals(from) || hasFailedLine(ins);
 
         if (isFailPath) {
-            // VAL-APR-02 / VAL-NCR-01: fail path requires a resolved MRB disposition before approve
+            // VAL-APR-02 / VAL-NCR-01: a FAIL requires a resolved MRB disposition before approve,
+            // unless the NCR severity is MINOR/LOW, which may be accepted with a reason instead.
             QualityNcr ncr = findNcrFor(ins);
-            List<QualityDisposition> disps = ncr != null ? dispositionRepo.findByNcrId(ncr.getId()) : List.of();
-            QualityDisposition disp = disps.isEmpty() ? null : disps.get(0);
-            if (disp == null || disp.getDispositionType() == null
-                    || "PENDING".equalsIgnoreCase(disp.getDispositionType())) {
-                throw new IllegalStateException(
-                        "Cannot approve: failed inspection requires a resolved MRB disposition before approval.");
+            String sev = ncr != null && ncr.getSeverity() != null
+                    ? ncr.getSeverity().trim().toUpperCase() : "";
+            if (List.of("MINOR", "LOW").contains(sev)) {
+                if (minorAcceptanceReason == null || minorAcceptanceReason.isBlank()) {
+                    throw new IllegalStateException(
+                            "Cannot approve: minor failure requires a minor acceptance reason before approval.");
+                }
+                ins.setMinorAcceptanceReason(minorAcceptanceReason);
+                if (ncr != null) { ncr.setStatus("MINOR_ACCEPTED"); em.persist(ncr); }
+            } else {
+                List<QualityDisposition> disps = ncr != null ? dispositionRepo.findByNcrId(ncr.getId()) : List.of();
+                QualityDisposition disp = disps.isEmpty() ? null : disps.get(0);
+                if (disp == null || disp.getDispositionType() == null
+                        || "PENDING".equalsIgnoreCase(disp.getDispositionType())) {
+                    throw new IllegalStateException(
+                            "Cannot approve: failed inspection requires a resolved MRB disposition before approval.");
+                }
             }
             validateWorkflowTransition(ins, "APPROVE");
             ins.setInspectionStatus(APPROVED);
@@ -438,6 +462,7 @@ public class QualityInspectionService {
             ins.setApprovedAt(Instant.now());
             ins.setSignedAt(Instant.now());
             ins.setIsLocked(true);
+            ins.setHoldSince(null);
             ins.setUpdatedAt(Instant.now());
             recordStatusChange(ins, from, APPROVED, user, null);
             sendQualityNotification(ins, APPROVED, null);
@@ -460,6 +485,7 @@ public class QualityInspectionService {
         ins.setApprovedAt(Instant.now());
         ins.setSignedAt(Instant.now());
         ins.setIsLocked(true);
+        ins.setHoldSince(null);
         ins.setStockSyncKey(ins.getDocNo() + ":QC_RELEASE");
         ins.setStockSyncStatus("PENDING");
         ins.setUpdatedAt(Instant.now());
@@ -789,14 +815,29 @@ public class QualityInspectionService {
     }
 
     /** FRS FR-Q-07 / VAL-NCR-01: auto-create an NCR (1:1) when a FAIL decision is recorded. */
-    private void autoCreateNcr(QualityInspection ins, String user) {
+    private void autoCreateNcr(QualityInspection ins, String severityOverride, String user) {
         try {
             if (ins.getId() == null || hasNcr(ins)) return;
 
             String severity = "MAJOR";
-            for (QualityInspectionLine l : ins.getLines()) {
-                if (!"FAIL".equals(l.getResult())) continue;
-                if (Boolean.TRUE.equals(l.getIsCritical())) { severity = "CRITICAL"; break; }
+            if (severityOverride != null) {
+                String s = severityOverride.trim().toUpperCase();
+                if (List.of("MINOR", "LOW", "MAJOR", "CRITICAL").contains(s)) {
+                    severity = s;
+                }
+            }
+            if (List.of("MINOR", "LOW").contains(severity)) {
+                for (QualityInspectionLine l : ins.getLines()) {
+                    if ("FAIL".equals(l.getResult()) && Boolean.TRUE.equals(l.getIsCritical())) {
+                        severity = "CRITICAL"; break;
+                    }
+                }
+            } else if (severity.equals("MAJOR")) {
+                for (QualityInspectionLine l : ins.getLines()) {
+                    if ("FAIL".equals(l.getResult()) && Boolean.TRUE.equals(l.getIsCritical())) {
+                        severity = "CRITICAL"; break;
+                    }
+                }
             }
 
             Map<String, Object> body = new LinkedHashMap<>();
@@ -896,9 +937,105 @@ public class QualityInspectionService {
             dispRow.setDownstreamReference("REWORK_CHILD");
         }
 
+        if ("RTV".equals(disp)) {
+            autoCreateScar(ins, ncr, user);
+            dispRow.setDownstreamReference("SCAR_CREATED");
+        }
+
         recordStatusChange(ins, ins.getInspectionStatus(), ins.getInspectionStatus(), user,
                 "MRB disposition: " + disp + (reason == null ? "" : " - " + reason));
         return dispRow;
+    }
+
+    /** FRS FR-Q-14: RTV auto-raises a Supplier Corrective Action Report (SCAR) to the vendor. */
+    private void autoCreateScar(QualityInspection ins, QualityNcr ncr, String user) {
+        try {
+            if (ins.getId() == null || hasScar(ins)) return;
+            String[] supplier = resolveSupplier(ins);
+
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("inspectionId", ins.getId());
+            body.put("ncrId", ncr != null ? ncr.getId() : null);
+            body.put("inspectionType", inspectTypeName(ins));
+            body.put("inspectionNumber", ins.getInspectionNumber());
+            body.put("supplierCode", supplier[0]);
+            body.put("supplierName", supplier[1]);
+            body.put("itemCode", ins.getItemCode());
+            body.put("itemDescription", ins.getItemDescription());
+            body.put("batchNumber", ins.getBatchNumber());
+            body.put("lotNumber", ins.getLotNumber());
+            body.put("heatNumber", ins.getHeatNumber());
+            body.put("quantityAffected", ins.getRejectedQuantity() != null ? ins.getRejectedQuantity()
+                    : ins.getInspectionQuantity());
+            body.put("defectDescription", safe(ins.getDecisionRemarks()));
+            body.put("severity", ncr != null ? ncr.getSeverity() : null);
+            body.put("issueDescription", "Return to vendor - supplier corrective action required. " + safe(ins.getDecisionRemarks()));
+            body.put("requiredByDate", LocalDate.now().plusDays(14).toString());
+            body.put("scarStatus", "OPEN");
+            body.put("createdBy", user);
+
+            QualityScar scar = (QualityScar) docs.create("quality-scar", body, user);
+            log.info("RTV: auto-created SCAR {} for inspection {} (NCR {})",
+                    scar.getDocNo(), ins.getId(), ncr != null ? ncr.getId() : null);
+        } catch (Exception ex) {
+            log.warn("RTV: SCAR auto-creation failed for inspection {}: {}", ins.getId(), ex.getMessage());
+        }
+    }
+
+    private boolean hasScar(QualityInspection ins) {
+        try {
+            Long count = em.createQuery(
+                            "select count(s) from QualityScar s where s.inspectionId = :id", Long.class)
+                    .setParameter("id", ins.getId()).getSingleResult();
+            return count != null && count > 0;
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    /** Best-effort supplier resolution for the SCAR: [supplierCode, supplierName]. */
+    private String[] resolveSupplier(QualityInspection ins) {
+        String code = null;
+        String name = null;
+        try {
+            Long sourceId = null;
+            if (ins.getSourceId() != null) {
+                try { sourceId = Long.valueOf(ins.getSourceId()); } catch (Exception ignored) {}
+            }
+            if (sourceId != null && ins.getSourceType() != null) {
+                String en = switch (ins.getSourceType().toUpperCase()) {
+                    case "PO_INWARD", "INWARD" -> "PoInward";
+                    case "GRN" -> "Grn";
+                    case "LO_INWARD" -> "LoInward";
+                    case "JO_INWARD" -> "JoInward";
+                    default -> null;
+                };
+                if (en != null) {
+                    Object n = em.createQuery(
+                            "select e.supplier from " + en + " e where e.id = :id", String.class)
+                            .setParameter("id", sourceId).getSingleResult();
+                    if (n != null) name = n.toString();
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("resolveSupplier(source) skipped for inspection {}: {}", ins.getId(), ex.getMessage());
+        }
+        try {
+            if (ins.getPurchaseOrderNumber() != null && !ins.getPurchaseOrderNumber().isBlank()) {
+                Object[] row = em.createQuery(
+                                "select e.supplierCode, e.supplier from PurchaseOrder e where e.docNo = :po",
+                                Object[].class)
+                        .setParameter("po", ins.getPurchaseOrderNumber())
+                        .setMaxResults(1).getSingleResult();
+                if (row != null) {
+                    if (row[0] != null) code = row[0].toString();
+                    if (row[1] != null) name = row[1].toString();
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("resolveSupplier(po) skipped for inspection {}: {}", ins.getId(), ex.getMessage());
+        }
+        return new String[]{code, name};
     }
 
     private QualityNcr findNcrFor(QualityInspection ins) {
@@ -1041,6 +1178,65 @@ public class QualityInspectionService {
             l.setQty(BigDecimal.ONE);
             l.setDoc(e);
             e.getLines().add(l);
+        }
+    }
+
+    /**
+     * §6.x: Apply an AQL / ANSI Z1.4 / ISO 2859-1 sampling plan to the inspection.
+     * Resolves the sampling plan matching the lot size band + AQL from the inspection
+     * plan, then derives the sample size and acceptance/rejection numbers.
+     */
+    private void applySamplingPlan(QualityInspection e) {
+        try {
+            BigDecimal lotSize = e.getReceivedQuantity() != null ? e.getReceivedQuantity()
+                    : e.getInspectionQuantity();
+            if (lotSize == null) lotSize = BigDecimal.ZERO;
+            int lotQty = lotSize.compareTo(BigDecimal.ZERO) <= 0 ? 0 : lotSize.intValue();
+
+            InspectionPlan plan = null;
+            if (e.getInspectionPlanId() != null) {
+                try {
+                    plan = inspectionPlanRepo.findById(Long.valueOf(e.getInspectionPlanId())).orElse(null);
+                } catch (Exception ignored) {}
+            }
+
+            String standard = null;
+            BigDecimal aql = null;
+            if (plan != null) {
+                if (plan.getSamplingPlan() != null) {
+                    if (standard == null) standard = plan.getSamplingPlan().getStandard();
+                    if (aql == null) aql = plan.getSamplingPlan().getAql();
+                }
+                if (aql == null && plan.getAql() != null) aql = plan.getAql();
+            }
+            if (standard == null) standard = "ISO2859_1";
+            if (aql == null) aql = new BigDecimal("1.0");
+
+            final BigDecimal fAql = aql;
+            SamplingPlanMaster sp = samplingRepo.findByStandardAndActiveTrue(standard).stream()
+                    .filter(p -> p.getLotSizeMin() != null && p.getLotSizeMax() != null
+                            && p.getLotSizeMin() <= lotQty && p.getLotSizeMax() >= lotQty)
+                    .filter(p -> p.getAql() != null && p.getAql().compareTo(fAql) == 0)
+                    .findFirst().orElse(null);
+            if (sp == null) return;
+
+            e.setSamplingStandard(sp.getStandard());
+            e.setAql(sp.getAql());
+            e.setAcceptNumber(sp.getAcceptNumber());
+            e.setRejectNumber(sp.getRejectNumber());
+            e.setLotSize(lotSize);
+            if (sp.getSampleSize() != null) {
+                e.setSampleSize(BigDecimal.valueOf(sp.getSampleSize()));
+                // Only auto-derive the inspection quantity if the user did not set one.
+                if (e.getInspectionQuantity() == null) {
+                    e.setInspectionQuantity(BigDecimal.valueOf(sp.getSampleSize()));
+                }
+            }
+            log.info("Sampling plan applied for inspection {}: lot {} {}, sample {}, accept {}, reject {}",
+                    e.getInspectionNumber() != null ? e.getInspectionNumber() : e.getId(),
+                    lotQty, standard, sp.getSampleSize(), sp.getAcceptNumber(), sp.getRejectNumber());
+        } catch (Exception ex) {
+            log.warn("applySamplingPlan skipped for inspection {}: {}", e.getInspectionNumber(), ex.getMessage());
         }
     }
 

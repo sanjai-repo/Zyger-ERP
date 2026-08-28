@@ -61,6 +61,7 @@ public final class DocTypes {
         reg("quality-customer-complaint","CC",Effect.NONE,  "QUALITY_COMPLAINT",      null, false);
         reg("quality-capa",            "CAPA",Effect.NONE,  "QUALITY_CAPA",           null, false);
         reg("quality-8d",              "8D",  Effect.NONE,  "QUALITY_8D",             null, true);
+        reg("quality-scar",            "SCAR",Effect.NONE,  "QUALITY_SCAR",           null, true);
         // Master data
         reg("customer",                "CUS", Effect.NONE,  "CUSTOMER",               null, false);
         reg("supplier",                "SUP", Effect.NONE,  "SUPPLIER",               null, false);

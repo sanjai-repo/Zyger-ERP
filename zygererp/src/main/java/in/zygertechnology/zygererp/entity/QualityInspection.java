@@ -115,6 +115,18 @@ public class QualityInspection extends BaseDoc implements DocEntity {
     @Column(name = "sample_size")
     BigDecimal sampleSize;
 
+    // --- AQL / sampling plan (ANSI Z1.4 / ISO 2859-1) applied at creation ---
+    @Column(name = "sampling_standard", length = 40)
+    String samplingStandard;
+    @Column(name = "aql")
+    java.math.BigDecimal aql;
+    @Column(name = "accept_number")
+    Integer acceptNumber;
+    @Column(name = "reject_number")
+    Integer rejectNumber;
+    @Column(name = "lot_size")
+    BigDecimal lotSize;
+
     // quality-specific workflow status (driven by QualityInspectionService)
     @Column(name = "inspection_status", length = 30)
     String inspectionStatus = "DRAFT";
@@ -140,6 +152,8 @@ public class QualityInspection extends BaseDoc implements DocEntity {
     String finalDecision;
     @Column(name = "decision_remarks", length = 500)
     String decisionRemarks;
+    @Column(name = "minor_acceptance_reason", length = 500)
+    String minorAcceptanceReason;
 
     @Column(name = "approved_by", length = 60)
     String approvedBy;
@@ -190,6 +204,8 @@ public class QualityInspection extends BaseDoc implements DocEntity {
     Instant startedAt;
     @Column(name = "completed_at")
     Instant completedAt;
+    @Column(name = "hold_since")
+    Instant holdSince;
     @Column(name = "is_locked")
     Boolean isLocked = false;
 

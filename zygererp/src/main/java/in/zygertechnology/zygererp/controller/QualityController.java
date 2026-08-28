@@ -122,13 +122,19 @@ public class QualityController {
                                         @RequestBody Map<String, String> body, Principal p) {
         return docs.toRow(quality.decide(id,
                 body.getOrDefault("decision", "PASS"),
-                body.get("remarks"), principalName(p)));
+                body.get("remarks"),
+                body.get("severity"),
+                principalName(p)));
     }
 
     @PostMapping("/inspections/{id}/approve")
     @RequirePermission(module = "QUALITY", screen = "*", action = "APPROVE")
-    public Map<String, Object> approve(@PathVariable Long id, Principal p) {
-        return docs.toRow(quality.approve(id, principalName(p)));
+    public Map<String, Object> approve(@PathVariable Long id,
+                                       @RequestBody(required = false) Map<String, Object> body,
+                                       Principal p) {
+        String minorReason = body != null && body.get("minorAcceptanceReason") != null
+                ? String.valueOf(body.get("minorAcceptanceReason")) : null;
+        return docs.toRow(quality.approve(id, minorReason, principalName(p)));
     }
 
     @PostMapping("/inspections/{id}/hold")
@@ -428,6 +434,41 @@ public class QualityController {
     @DeleteMapping("/ncrs/{id}")
     public void deleteNcr(@PathVariable Long id, Principal p) {
         docs.remove("quality-ncr", id, principalName(p));
+    }
+
+    // ---------- Supplier Corrective Action Reports (SCAR) ----------
+
+    @GetMapping("/scars")
+    public Map<String, Object> listScars(@RequestParam Map<String, String> q) {
+        return docs.list("quality-scar", q);
+    }
+
+    @PostMapping("/scars")
+    public Map<String, Object> createScar(@RequestBody Map<String, Object> body, Principal p) {
+        body.put("createdBy", principalName(p));
+        return docs.toRow(docs.create("quality-scar", body, principalName(p)));
+    }
+
+    @GetMapping("/scars/{id}")
+    public Map<String, Object> getScar(@PathVariable Long id) {
+        return docs.getRow("quality-scar", id);
+    }
+
+    @PutMapping("/scars/{id}")
+    public Map<String, Object> updateScar(@PathVariable Long id,
+                                          @RequestBody Map<String, Object> body,
+                                          Principal p) {
+        return docs.toRow(docs.update("quality-scar", id, body, principalName(p)));
+    }
+
+    @DeleteMapping("/scars/{id}")
+    public void deleteScar(@PathVariable Long id, Principal p) {
+        docs.remove("quality-scar", id, principalName(p));
+    }
+
+    @GetMapping("/scars/next-number")
+    public Map<String, Object> nextScarNumber() {
+        return Map.of("nextNumber", docs.peekNumberFy("SCAR"));
     }
 
     // ---------- Spec §4.2: Status History ----------
