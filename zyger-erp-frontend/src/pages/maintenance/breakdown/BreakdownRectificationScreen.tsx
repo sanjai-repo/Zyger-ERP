@@ -42,6 +42,8 @@ const SC: Record<string, { color: string; bg: string }> = {
 
 const TESTING_RESULTS = ['PASS', 'FAIL', 'PENDING'];
 
+interface MasterFailureCode { id: number; code: string; description: string; }
+
 export default function BreakdownRectificationScreen() {
   const { toast } = useToast();
   const [rows, setRows] = useState<Rectification[]>([]);
@@ -54,6 +56,7 @@ export default function BreakdownRectificationScreen() {
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<'list' | 'form'>('list');
   const [openActionMenu, setOpenActionMenu] = useState<number | null>(null);
+  const [failureCodes, setFailureCodes] = useState<MasterFailureCode[]>([]);
 
   const load = async () => {
     setLoading(true);
@@ -69,6 +72,10 @@ export default function BreakdownRectificationScreen() {
   };
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    apiClient.get('/v1/maintenance/failure-codes').then(({ data }) => setFailureCodes(Array.isArray(data) ? data : [])).catch(() => {});
+  }, []);
 
   const save = async () => {
     if (!String(form.technicianCode ?? '').trim()) { toast('Technician Code is required.', 'error'); return; }
@@ -141,6 +148,12 @@ export default function BreakdownRectificationScreen() {
             <label className="fld"><span>Breakdown No</span><input className="in" value={String(form.breakdownNumber ?? '')} readOnly style={{ background: '#f3f4f6' }} /></label>
             <label className="fld"><span>Machine Code</span><input className="in" value={String(form.machineCode ?? '')} readOnly style={{ background: '#f3f4f6' }} /></label>
             <label className="fld"><span>Technician Code *</span><input className="in" value={String(form.technicianCode ?? '')} onChange={(e) => set('technicianCode', e.target.value)} /></label>
+            <label className="fld"><span>Failure Code</span>
+              <select className="in" value={String(form.failureCodeId ?? '')} onChange={(e) => set('failureCodeId', e.target.value)}>
+                <option value="">Select...</option>
+                {failureCodes.map((fc) => <option key={fc.id} value={fc.id}>{fc.code} — {fc.description}</option>)}
+              </select>
+            </label>
             <label className="fld" style={{ gridColumn: 'span 2' }}><span>Failure Cause</span><textarea className="in" rows={3} value={String(form.failureCause ?? '')} onChange={(e) => set('failureCause', e.target.value)} /></label>
             <label className="fld" style={{ gridColumn: 'span 2' }}><span>Corrective Action</span><textarea className="in" rows={3} value={String(form.correctiveAction ?? '')} onChange={(e) => set('correctiveAction', e.target.value)} /></label>
             <label className="fld" style={{ gridColumn: 'span 2' }}><span>Spare Parts Used</span><textarea className="in" rows={3} value={String(form.sparePartsUsed ?? '')} onChange={(e) => set('sparePartsUsed', e.target.value)} /></label>

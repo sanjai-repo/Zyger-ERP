@@ -26,3 +26,6 @@ out/
 # Graphify / Temp
 graphify-out/
 *.log
+
+# Runtime user uploads (company logos, documents, etc.)
+zygererp/uploads/

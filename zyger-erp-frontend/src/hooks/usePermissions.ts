@@ -1,9 +1,9 @@
 import { useCallback, useMemo } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth, type ScreenAction } from '../contexts/AuthContext';
 import { getRolePermissions, type PermissionModule, type PermissionAction, type PermissionKey } from '../config/rbac';
 
 export function usePermissions() {
-  const { user } = useAuth();
+  const { user, canScreen } = useAuth();
 
   const perms = useMemo(() => {
     if (!user?.role) return new Set<PermissionKey>();
@@ -41,5 +41,7 @@ export function usePermissions() {
     [perms]
   );
 
-  return { can, canAny, canAll, hasModule };
+  return { can, canAny, canAll, hasModule, canScreen };
 }
+
+export type { ScreenAction };

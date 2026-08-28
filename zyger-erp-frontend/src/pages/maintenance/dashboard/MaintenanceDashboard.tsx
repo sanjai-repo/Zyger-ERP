@@ -20,6 +20,14 @@ interface DashboardData {
   totalPMSchedules: number;
 }
 
+interface DowntimeData {
+  totalDowntimeMinutes: number;
+  totalDowntimeHours: number;
+  byMachine: Record<string, number>;
+  bySource: Record<string, number>;
+  transactionCount: number;
+}
+
 const KPI_CARDS: { key: keyof DashboardData; icon: string; label: string; color: string; bg: string; screenId?: string }[] = [
   { key: 'openBreakdowns', icon: 'warning', label: 'Open Breakdowns', color: '#991b1b', bg: '#fde2e2', screenId: 'breakdowns' },
   { key: 'criticalBreakdowns', icon: 'error', label: 'Critical Breakdowns', color: '#991b1b', bg: '#fde2e2', screenId: 'breakdowns' },
@@ -45,6 +53,7 @@ export default function MaintenanceDashboard() {
     mtbf: 0, mttr: 0, totalBreakdowns: 0, totalPMSchedules: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [downtime, setDowntime] = useState<DowntimeData | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -53,6 +62,10 @@ export default function MaintenanceDashboard() {
         const { data: d } = await apiClient.get('/v1/maintenance/dashboard');
         setData((c) => ({ ...c, ...d }));
       } catch (e) { toast(getApiErrorMessage(e, 'Dashboard load failed.'), 'error'); }
+      try {
+        const { data: dt } = await apiClient.get('/v1/maintenance/downtime/summary');
+        setDowntime(dt);
+      } catch (e) { /* downtime optional */ }
       setLoading(false);
     };
     load();
@@ -98,6 +111,28 @@ export default function MaintenanceDashboard() {
           </div>
         )}
       </div>
+
+      {downtime && downtime.transactionCount > 0 && (
+        <div className="panel" style={{ marginTop: 16 }}>
+          <h4 style={{ padding: '12px 20px 0', margin: 0, fontSize: 15, color: '#374151' }}>Downtime Summary</h4>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16, padding: 20 }}>
+            <div style={{ background: '#eff6ff', borderRadius: 8, padding: 16 }}>
+              <div style={{ fontSize: 24, fontWeight: 700, color: '#1d4ed8' }}>{downtime.totalDowntimeHours}h</div>
+              <div style={{ fontSize: 12, color: '#6b7280' }}>Total Downtime</div>
+            </div>
+            <div style={{ background: '#fef3c7', borderRadius: 8, padding: 16 }}>
+              <div style={{ fontSize: 24, fontWeight: 700, color: '#92400e' }}>{downtime.transactionCount}</div>
+              <div style={{ fontSize: 12, color: '#6b7280' }}>Transactions</div>
+            </div>
+            {Object.entries(downtime.bySource).slice(0, 3).map(([src, mins]) => (
+              <div key={src} style={{ background: '#f3f4f6', borderRadius: 8, padding: 16 }}>
+                <div style={{ fontSize: 20, fontWeight: 700, color: '#374151' }}>{Math.round(Number(mins) / 60 * 10) / 10}h</div>
+                <div style={{ fontSize: 12, color: '#6b7280' }}>{src} Downtime</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </>
   );
 }

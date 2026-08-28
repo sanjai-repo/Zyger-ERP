@@ -86,3 +86,27 @@ export function usePurchaseDashboard() {
     retry: 1,
   });
 }
+
+function useSendMutation(docType: string, sender: (id: number | string) => Promise<Record<string, unknown>>) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number | string) => sender(id),
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: ['purchase-doc', docType] });
+      queryClient.invalidateQueries({ queryKey: ['purchase-doc', docType, 'doc', id] });
+      queryClient.invalidateQueries({ queryKey: ['purchase-dashboard'] });
+    },
+  });
+}
+
+export function useSendEnquiryEmail() {
+  return useSendMutation('supplier-enquiry', purchaseApi.sendEnquiryEmail);
+}
+
+export function useSendPoEmail() {
+  return useSendMutation('purchase-order', purchaseApi.sendPoEmail);
+}
+
+export function useSendJoEmail() {
+  return useSendMutation('job-order', purchaseApi.sendJoEmail);
+}

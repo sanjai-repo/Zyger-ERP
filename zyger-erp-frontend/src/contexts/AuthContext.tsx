@@ -1,16 +1,22 @@
-import { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import { authApi } from '../api/authApi';
+import { authApi, type ScreenAccess } from '../api/authApi';
 import type { LoginRequest } from '../api/authApi';
 import { getRolePermissions, type PermissionModule, type PermissionAction, type PermissionKey } from '../config/rbac';
+
+export type ScreenAction = 'View' | 'Create' | 'Edit' | 'Delete' | 'Export';
+export type ScreenAccessMap = Record<string, ScreenAccess>;
 
 interface User { username: string; role: string; }
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
+  screenPerms: ScreenAccessMap;
+  screensLoaded: boolean;
   can: (mod: PermissionModule, action: PermissionAction) => boolean;
   canAny: (mod: PermissionModule, actions: PermissionAction[]) => boolean;
   hasModule: (mod: PermissionModule) => boolean;
+  canScreen: (screenKey: string, action?: ScreenAction) => boolean;
   login: (data: LoginRequest) => Promise<void>;
   loginDemo: () => Promise<void>;
   logout: () => void;
@@ -18,6 +24,9 @@ interface AuthContextType {
 
 const TOKEN_KEY = 'zyger-access-token';
 const USER_KEY = 'zyger-user';
+
+const SESSION_IDLE_MS = 30 * 60 * 1000;
+const IDLE_EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'] as const;
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -38,11 +47,21 @@ function clearSession() {
   sessionStorage.removeItem(USER_KEY);
 }
 
+const SCREEN_ACTION_KEY = {
+  View: 'canView',
+  Create: 'canCreate',
+  Edit: 'canEdit',
+  Delete: 'canDelete',
+  Export: 'canExport',
+} as const;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {
     if (!sessionStorage.getItem(TOKEN_KEY)) return null;
     return readStoredUser();
   });
+  const [screenPerms, setScreenPerms] = useState<ScreenAccessMap>({});
+  const [screensLoaded, setScreensLoaded] = useState(false);
 
   const perms = useMemo(() => {
     if (!user?.role) return new Set<PermissionKey>();
@@ -54,6 +73,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     sessionStorage.setItem(USER_KEY, JSON.stringify(u));
     setUser(u);
   };
+
+  const loadScreens = useCallback(async () => {
+    try {
+      const list = await authApi.getMyScreens();
+      const map: ScreenAccessMap = {};
+      for (const s of list) map[s.screenKey] = s;
+      setScreenPerms(map);
+    } catch {
+      setScreenPerms({});
+    } finally {
+      setScreensLoaded(true);
+    }
+  }, []);
+
+  // Load the user's effective screen matrix after login / session restore.
+  useEffect(() => {
+    if (user && !screensLoaded) {
+      loadScreens();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, screensLoaded]);
 
   const can = useCallback(
     (mod: PermissionModule, action: PermissionAction): boolean => {
@@ -79,9 +119,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [perms]
   );
 
+  // Screen-level access from the per-user Access Control matrix.
+  // ADMIN users see every screen fully granted (server returns all-true;
+  // admin-only screens absent from the catalog are also granted here).
+  const canScreen = useCallback(
+    (screenKey: string, action: ScreenAction = 'View'): boolean => {
+      if (user && (user.role === 'ADMIN' || user.role.toLowerCase() === 'admin')) return true;
+      const s = screenPerms[screenKey];
+      return s ? Boolean(s[SCREEN_ACTION_KEY[action]]) : false;
+    },
+    [screenPerms, user]
+  );
+
   const login = async (data: LoginRequest) => {
     const res = await authApi.login(data);
-    persist(res.token, { username: res.username, role: res.role });
+    const u = { username: res.username, role: res.role };
+    persist(res.token, u);
+    await loadScreens();
   };
 
   const loginDemo = async () => {
@@ -91,10 +145,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     clearSession();
     setUser(null);
+    setScreenPerms({});
+    setScreensLoaded(false);
   };
 
+  // Auto-logout after 30 minutes of inactivity.
+  useEffect(() => {
+    if (!user) return;
+    let idleTimer: number | undefined;
+    const onIdle = () => {
+      clearSession();
+      setUser(null);
+      setScreenPerms({});
+      setScreensLoaded(false);
+      if (!window.location.pathname.startsWith('/login')) {
+        window.location.assign('/login');
+      }
+    };
+    const reset = () => {
+      if (idleTimer) window.clearTimeout(idleTimer);
+      idleTimer = window.setTimeout(onIdle, SESSION_IDLE_MS);
+    };
+    IDLE_EVENTS.forEach((e) => window.addEventListener(e, reset, { passive: true }));
+    reset();
+    return () => {
+      IDLE_EVENTS.forEach((e) => window.removeEventListener(e, reset));
+      if (idleTimer) window.clearTimeout(idleTimer);
+    };
+  }, [user]);
+
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, can, canAny, hasModule, login, loginDemo, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, screenPerms, screensLoaded, can, canAny, hasModule, canScreen, login, loginDemo, logout }}>
       {children}
     </AuthContext.Provider>
   );

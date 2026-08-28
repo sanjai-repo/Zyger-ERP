@@ -249,6 +249,35 @@ textarea.in{resize:vertical;min-height:75px;height:auto}
 .stat.clickable:hover{border-color:var(--blue);box-shadow:var(--sh-sm)}
 .g2{display:grid;grid-template-columns:1.35fr 1fr;gap:20px;align-items:start}
 .report-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;align-items:start}
+.access-grid{display:grid;grid-template-columns:250px minmax(0,1fr);gap:14px;align-items:start}
+/* Access matrix (transposed: actions as rows, screens as columns) */
+.access-matrix-wrap{border:1px solid var(--border);border-radius:10px}
+.access-matrix{table-layout:fixed;width:max-content;border-collapse:separate;border-spacing:0}
+.access-matrix thead th{border-bottom:2px solid var(--border);white-space:normal}
+.access-matrix th,.access-matrix td{border-right:1px solid var(--border);border-bottom:1px solid var(--border)}
+.access-matrix tbody tr:last-child th,.access-matrix tbody tr:last-child td{border-bottom:none}
+.access-matrix th:last-child,.access-matrix td:last-child{border-right:none}
+.access-matrix .access-corner,.access-matrix .access-actions{width:92px;position:sticky;left:0;z-index:5;background:var(--dark-nav);color:#fff;text-align:left;white-space:nowrap}
+.access-matrix thead .access-corner{z-index:7}
+.access-matrix tbody .access-actions{background:var(--dark-nav);color:#fff;font-weight:700;text-transform:uppercase;font-size:.66rem;letter-spacing:.06em;z-index:6}
+.access-matrix .access-screen-th{width:132px;min-width:132px;text-align:center;vertical-align:top;padding:9px 8px}
+.access-matrix .access-sname{font-weight:600;font-size:.72rem;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;max-width:116px;margin:0 auto}
+.access-matrix .access-smod{font-size:.6rem;color:#cbd5e1;text-transform:uppercase;letter-spacing:.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;max-width:116px;margin:2px auto 0}
+.access-matrix .access-screen-th[data-full="true"]{background:rgba(34,197,94,.22)}
+.access-matrix .access-all-row td{background:var(--blue-bg)}
+.access-matrix input[type=checkbox]{width:16px;height:16px;accent-color:var(--blue);cursor:pointer;vertical-align:middle}
+/* Left panel: screen filter alignment */
+.access-filter{padding:12px 14px 10px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--border);box-sizing:border-box;width:100%}
+.access-filter-row{display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:8px;padding:0 10px;background:var(--body);transition:border-color .15s;box-sizing:border-box;width:100%}
+.access-filter-row:focus-within{border-color:var(--blue)}
+.access-filter-icon{font-size:18px;color:var(--muted);flex-shrink:0}
+.access-filter-row .in{border:none;box-shadow:none;background:transparent;padding:9px 0;flex:1;min-width:0}
+.access-filter-row .in:focus{box-shadow:none}
+.access-filter > select{width:100%;box-sizing:border-box}
+.access-screen-list{max-height:500px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;padding:6px 14px 12px}
+.access-screen-btn{display:flex;align-items:center;gap:8px;width:100%;padding:6px 8px;border:none;background:transparent;border-radius:6px;cursor:pointer;text-align:left;font-size:13px;font-family:inherit;transition:background .15s,color .15s}
+.access-screen-btn:hover{background:var(--blue-bg)}
+
 /* CHART (inward trend) */
 .chart-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .chart-wrap{overflow-x:auto;padding:16px}
@@ -273,5 +302,5 @@ textarea.in{resize:vertical;min-height:75px;height:auto}
 .modal p{color:var(--muted);font-size:.82rem;margin-bottom:10px}
 .modal textarea{width:100%;min-height:70px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--body);color:var(--text);font:inherit}
 .modal .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
-@media (max-width:1000px){.fgrid{grid-template-columns:repeat(2,1fr)}.g2,.report-grid{grid-template-columns:1fr}.p-name{display:none}}
+@media (max-width:1000px){.fgrid{grid-template-columns:repeat(2,1fr)}.g2,.report-grid,.access-grid{grid-template-columns:1fr}.p-name{display:none}}
 @media (max-width:620px){.fgrid{grid-template-columns:1fr}.span2{grid-column:auto}.searchwrap .in{width:100%}.toolbar{flex-direction:column;align-items:stretch}}

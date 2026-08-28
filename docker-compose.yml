@@ -1,64 +1,64 @@
 services:
-  db:
+  database:
     image: postgres:16-alpine
-    container_name: zyger-db
-    restart: unless-stopped
+    container_name: Zyger-ERP-Database
     environment:
       POSTGRES_DB: zyger_erp
       POSTGRES_USER: zyger
       POSTGRES_PASSWORD: zyger123
-    ports:
-      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - zyger-net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U zyger -d zyger_erp"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
 
   backend:
     build:
       context: ./zygererp
-      dockerfile: Dockerfile
-    container_name: zyger-backend
-    restart: unless-stopped
+      target: runtime
+    image: zygererp-backend
+    container_name: Zyger-ERP-Backend
     depends_on:
-      db:
+      database:
         condition: service_healthy
     environment:
-      DB_URL: jdbc:postgresql://db:5432/zyger_erp
+      SPRING_PROFILES_ACTIVE: prod
+      DB_URL: jdbc:postgresql://database:5432/zyger_erp
       DB_USERNAME: zyger
       DB_PASSWORD: zyger123
       SERVER_PORT: "9090"
-      SPRING_PROFILES_ACTIVE: dev
-      JWT_SECRET: zyger-erp-docker-jwt-secret-key-change-in-production-2026
+      CORS_ORIGINS: http://localhost,http://localhost:8081,http://localhost:9091
+      JWT_SECRET: change-me-in-production-use-a-256-bit-random-string
       JWT_EXPIRATION_MS: "3600000"
-      CORS_ORIGINS: "http://localhost,http://localhost:80"
-      PASSWORD_MIN_LENGTH: "8"
-      MAX_LOGIN_ATTEMPTS: "5"
-      LOCKOUT_MINUTES: "15"
-      JAVA_OPTS: "-Xms512m -Xmx1g"
     ports:
       - "9090:9090"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9090/actuator/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 10
-      start_period: 120s
+    networks:
+      - zyger-net
+    restart: unless-stopped
 
   frontend:
     build:
       context: ./zyger-erp-frontend
-      dockerfile: Dockerfile
-    container_name: zyger-frontend
-    restart: unless-stopped
+    image: zygererp-frontend
+    container_name: Zyger-ERP-Frontend
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
     ports:
-      - "80:80"
+      - "8081:80"
+    networks:
+      - zyger-net
+    restart: unless-stopped
 
 volumes:
   pgdata:
+
+networks:
+  zyger-net:
+    name: zyger-net

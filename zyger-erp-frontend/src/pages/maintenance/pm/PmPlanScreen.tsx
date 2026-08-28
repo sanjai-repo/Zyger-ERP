@@ -36,6 +36,9 @@ const SC: Record<string, { color: string; bg: string }> = {
 const MAINTENANCE_TYPES = ['PREVENTIVE', 'PREDICTIVE', 'CORRECTIVE', 'CONDITION_BASED'];
 const FREQUENCIES = ['DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'HALF-YEARLY', 'YEARLY'];
 
+interface MasterDepartment { id: number; name: string; }
+interface MasterTechnician { id: number; firstName: string; lastName: string; designation: string; }
+
 export default function PmPlanScreen() {
   const { toast } = useToast();
   const [rows, setRows] = useState<PmPlan[]>([]);
@@ -47,6 +50,8 @@ export default function PmPlanScreen() {
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<'list' | 'form'>('list');
   const [openActionMenu, setOpenActionMenu] = useState<number | null>(null);
+  const [departments, setDepartments] = useState<MasterDepartment[]>([]);
+  const [technicians, setTechnicians] = useState<MasterTechnician[]>([]);
 
   const load = async () => {
     setLoading(true);
@@ -58,6 +63,11 @@ export default function PmPlanScreen() {
   };
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    apiClient.get('/v1/maintenance/departments').then(({ data }) => setDepartments(Array.isArray(data) ? data : [])).catch(() => {});
+    apiClient.get('/v1/maintenance/technicians').then(({ data }) => setTechnicians(Array.isArray(data) ? data : [])).catch(() => {});
+  }, []);
 
   const save = async () => {
     if (!String(form.machineCode ?? '').trim()) { toast('Machine Code is required.', 'error'); return; }
@@ -116,8 +126,18 @@ export default function PmPlanScreen() {
                 {FREQUENCIES.map((f) => <option key={f} value={f}>{f.replace(/_/g, ' ')}</option>)}
               </select>
             </label>
-            <label className="fld"><span>Responsible Department</span><input className="in" value={String(form.responsibleDepartment ?? '')} onChange={(e) => set('responsibleDepartment', e.target.value)} /></label>
-            <label className="fld"><span>Responsible Technician</span><input className="in" value={String(form.responsibleTechnician ?? '')} onChange={(e) => set('responsibleTechnician', e.target.value)} /></label>
+            <label className="fld"><span>Responsible Department</span>
+              <select className="in" value={String(form.responsibleDepartmentId ?? form.responsibleDepartment ?? '')} onChange={(e) => set('responsibleDepartmentId', e.target.value)}>
+                <option value="">Select...</option>
+                {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </label>
+            <label className="fld"><span>Responsible Technician</span>
+              <select className="in" value={String(form.responsibleTechnicianId ?? form.responsibleTechnician ?? '')} onChange={(e) => set('responsibleTechnicianId', e.target.value)}>
+                <option value="">Select...</option>
+                {technicians.map((t) => <option key={t.id} value={t.id}>{t.firstName} {t.lastName} ({t.designation})</option>)}
+              </select>
+            </label>
             <label className="fld"><span>Est. Duration (hrs)</span><input className="in" type="number" step="0.5" value={String(form.estimatedDurationHours ?? '')} onChange={(e) => set('estimatedDurationHours', Number(e.target.value))} /></label>
             <label className="fld"><span>Last Maintenance Date</span><input className="in" type="date" value={String(form.lastMaintenanceDate ?? '').slice(0, 10)} onChange={(e) => set('lastMaintenanceDate', e.target.value)} /></label>
             <label className="fld"><span>Next Due Date *</span><input className="in" type="date" value={String(form.nextDueDate ?? '').slice(0, 10)} onChange={(e) => set('nextDueDate', e.target.value)} /></label>

@@ -66,6 +66,8 @@ export default defineConfig({
     },
   },
   server: {
+    port: 9091,
+    strictPort: true,
     proxy: {
       '/api': 'http://localhost:9090',
     },

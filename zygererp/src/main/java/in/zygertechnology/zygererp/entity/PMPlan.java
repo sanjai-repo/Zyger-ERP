@@ -65,6 +65,15 @@ public class PMPlan {
     @Column(length = 500)
     private String remarks;
 
+    @Column(name = "checklist_template_id")
+    private Long checklistTemplateId;
+
+    @Column(name = "responsible_department_id")
+    private Long responsibleDepartmentId;
+
+    @Column(name = "default_technician_id")
+    private Long defaultTechnicianId;
+
     @Version private Long version;
     @Column(name = "created_by", length = 60) private String createdBy;
     @Column(name = "created_at") private Instant createdAt;

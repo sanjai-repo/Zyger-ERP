@@ -7,6 +7,7 @@ import in.zygertechnology.zygererp.entity.WorkOrder;
 import in.zygertechnology.zygererp.repo.NotificationRepository;
 import in.zygertechnology.zygererp.repo.RefreshTokenRepository;
 import in.zygertechnology.zygererp.service.EscalationEngine;
+import in.zygertechnology.zygererp.service.EmailService;
 import in.zygertechnology.zygererp.service.NotificationService;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +43,7 @@ public class ScheduledJobs {
     private final NotificationRepository notificationRepository;
     private final RefreshTokenRepository refreshTokens;
     private final EscalationEngine escalationEngine;
+    private final EmailService emailService;
 
     /**
      * Daily at 3 AM: delete refresh tokens that have expired (security housekeeping).
@@ -113,6 +115,13 @@ public class ScheduledJobs {
                         "QUALITY", "CalibrationSchedule", c.getId(),
                         isOverdue ? "CRITICAL" : "WARNING",
                         message, c.getScheduleNumber());
+                try {
+                    emailService.sendCalibrationDueNotification(
+                            "admin@zyger.local", c.getScheduleNumber(),
+                            c.getInstrumentName() != null ? c.getInstrumentName() : c.getInstrumentId(), c.getNextDueDate(), isOverdue);
+                } catch (Exception ex) {
+                    log.warn("Failed to send calibration email for {}: {}", c.getScheduleNumber(), ex.getMessage());
+                }
             }
         } catch (Exception ex) {
             log.error("[Calibration Check] Failed to run calibration due check", ex);
@@ -441,7 +450,7 @@ public class ScheduledJobs {
     }
 
     /**
-     * §6.4: CAPA effectiveness-check reminders at 30/60/90 days post-approval.
+     * §4.3 + §6.4: CAPA effectiveness-check reminders at 30/60/90 days post-approval.
      */
     @Scheduled(cron = "${zyger.scheduling.capa-effectiveness:0 0 10 * * *}")
     @Transactional
@@ -471,6 +480,82 @@ public class ScheduledJobs {
             }
         } catch (Exception ex) {
             log.error("[CAPA Effectiveness Check] Failed", ex);
+        }
+    }
+
+    // ─── Spec §4.3: Quality Inspection SLA / Aging / Escalation ───
+
+    /**
+     * Runs every 15 minutes. Computes aging/is_overdue on all non-terminal
+     * inspections and fires tiered escalation notifications (spec §4.3).
+     */
+    @Scheduled(cron = "${zyger.scheduling.quality-sla:0 */15 * * * *}")
+    @Transactional
+    public void qualityInspectionSlaCheck() {
+        try {
+            List<Object[]> rows = em.createQuery(
+                    "SELECT i.id, i.inspectionNumber, i.inspectionType, i.inspectionStatus, " +
+                    "i.createdAt, i.dueDate, i.priority, i.startedAt, i.assignedInspector " +
+                    "FROM QualityInspection i " +
+                    "WHERE i.inspectionStatus NOT IN ('CLOSED','CANCELLED') " +
+                    "AND i.deletedAt IS NULL",
+                    Object[].class).getResultList();
+
+            Instant now = Instant.now();
+            for (Object[] r : rows) {
+                Long id = ((Number) r[0]).longValue();
+                String number = (String) r[1];
+                String type = r[2] != null ? r[2].toString() : "?";
+                String status = (String) r[3];
+                Instant createdAt = r[4] instanceof Instant ? (Instant) r[4] : null;
+                LocalDate dueDate = r[5] instanceof LocalDate ? (LocalDate) r[5] : null;
+                String priority = r[6] != null ? r[6].toString() : "Normal";
+                Instant startedAt = r[7] instanceof Instant ? (Instant) r[7] : null;
+                String inspector = (String) r[8];
+
+                if (createdAt == null) continue;
+                long agingMinutes = java.time.Duration.between(createdAt, now).toMinutes();
+
+                // Update aging fields
+                em.createQuery("UPDATE QualityInspection i SET i.isLocked = i.isLocked WHERE i.id = :id")
+                        .setParameter("id", id).executeUpdate();
+
+                // SLA thresholds (spec §4.3)
+                int slaMinutes = switch (priority.toUpperCase()) {
+                    case "CRITICAL" -> 120;   // 2 hours
+                    case "HIGH" -> 240;        // 4 hours
+                    case "NORMAL" -> 1440;     // 24 hours
+                    case "LOW" -> 480;          // same shift (8h)
+                    default -> 1440;
+                };
+
+                boolean overdue = dueDate != null && now.isAfter(dueDate.atStartOfDay().plusDays(1).atZone(java.time.ZoneId.systemDefault()).toInstant());
+
+                // Critical: not started within 30 min
+                if ("CRITICAL".equals(priority) && startedAt == null && agingMinutes >= 30) {
+                    notifyOnce("QI_CRITICAL_NOT_STARTED", "QUALITY", "QualityInspection", id,
+                            "CRITICAL", type + " " + number + " — Critical inspection not started within 30 min! Inspector: " + (inspector != null ? inspector : "unassigned"), number);
+                }
+
+                // Overdue (past due date)
+                if (overdue) {
+                    notifyOnce("QI_OVERDUE_" + id, "QUALITY", "QualityInspection", id,
+                            "HIGH", type + " " + number + " is OVERDUE (due " + dueDate + "). Aging: " + agingMinutes + " min.", number);
+                }
+
+                // Past SLA but not overdue yet — escalation by priority
+                if (agingMinutes > slaMinutes && !overdue) {
+                    String level = switch (priority.toUpperCase()) {
+                        case "CRITICAL" -> "CRITICAL";
+                        case "HIGH" -> "HIGH";
+                        default -> "MEDIUM";
+                    };
+                    notifyOnce("QI_SLA_BREACH_" + id, "QUALITY", "QualityInspection", id,
+                            level, type + " " + number + " — SLA breached (" + agingMinutes + " min, threshold " + slaMinutes + " min).", number);
+                }
+            }
+        } catch (Exception ex) {
+            log.error("[Quality SLA Check] Failed", ex);
         }
     }
 }

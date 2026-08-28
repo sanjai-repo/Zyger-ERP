@@ -80,7 +80,7 @@ public class PlanningController {
 
     @GetMapping("/{type}/next-number")
     Map<String, Object> next(@PathVariable String type) {
-        return Map.of("nextNumber", svc.nextNumber(key(type)));
+        return Map.of("nextNumber", svc.peekNumber(key(type)));
     }
 
     @PostMapping("/{type}/{id}/actions/{action}")

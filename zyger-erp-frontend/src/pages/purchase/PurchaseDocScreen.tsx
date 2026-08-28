@@ -8,6 +8,9 @@ import {
   usePurchaseDocList,
   usePurchaseDocNextNumber,
   usePurchaseDocUpdate,
+  useSendEnquiryEmail,
+  useSendPoEmail,
+  useSendJoEmail,
 } from '../../hooks/usePurchaseDocs';
 import type { DocScreenConfig } from './purchaseDocConfigs';
 import { formatNumber } from '../../utils/format';
@@ -66,14 +69,14 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
   const [supplierMasters, setSupplierMasters] = useState<Array<{ id: number; name: string; code: string; contactPerson?: string; phone?: string; email?: string }>>([]);
   const [itemMasters, setItemMasters] = useState<Array<{ id: number; name: string; code: string; uom?: string; price?: number; description?: string }>>([]);
   const [uomMasters, setUomMasters] = useState<Array<{ id: number; code: string; name: string }>>([]);
-  
+
   // Company Info Master state for Billing & Shipping addresses
   const [companyInfoMaster, setCompanyInfoMaster] = useState<any>(null);
 
   useEffect(() => {
     axiosClient.get('/master/company-info').then((res) => {
       if (res.data && Object.keys(res.data).length > 0) setCompanyInfoMaster(res.data);
-    }).catch(() => {});
+    }).catch(() => { });
   }, []);
 
   const getCompanyAddress = (isShipping = false) => {
@@ -272,6 +275,9 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
   const updateMutation = usePurchaseDocUpdate(docType);
   const deleteMutation = usePurchaseDocDelete(docType);
   const actionMutation = usePurchaseDocAction(docType);
+  const sendEnquiryMutation = useSendEnquiryEmail();
+  const sendPoMutation = useSendPoEmail();
+  const sendJoMutation = useSendJoEmail();
 
   useEffect(() => {
     const timer = setTimeout(() => setSearch(searchInput.trim()), 300);
@@ -831,6 +837,27 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
     }
   };
 
+  const handleSendEmail = async () => {
+    if (!documentId) return;
+    const mutation = mutationForSend();
+    if (!mutation) return;
+    try {
+      const res = await mutation.mutateAsync(documentId);
+      toast((res as any)?.message || 'Email sent!', 'success');
+    } catch (err: any) {
+      toast(getApiErrorMessage(err, 'Failed to send email'), 'error');
+    }
+  };
+
+  const mutationForSend = () => {
+    if (docType === 'supplier-enquiry') return sendEnquiryMutation;
+    if (docType === 'purchase-order') return sendPoMutation;
+    if (docType === 'job-order') return sendJoMutation;
+    return null;
+  };
+
+  const canSendEmail = ['supplier-enquiry', 'purchase-order', 'job-order'].includes(docType);
+
   // Header Renderers
   if (mode === 'list') {
     return (
@@ -1114,6 +1141,16 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
             >
               <span className="material-symbols-rounded">block</span>
               Cancel
+            </button>
+          )}
+          {documentId && canSendEmail && (
+            <button
+              onClick={() => handleSendEmail()}
+              className="btn btn-p"
+              title="Send document via email"
+            >
+              <span className="material-symbols-rounded">mail</span>
+              Send Email
             </button>
           )}
         </div>

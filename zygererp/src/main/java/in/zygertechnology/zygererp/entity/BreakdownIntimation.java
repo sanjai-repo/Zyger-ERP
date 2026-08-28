@@ -71,6 +71,15 @@ public class BreakdownIntimation {
     @Column(length = 500)
     private String remarks;
 
+    @Column(name = "breakdown_category_id")
+    private Long breakdownCategoryId;
+
+    @Column(name = "operator_id")
+    private Long operatorId;
+
+    @Column(name = "shift_id")
+    private Long shiftId;
+
     @Version private Long version;
     @Column(name = "created_by", length = 60) private String createdBy;
     @Column(name = "created_at") private Instant createdAt;

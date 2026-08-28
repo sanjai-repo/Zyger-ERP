@@ -5,6 +5,7 @@ import in.zygertechnology.zygererp.entity.QualityCalibrationInstrument;
 import in.zygertechnology.zygererp.entity.QualityInspection;
 import in.zygertechnology.zygererp.entity.QualityInspectionLine;
 import in.zygertechnology.zygererp.entity.QualityInspectionType;
+import in.zygertechnology.zygererp.entity.QualityInspectionStatusHistory;
 import in.zygertechnology.zygererp.entity.QualityNcr;
 import in.zygertechnology.zygererp.entity.DocEntity;
 import in.zygertechnology.zygererp.entity.InspectionPlan;
@@ -13,6 +14,7 @@ import in.zygertechnology.zygererp.entity.QualityCharacteristicMeasurement;
 import in.zygertechnology.zygererp.doc.DocTypes;
 import in.zygertechnology.zygererp.repo.InstrumentMasterRepository;
 import in.zygertechnology.zygererp.repo.QualityCalibrationInstrumentRepository;
+import in.zygertechnology.zygererp.repo.QualityInspectionStatusHistoryRepository;
 import in.zygertechnology.zygererp.repo.LedgerRepository;
 import in.zygertechnology.zygererp.repository.InspectionPlanRepository;
 import in.zygertechnology.zygererp.repository.QualityCharacteristicMeasurementRepository;
@@ -48,8 +50,10 @@ public class QualityInspectionService {
     private final InstrumentMasterRepository instrumentMasters;
     private final InspectionPlanRepository inspectionPlanRepo;
     private final QualityCharacteristicMeasurementRepository spcRepo;
+    private final QualityInspectionStatusHistoryRepository statusHistoryRepo;
     private final CalibrationGuardService calibrationGuard;
     private final DocumentWorkflowEngine workflowEngine;
+    private final EmailService emailService;
 
     public static final String KEY = "quality-inspection";
     private static final String INSPECT = "SUBMITTED";
@@ -73,7 +77,7 @@ public class QualityInspectionService {
     public QualityInspection create(Map<String, Object> body, String user) {
         QualityInspection e = mapper.convertValue(body, QualityInspection.class);
         if (e.getInspectionNumber() == null || e.getInspectionNumber().isBlank()) {
-            e.setInspectionNumber(numbers.next(KEY, prefixFor(e)));
+            e.setInspectionNumber(numbers.nextFy(prefixFor(e)));
         }
         e.setDocNo(e.getInspectionNumber());
         LocalDate d = parseDate(body.get("date"));
@@ -100,6 +104,9 @@ public class QualityInspectionService {
         for (QualityInspectionLine l : e.getLines()) evaluate(l);
         em.persist(e);
 
+        // §4.2: Record initial status history
+        recordStatusChange(e, null, "DRAFT", user, "Inspection created");
+
         return e;
     }
 
@@ -107,10 +114,10 @@ public class QualityInspectionService {
         if (type == null) return DocTypes.get(KEY).prefix();
         return switch (type) {
             case IQC -> "IQC";
-            case LO -> "LO";
-            case JOMIN -> "JOMIN";
+            case LO -> "LOI";       // spec §3
+            case JOMIN -> "JOM";    // spec §3
             case FAI -> "FAI";
-            case IPQC -> "IPQC";
+            case IPQC -> "IPQ";     // spec §3
             case LINE -> "LIN";
             case LAST_OFF -> "LOF";
             case FINAL -> "FIN";
@@ -308,16 +315,21 @@ public class QualityInspectionService {
     @Transactional
     public QualityInspection start(Long id, String user) {
         QualityInspection ins = get(id);
+        String from = ins.getInspectionStatus();
         require(ins, "DRAFT", "PENDING", "REJECTED");
         ins.setInspectionStatus("IN_PROGRESS");
         ins.setAssignedInspector(user);
+        ins.setAssignedAt(Instant.now());
+        ins.setStartedAt(Instant.now());
         ins.setUpdatedAt(Instant.now());
+        recordStatusChange(ins, from, "IN_PROGRESS", user, null);
         return ins;
     }
 
     @Transactional
     public QualityInspection submit(Long id, String user) {
         QualityInspection ins = get(id);
+        String from = ins.getInspectionStatus();
         require(ins, "IN_PROGRESS", "DRAFT");
         validateWorkflowTransition(ins, "SUBMIT");
         List<QualityInspectionLine> pendingMandatory = ins.getLines().stream()
@@ -331,31 +343,38 @@ public class QualityInspectionService {
         ins.setInspectionStatus(INSPECT);
         ins.setDecisionStatus("PENDING");
         ins.setUpdatedAt(Instant.now());
+        recordStatusChange(ins, from, INSPECT, user, null);
         return ins;
     }
 
     @Transactional
     public QualityInspection hold(Long id, String reason, String user) {
         QualityInspection ins = get(id);
+        String from = ins.getInspectionStatus();
         require(ins, INSPECT, "IN_PROGRESS");
         ins.setInspectionStatus("HOLD");
         ins.setDecisionRemarks(reason);
         ins.setUpdatedAt(Instant.now());
+        recordStatusChange(ins, from, "HOLD", user, reason);
+        sendQualityNotification(ins, "ON_HOLD", reason);
         return ins;
     }
 
     @Transactional
     public QualityInspection releaseHold(Long id, String user) {
         QualityInspection ins = get(id);
+        String from = ins.getInspectionStatus();
         require(ins, "HOLD");
         ins.setInspectionStatus(INSPECT);
         ins.setUpdatedAt(Instant.now());
+        recordStatusChange(ins, from, INSPECT, user, "Hold released");
         return ins;
     }
 
     @Transactional
     public QualityInspection decide(Long id, String decision, String remarks, String user) {
         QualityInspection ins = get(id);
+        String from = ins.getInspectionStatus();
         require(ins, INSPECT);
         validateWorkflowTransition(ins, "DECIDE");
         String d = (decision == null) ? "PASS" : decision.toUpperCase();
@@ -379,12 +398,14 @@ public class QualityInspectionService {
         ins.setDecisionRemarks(safe(remarks));
         ins.setApprovedBy(ins.getInspectionStatus().equals("PASS") ? user : ins.getApprovedBy());
         ins.setUpdatedAt(Instant.now());
+        recordStatusChange(ins, from, ins.getInspectionStatus(), user, remarks);
         return ins;
     }
 
     @Transactional
     public QualityInspection approve(Long id, String user) {
         QualityInspection ins = get(id);
+        String from = ins.getInspectionStatus();
         require(ins, INSPECT);
         validateWorkflowTransition(ins, "APPROVE");
         if (hasCriticalFail(ins)) {
@@ -395,13 +416,17 @@ public class QualityInspectionService {
         ins.setDecisionStatus(ins.getDecisionStatus());
         ins.setApprovedBy(user);
         ins.setApprovedAt(Instant.now());
+        ins.setIsLocked(true);
         ins.setUpdatedAt(Instant.now());
+        recordStatusChange(ins, from, APPROVED, user, null);
+        sendQualityNotification(ins, APPROVED, null);
         return ins;
     }
 
     @Transactional
     public QualityInspection close(Long id, String user) {
         QualityInspection ins = get(id);
+        String from = ins.getInspectionStatus();
         if (ins.getInspectionStatus().equals("FAIL") || hasFailedLine(ins)) {
             if (!hasNcr(ins)) {
                 throw new IllegalStateException(
@@ -412,29 +437,37 @@ public class QualityInspectionService {
         }
         ins.setInspectionStatus("CLOSED");
         ins.setClosedAt(Instant.now());
+        ins.setCompletedAt(Instant.now());
         ins.setUpdatedAt(Instant.now());
+        recordStatusChange(ins, from, "CLOSED", user, null);
+        sendQualityNotification(ins, "CLOSED", null);
         return ins;
     }
 
     @Transactional
     public QualityInspection cancel(Long id, String reason, String user) {
         QualityInspection ins = get(id);
+        String from = ins.getInspectionStatus();
         require(ins, "DRAFT", INSPECT);
         ins.setInspectionStatus("CANCELLED");
         ins.setCancellationReason(reason);
         ins.setCancelledAt(Instant.now());
         ins.setUpdatedAt(Instant.now());
+        recordStatusChange(ins, from, "CANCELLED", user, reason);
         return ins;
     }
 
     @Transactional
     public QualityInspection reopen(Long id, String reason, String user) {
         QualityInspection ins = get(id);
+        String from = ins.getInspectionStatus();
         require(ins, "CLOSED");
         ins.setInspectionStatus("IN_PROGRESS");
         ins.setReopenReason(reason);
         ins.setClosedAt(null);
+        ins.setIsLocked(false);
         ins.setUpdatedAt(Instant.now());
+        recordStatusChange(ins, from, "IN_PROGRESS", user, reason);
         return ins;
     }
 
@@ -480,6 +513,58 @@ public class QualityInspectionService {
     private void requireClosable(QualityInspection ins, String... allowed) {
         for (String a : allowed) if (a.equals(ins.getInspectionStatus())) return;
         throw new IllegalStateException("Cannot close in status " + ins.getInspectionStatus());
+    }
+
+    // ─── Spec §4.2: Status History Recording ───
+
+    /**
+     * Core trackability: write a history row for every status transition.
+     * Also stamps the timing fields on the inspection itself.
+     */
+    private void recordStatusChange(QualityInspection ins, String fromStatus, String toStatus, String user, String remarks) {
+        QualityInspectionStatusHistory h = QualityInspectionStatusHistory.builder()
+                .inspectionId(ins.getId())
+                .inspectionNumber(ins.getInspectionNumber())
+                .inspectionType(ins.getInspectionType() != null ? ins.getInspectionType().name() : null)
+                .previousStatus(fromStatus)
+                .newStatus(toStatus)
+                .remarks(remarks)
+                .changedBy(user)
+                .changedAt(Instant.now())
+                .assignedAt(ins.getAssignedAt())
+                .startedAt(ins.getStartedAt())
+                .completedAt(ins.getCompletedAt())
+                .build();
+        statusHistoryRepo.save(h);
+
+        Instant now = Instant.now();
+        switch (toStatus) {
+            case "IN_PROGRESS" -> {
+                if (ins.getStartedAt() == null) ins.setStartedAt(now);
+            }
+            case "CLOSED" -> {
+                if (ins.getCompletedAt() == null) ins.setCompletedAt(now);
+            }
+            case "APPROVED" -> {
+                ins.setApprovedBy(user);
+                ins.setApprovedAt(now);
+                ins.setIsLocked(true);
+            }
+        }
+    }
+
+    private void sendQualityNotification(QualityInspection ins, String status, String remarks) {
+        try {
+            String recipient = ins.getAssignedInspector();
+            if (recipient == null || recipient.isBlank()) recipient = ins.getCreatedBy();
+            if (recipient == null || recipient.isBlank()) return;
+            String typeName = ins.getInspectionType() != null ? ins.getInspectionType().name() : "";
+            emailService.sendQualityInspectionNotification(
+                    recipient, ins.getInspectionNumber(), typeName,
+                    ins.getItemCode(), status, remarks);
+        } catch (Exception e) {
+            log.warn("Failed to send quality notification for {}: {}", ins.getInspectionNumber(), e.getMessage());
+        }
     }
 
     private void validateQuantities(QualityInspection ins) {
@@ -653,5 +738,5 @@ public class QualityInspectionService {
 
     private String safe(String s) { return s == null ? "" : s; }
 
-    public String nextNumber(String key) { return numbers.next(key); }
+    public String nextNumber(String key) { return numbers.nextFy(key); }
 }

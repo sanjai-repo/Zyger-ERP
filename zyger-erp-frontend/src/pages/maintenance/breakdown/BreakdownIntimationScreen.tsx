@@ -36,9 +36,11 @@ const SC: Record<string, { color: string; bg: string }> = {
 };
 
 const MACHINE_STATUSES = ['RUNNING', 'STOPPED', 'DEGRADED'];
-const CATEGORIES = ['MECHANICAL', 'ELECTRICAL', 'HYDRAULIC', 'PNEUMATIC', 'CNC_CONTROL', 'SOFTWARE_PROGRAM', 'LUBRICATION', 'TOOLING', 'COOLING', 'OTHER'];
 const IMPACTS = ['NONE', 'MINOR', 'MODERATE', 'SEVERE', 'CRITICAL'];
 const PRIORITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+
+interface MasterCategory { id: number; name: string; code: string; }
+interface MasterTechnician { id: number; firstName: string; lastName: string; designation: string; }
 
 export default function BreakdownIntimationScreen() {
   const { toast } = useToast();
@@ -53,6 +55,8 @@ export default function BreakdownIntimationScreen() {
   const [openActionMenu, setOpenActionMenu] = useState<number | null>(null);
   const [actionTarget, setActionTarget] = useState<{ id: number; action: string } | null>(null);
   const [actionNote, setActionNote] = useState('');
+  const [categories, setCategories] = useState<MasterCategory[]>([]);
+  const [technicians, setTechnicians] = useState<MasterTechnician[]>([]);
 
   const load = async () => {
     setLoading(true);
@@ -64,6 +68,11 @@ export default function BreakdownIntimationScreen() {
   };
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    apiClient.get('/v1/maintenance/breakdown-categories').then(({ data }) => setCategories(Array.isArray(data) ? data : [])).catch(() => {});
+    apiClient.get('/v1/maintenance/technicians').then(({ data }) => setTechnicians(Array.isArray(data) ? data : [])).catch(() => {});
+  }, []);
 
   const save = async () => {
     if (!String(form.machineCode ?? '').trim()) { toast('Machine Code is required.', 'error'); return; }
@@ -119,9 +128,9 @@ export default function BreakdownIntimationScreen() {
             <label className="fld"><span>Operator Code</span><input className="in" value={String(form.operatorCode ?? '')} onChange={(e) => set('operatorCode', e.target.value)} /></label>
             <label className="fld"><span>Shift Code</span><input className="in" value={String(form.shiftCode ?? '')} onChange={(e) => set('shiftCode', e.target.value)} /></label>
             <label className="fld"><span>Breakdown Category</span>
-              <select className="in" value={String(form.breakdownCategory ?? '')} onChange={(e) => set('breakdownCategory', e.target.value)}>
+              <select className="in" value={String(form.breakdownCategoryId ?? form.breakdownCategory ?? '')} onChange={(e) => set('breakdownCategoryId', e.target.value)}>
                 <option value="">Select...</option>
-                {CATEGORIES.map((c) => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}
+                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </label>
             <label className="fld"><span>CNC Alarm Code</span><input className="in" value={String(form.cncAlarmCode ?? '')} onChange={(e) => set('cncAlarmCode', e.target.value)} /></label>
@@ -138,7 +147,12 @@ export default function BreakdownIntimationScreen() {
                 {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
               </select>
             </label>
-            <label className="fld"><span>Assigned To</span><input className="in" value={String(form.assignedTo ?? '')} onChange={(e) => set('assignedTo', e.target.value)} /></label>
+            <label className="fld"><span>Assigned To</span>
+              <select className="in" value={String(form.assignedTechnicianId ?? form.assignedTo ?? '')} onChange={(e) => set('assignedTechnicianId', e.target.value)}>
+                <option value="">Select...</option>
+                {technicians.map((t) => <option key={t.id} value={t.id}>{t.firstName} {t.lastName} ({t.designation})</option>)}
+              </select>
+            </label>
             <label className="fld" style={{ gridColumn: 'span 2' }}><span>Diagnosis</span><textarea className="in" rows={3} value={String(form.diagnosis ?? '')} onChange={(e) => set('diagnosis', e.target.value)} /></label>
             <label className="fld"><span>Remarks</span><input className="in" value={String(form.remarks ?? '')} onChange={(e) => set('remarks', e.target.value)} /></label>
           </div>

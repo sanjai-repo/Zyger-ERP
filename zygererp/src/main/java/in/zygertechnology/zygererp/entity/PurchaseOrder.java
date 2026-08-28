@@ -1,6 +1,7 @@
 package in.zygertechnology.zygererp.entity;
 import jakarta.persistence.*; import lombok.*;
 import java.time.LocalDate;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 @Entity @Table(name="purchase_order") @Getter @Setter @DocKey("purchase-order")
@@ -25,6 +26,9 @@ public class PurchaseOrder extends BaseDoc implements DocEntity {
     @Column(name = "billing_address", length = 500) String billingAddress;
     @Column(name = "shipping_address", length = 500) String shippingAddress;
     @Column(name = "attachment_file_name", length = 200) String attachmentFileName;
+    @Column(name = "email_sent_at") Instant emailSentAt;
+    @Column(name = "email_status", length = 30) String emailStatus;
+    @Column(name = "email_error", length = 500) String emailError;
     @OneToMany(mappedBy = "doc", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     List<PurchaseOrderItem> lines = new ArrayList<>();
     @OneToMany(mappedBy = "doc", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)

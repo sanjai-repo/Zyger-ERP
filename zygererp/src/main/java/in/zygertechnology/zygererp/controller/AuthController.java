@@ -6,7 +6,9 @@ import in.zygertechnology.zygererp.entity.RefreshToken;
 import in.zygertechnology.zygererp.repo.UserRepository;
 import in.zygertechnology.zygererp.repo.LoginAuditLogRepository;
 import in.zygertechnology.zygererp.repo.RefreshTokenRepository;
+import in.zygertechnology.zygererp.security.CurrentUserRoles;
 import in.zygertechnology.zygererp.security.JwtService;
+import in.zygertechnology.zygererp.service.UserApprovalService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,6 +21,7 @@ import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -34,6 +37,7 @@ public class AuthController {
     private final JwtService jwt;
     private final LoginAuditLogRepository auditLogs;
     private final RefreshTokenRepository refreshTokens;
+    private final UserApprovalService userApprovalService;
 
     @Value("${app.security.password-min-length:8}")
     private int passwordMinLength;
@@ -68,6 +72,18 @@ public class AuthController {
                     return new IllegalArgumentException("Invalid credentials");
                 });
 
+        String status = u.getStatus() == null ? "ACTIVE" : u.getStatus().toUpperCase();
+        if (!"ACTIVE".equals(status)) {
+            logAudit(username, status.equals("PENDING") ? "PENDING" : "DISABLED", request);
+            String msg = switch (status) {
+                case "PENDING" -> "Account is awaiting admin approval.";
+                case "REJECTED" -> "Account was rejected. Contact the administrator.";
+                case "SUSPENDED" -> "Account is suspended. Contact the administrator.";
+                default -> "Account is disabled.";
+            };
+            throw new IllegalArgumentException(msg);
+        }
+
         if (!u.isActive()) {
             logAudit(username, "DISABLED", request);
             throw new IllegalArgumentException("Account is disabled");
@@ -81,6 +97,8 @@ public class AuthController {
 
         attempts.remove(username);
         logAudit(username, "SUCCESS", request);
+        u.setLastLoginAt(Instant.now());
+        users.save(u);
 
         String role = u.getRole() == null ? "USER" : u.getRole();
         String accessToken = jwt.generate(u.getUsername(), role, ACCESS_TOKEN_TTL_MS);
@@ -141,6 +159,19 @@ public class AuthController {
         return Map.of("message", "Logged out successfully");
     }
 
+    /**
+     * Self-service: returns the effective per-screen access matrix for the logged-in user.
+     * Drives UI visibility (menu + action buttons). Strict allow-list for normal users;
+     * ADMIN users get every screen fully granted.
+     */
+    @GetMapping("/screens")
+    public List<Map<String,Object>> myScreens() {
+        String username = CurrentUserRoles.username();
+        AppUser u = users.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        return userApprovalService.effectiveMatrix(u.getId());
+    }
+
     private String issueRefreshToken(Long userId) {
         byte[] bytes = new byte[32];
         SECURE_RANDOM.nextBytes(bytes);
@@ -183,6 +214,7 @@ public class AuthController {
         String username = body.getOrDefault("username", "").trim();
         String email = body.getOrDefault("email", "").trim();
         String password = body.getOrDefault("password", "");
+        String requestedRole = body.getOrDefault("requestedRole", "").trim();
 
         if (displayName.isBlank()) throw new IllegalArgumentException("Display name is required");
         if (username.isBlank()) throw new IllegalArgumentException("Username is required");
@@ -212,6 +244,8 @@ public class AuthController {
         u.setFullName(displayName);
         u.setEmail(email);
         u.setRole("USER");
+        u.setStatus("PENDING");
+        u.setRequestedRole(requestedRole.isBlank() ? null : requestedRole);
         u.setActive(false);
         u.setCreatedBy("self-registration");
         u.setCreatedAt(java.time.Instant.now());

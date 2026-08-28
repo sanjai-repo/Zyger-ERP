@@ -266,6 +266,9 @@ export default function QualityForm({ documentId, viewOnly = false, onBack, defa
   const [decisionModal, setDecisionModal] = useState<DecisionModal | null>(null);
   const [ncrForm, setNcrForm] = useState({ defectCode: '', quantityAffected: '', severity: 'MAJOR' });
   const [initializedForId, setInitializedForId] = useState('');
+  const [spcData, setSpcData] = useState<any[] | null>(null);
+  const [spcLoading, setSpcLoading] = useState(false);
+  const [spcCharFilter, setSpcCharFilter] = useState('');
 
   useEffect(() => {
     if (isCreateMode) {
@@ -1279,6 +1282,108 @@ export default function QualityForm({ documentId, viewOnly = false, onBack, defa
           )}
         </div>
 
+        {header.itemCode && (
+          <div className="panel">
+            <div className="panel-h">
+              <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className="material-symbols-rounded">monitoring</span>
+                SPC Chart
+                {spcData && <span style={{ fontSize: 12, color: '#a6e3a1', fontWeight: 400 }}>({spcData.length} characteristic{spcData.length !== 1 ? 's' : ''})</span>}
+              </h2>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={async () => {
+                  setSpcLoading(true);
+                  try {
+                    const params = new URLSearchParams({ itemCode: header.itemCode });
+                    if (spcCharFilter) params.set('characteristicCode', spcCharFilter);
+                    const { data } = await apiClient.get(`/v1/quality/spc?${params.toString()}`);
+                    setSpcData(data.characteristics ?? []);
+                  } catch (e) { toast(getApiErrorMessage(e, 'SPC load failed.'), 'error'); }
+                  setSpcLoading(false);
+                }}
+                disabled={spcLoading}
+              >
+                <span className="material-symbols-rounded">{spcLoading ? 'hourglass_empty' : 'refresh'}</span>
+                {spcData ? 'Refresh' : 'Load SPC'}
+              </button>
+            </div>
+            {!spcData && !spcLoading && (
+              <p style={{ padding: '12px 16px', color: '#888', fontSize: 13 }}>Click "Load SPC" to view historical measurement data for item <strong>{header.itemCode}</strong>.</p>
+            )}
+            {spcLoading && <p style={{ padding: '12px 16px', color: '#888', fontSize: 13 }}>Loading SPC data...</p>}
+            {spcData && spcData.length === 0 && (
+              <p style={{ padding: '12px 16px', color: '#888', fontSize: 13 }}>No historical measurement data found for <strong>{header.itemCode}</strong>.</p>
+            )}
+            {spcData && spcData.length > 0 && (
+              <div style={{ padding: '0 16px 16px' }}>
+                {spcData.map((ch: any) => {
+                  const samples: any[] = ch.samples ?? [];
+                  const values = samples.map((s) => Number(s.value)).filter((v) => !isNaN(v));
+                  if (values.length === 0) return null;
+                  const nom = Number(ch.nominalValue) || 0;
+                  const lsl = Number(ch.lowerLimit);
+                  const usl = Number(ch.upperLimit);
+                  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+                  const maxVal = Math.max(...values, usl || 0);
+                  const minVal = Math.min(...values, lsl || 0);
+                  const range = maxVal - minVal || 1;
+                  const chartH = 120;
+                  const barW = Math.max(20, Math.min(40, 600 / values.length));
+
+                  const toY = (v: number) => chartH - ((v - minVal) / range) * chartH;
+
+                  return (
+                    <div key={ch.characteristicCode} style={{ marginBottom: 16, border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, padding: 12 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <div>
+                          <strong style={{ fontSize: 13 }}>{ch.characteristicCode}</strong>
+                          <span style={{ fontSize: 12, color: '#888', marginLeft: 8 }}>{ch.characteristicName}</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: '#888' }}>
+                          n={values.length} | x̄={mean.toFixed(3)} {ch.uom} | {ch.nominalValue != null ? `Nom: ${ch.nominalValue}` : ''}
+                        </div>
+                      </div>
+                      <svg width="100%" height={chartH + 40} viewBox={`0 0 ${Math.max(200, values.length * barW + 60)} ${chartH + 40}`} style={{ display: 'block' }}>
+                        {/* UCL/LCL lines */}
+                        {usl != null && (
+                          <>
+                            <line x1={30} y1={toY(usl)} x2={values.length * barW + 30} y2={toY(usl)} stroke="#ef4444" strokeWidth={1} strokeDasharray="4,3" />
+                            <text x={2} y={toY(usl) + 4} fontSize={9} fill="#ef4444">USL</text>
+                          </>
+                        )}
+                        {lsl != null && (
+                          <>
+                            <line x1={30} y1={toY(lsl)} x2={values.length * barW + 30} y2={toY(lsl)} stroke="#ef4444" strokeWidth={1} strokeDasharray="4,3" />
+                            <text x={2} y={toY(lsl) + 4} fontSize={9} fill="#ef4444">LSL</text>
+                          </>
+                        )}
+                        {/* Mean line */}
+                        <line x1={30} y1={toY(mean)} x2={values.length * barW + 30} y2={toY(mean)} stroke="#2563eb" strokeWidth={1.5} strokeDasharray="6,3" />
+                        <text x={2} y={toY(mean) + 4} fontSize={9} fill="#2563eb">x̄</text>
+                        {/* Data points */}
+                        {values.map((v, i) => (
+                          <g key={i}>
+                            {i > 0 && (
+                              <line x1={30 + (i - 1) * barW + barW / 2} y1={toY(values[i - 1])} x2={30 + i * barW + barW / 2} y2={toY(v)} stroke="#2563eb" strokeWidth={1} />
+                            )}
+                            <circle cx={30 + i * barW + barW / 2} cy={toY(v)} r={3.5}
+                              fill={samples[i]?.result === 'FAIL' ? '#ef4444' : samples[i]?.result === 'PASS' ? '#22c55e' : '#888'} />
+                            <text x={30 + i * barW + barW / 2} y={chartH + 14} fontSize={8} fill="#999" textAnchor="middle">
+                              {samples[i]?.inspectionNumber?.slice(-3) ?? ''}
+                            </text>
+                          </g>
+                        ))}
+                      </svg>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {status === 'FAIL' && !viewOnly && (
           <div className="panel">
             <div className="panel-h">
@@ -1530,6 +1635,26 @@ export default function QualityForm({ documentId, viewOnly = false, onBack, defa
                   >
                     <span className="material-symbols-rounded">restart_alt</span>
                     Reopen
+                  </button>
+                )}
+
+                {['CLOSED', 'REJECTED'].includes(status) && documentId && (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={async () => {
+                      if (!confirm('Create a re-inspection linked to this inspection?')) return;
+                      try {
+                        const { data } = await apiClient.post(`/v1/quality/inspections/${documentId}/re-inspection`, {
+                          priority: 'High',
+                        });
+                        toast('Re-inspection created: ' + (data.inspectionNumber ?? data.id));
+                      } catch (e) { toast(getApiErrorMessage(e, 'Re-inspection failed.'), 'error'); }
+                    }}
+                    disabled={isBusy}
+                  >
+                    <span className="material-symbols-rounded">replay</span>
+                    Re-Inspect
                   </button>
                 )}
               </>

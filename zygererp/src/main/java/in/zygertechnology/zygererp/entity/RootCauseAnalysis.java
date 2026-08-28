@@ -64,6 +64,9 @@ public class RootCauseAnalysis {
     @Column(length = 500)
     private String remarks;
 
+    @Column(name = "root_cause_code_id")
+    private Long rootCauseCodeId;
+
     @Version private Long version;
     @Column(name = "created_by", length = 60) private String createdBy;
     @Column(name = "created_at") private Instant createdAt;

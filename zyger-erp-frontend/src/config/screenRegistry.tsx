@@ -52,6 +52,7 @@ import NcrPage from '../pages/quality/ncr/NcrPage';
 import PurchaseRequestPage from '../pages/purchase/request/PurchaseRequestPage';
 import SupplierEnquiryPage from '../pages/purchase/enquiry/SupplierEnquiryPage';
 import SupplierQuotationPage from '../pages/purchase/quotation/SupplierQuotationPage';
+import QuotationComparisonPage from '../pages/purchase/quotation/QuotationComparisonPage';
 import PurchaseOrderPage from '../pages/purchase/order/PurchaseOrderPage';
 import PoSchedulePage from '../pages/purchase/schedule/PoSchedulePage';
 import JoSchedulePage from '../pages/purchase/schedule/JoSchedulePage';
@@ -103,6 +104,7 @@ import ProductionLogScreen from '../pages/production/production-log/ProductionLo
 import IdleTimeScreen from '../pages/production/idle-time/IdleTimeScreen';
 import ProductionPendingScreen from '../pages/production/production-pending/ProductionPendingScreen';
 import MaintenanceDashboard from '../pages/maintenance/dashboard/MaintenanceDashboard';
+import MaintenanceMastersPage from '../pages/maintenance/masters/MaintenanceMastersPage';
 import BreakdownIntimationScreen from '../pages/maintenance/breakdown/BreakdownIntimationScreen';
 import BreakdownRectificationScreen from '../pages/maintenance/breakdown/BreakdownRectificationScreen';
 import PmPlanScreen from '../pages/maintenance/pm/PmPlanScreen';
@@ -117,6 +119,8 @@ import WaterConsumptionScreen from '../pages/maintenance/utilities/WaterConsumpt
 import RootCauseAnalysisScreen from '../pages/maintenance/analysis/RootCauseAnalysisScreen';
 import MaintenanceAnalysisScreen from '../pages/maintenance/analysis/MaintenanceAnalysisScreen';
 import MaintenanceReportsScreen from '../pages/maintenance/reports/MaintenanceReportsScreen';
+import DowntimeCostReportPage from '../pages/maintenance/reports/DowntimeCostReportPage';
+import NotificationLogPage from '../pages/maintenance/notifications/NotificationLogPage';
 import CompanyInfoScreen from '../pages/master/company-info/CompanyInfoScreen';
 import UOMScreen from '../pages/master/uom/UOMScreen';
 import ItemGroupScreen from '../pages/master/item-group/ItemGroupScreen';
@@ -133,6 +137,7 @@ import ManufacturingItemScreen from '../pages/master/items/manufacturing/Manufac
 import CustomerListScreen from '../pages/master/customers/CustomerListScreen';
 import SupplierListScreen from '../pages/master/suppliers/SupplierListScreen';
 import UserScreen from '../pages/master/users/UserScreen';
+import AccessControlPanel from '../pages/admin/access/AccessControlPanel';
 import RackScreen from '../pages/master/rack/RackScreen';
 import BinScreen from '../pages/master/bin/BinScreen';
 import NumberingConfigPage from '../pages/master/numbering-config/NumberingConfigPage';
@@ -212,6 +217,7 @@ export const SCREEN_REGISTRY: Record<string, ScreenDefinition> = {
   'purchase-request': { component: PurchaseRequestPage },
   'supplier-enquiry': { component: SupplierEnquiryPage },
   'supplier-quotation': { component: SupplierQuotationPage },
+  'quotation-comparison': { component: QuotationComparisonPage },
   'purchase-order': { component: PurchaseOrderPage },
   'po-schedule': { component: PoSchedulePage },
   'jo-schedule': { component: JoSchedulePage },
@@ -256,6 +262,7 @@ export const SCREEN_REGISTRY: Record<string, ScreenDefinition> = {
   'idle-time': { component: IdleTimeScreen },
   'production-pending': { component: ProductionPendingScreen },
   'maintenance-dashboard': { component: MaintenanceDashboard },
+  'maintenance-masters': { component: MaintenanceMastersPage },
   'breakdown-intimation': { component: BreakdownIntimationScreen },
   'breakdown-rectification': { component: BreakdownRectificationScreen },
   'pm-plan': { component: PmPlanScreen },
@@ -270,6 +277,8 @@ export const SCREEN_REGISTRY: Record<string, ScreenDefinition> = {
   'rca': { component: RootCauseAnalysisScreen },
   'maintenance-analysis-view': { component: MaintenanceAnalysisScreen },
   'maintenance-reports': { component: MaintenanceReportsScreen },
+  'downtime-cost-report': { component: DowntimeCostReportPage },
+  'notification-log': { component: NotificationLogPage },
   'company-info': { component: CompanyInfoScreen },
   'uom-master': { component: UOMScreen },
   'item-group-master': { component: ItemGroupScreen },
@@ -287,6 +296,7 @@ export const SCREEN_REGISTRY: Record<string, ScreenDefinition> = {
   'customer-list': { component: CustomerListScreen },
   'supplier-list': { component: SupplierListScreen },
   'user-management': { component: UserScreen },
+  'access-control': { component: AccessControlPanel },
   'numbering-config': { component: NumberingConfigPage },
   'plant-master': { component: PlantMasterPage },
   'work-center-master': { component: WorkCenterMasterPage },

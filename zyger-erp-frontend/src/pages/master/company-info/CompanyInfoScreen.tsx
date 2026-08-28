@@ -135,6 +135,8 @@ export default function CompanyInfoScreen() {
       const field = type === 'company' ? 'companyLogoUrl' : type === 'iso' ? 'isoLogoUrl' : 'bisLogoUrl';
       setFld(field, data.url);
       toast(`${type.charAt(0).toUpperCase() + type.slice(1)} logo uploaded.`);
+      // Notify the layout/sidebar to refresh the brand logo immediately.
+      window.dispatchEvent(new CustomEvent('company-info-updated'));
     } catch {
       toast('Logo upload failed.', 'error');
     }
@@ -145,7 +147,8 @@ export default function CompanyInfoScreen() {
     if (!url) return undefined;
     const type = url.includes('/iso/') ? 'iso' : url.includes('/bis/') ? 'bis' : 'company';
     const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
-    return baseUrl.replace(/\/$/, '') + '/master/company-info/logo/' + type;
+    // Query param cache-buster so a freshly uploaded logo renders immediately.
+    return baseUrl.replace(/\/$/, '') + '/master/company-info/logo/' + type + '?v=' + encodeURIComponent(url);
   };
 
   const setFld = (k: keyof CompanyInfoState, v: any) => setForm(c => ({ ...c, [k]: v }));

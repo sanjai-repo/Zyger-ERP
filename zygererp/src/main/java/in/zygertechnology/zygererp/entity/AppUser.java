@@ -21,6 +21,29 @@ public class AppUser {
     @Column(length = 60) String department;
     @Column(length = 60) String designation;
     @Column(name = "plant_id") @Builder.Default Long plantId = 1L;
+
+    @Builder.Default
+    @Column(name = "status", nullable = false, length = 20)
+    String status = "ACTIVE";
+
+    @Column(name = "requested_role", length = 60)
+    String requestedRole;
+
+    @Column(name = "approved_role", length = 60)
+    String approvedRole;
+
+    @Column(name = "approved_by")
+    Long approvedBy;
+
+    @Column(name = "approved_at")
+    Instant approvedAt;
+
+    @Column(name = "rejection_reason", columnDefinition = "TEXT")
+    String rejectionReason;
+
+    @Column(name = "last_login_at")
+    Instant lastLoginAt;
+
     @Version Long version;
     String createdBy;
     Instant createdAt;

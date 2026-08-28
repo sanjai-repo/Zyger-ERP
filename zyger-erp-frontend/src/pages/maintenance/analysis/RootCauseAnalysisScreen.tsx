@@ -18,6 +18,8 @@ const SC: Record<string, { color: string; bg: string }> = {
   CANCELLED: { color: '#991b1b', bg: '#fde2e2' },
 };
 
+interface RootCauseCodeMaster { id: number; code: string; description: string; }
+
 export default function RootCauseAnalysisScreen() {
   const { toast } = useToast();
   const [rows, setRows] = useState<RCA[]>([]);
@@ -31,6 +33,7 @@ export default function RootCauseAnalysisScreen() {
   const [actionNote, setActionNote] = useState('');
   const [actionTarget, setActionTarget] = useState<{ id: number; action: string } | null>(null);
   const [openActionMenu, setOpenActionMenu] = useState<number | null>(null);
+  const [rootCauseCodes, setRootCauseCodes] = useState<RootCauseCodeMaster[]>([]);
 
   const load = async () => {
     setLoading(true);
@@ -39,6 +42,10 @@ export default function RootCauseAnalysisScreen() {
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    apiClient.get('/v1/maintenance/root-cause-codes').then(({ data }) => setRootCauseCodes(Array.isArray(data) ? data : [])).catch(() => {});
+  }, []);
 
   const save = async () => {
     if (!String(form.machineCode ?? '').trim() && !String(form.breakdownId ?? '').trim()) { toast('Machine or Breakdown reference required.', 'error'); return; }
@@ -97,6 +104,12 @@ export default function RootCauseAnalysisScreen() {
             <label className="fld"><span>Breakdown Number</span><input className="in" value={String(form.breakdownNumber ?? '')} onChange={(e) => set('breakdownNumber', e.target.value)} /></label>
             <label className="fld" style={{ gridColumn: '1 / -1' }}><span>Problem Description</span><textarea className="in" rows={2} value={String(form.problemDescription ?? '')} onChange={(e) => set('problemDescription', e.target.value)} /></label>
             <label className="fld" style={{ gridColumn: '1 / -1' }}><span>Immediate Cause</span><textarea className="in" rows={2} value={String(form.immediateCause ?? '')} onChange={(e) => set('immediateCause', e.target.value)} /></label>
+            <label className="fld"><span>Root Cause Code</span>
+              <select className="in" value={String(form.rootCauseCodeId ?? '')} onChange={(e) => set('rootCauseCodeId', e.target.value)}>
+                <option value="">Select...</option>
+                {rootCauseCodes.map((rc) => <option key={rc.id} value={rc.id}>{rc.code} — {rc.description}</option>)}
+              </select>
+            </label>
             <label className="fld" style={{ gridColumn: '1 / -1' }}><span>Root Cause (5 Whys)</span><textarea className="in" rows={3} value={String(form.rootCause ?? '')} onChange={(e) => set('rootCause', e.target.value)} /></label>
             <label className="fld" style={{ gridColumn: '1 / -1' }}><span>Contributing Cause</span><textarea className="in" rows={2} value={String(form.contributingCause ?? '')} onChange={(e) => set('contributingCause', e.target.value)} /></label>
             <label className="fld" style={{ gridColumn: '1 / -1' }}><span>Corrective Action</span><textarea className="in" rows={2} value={String(form.correctiveAction ?? '')} onChange={(e) => set('correctiveAction', e.target.value)} /></label>

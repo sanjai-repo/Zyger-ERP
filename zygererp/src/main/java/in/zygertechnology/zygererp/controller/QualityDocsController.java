@@ -36,6 +36,17 @@ public class QualityDocsController {
             "quality-8d"
     );
 
+    /** Spec §3 FY-prefix mapping for quality doc types. */
+    private static final Map<String, String> FY_PREFIX = Map.of(
+            "quality-ncr",               "NCR",
+            "quality-concession",         "CON",
+            "quality-test-certificate",   "ITC",
+            "quality-calibration-record", "CAL",
+            "quality-customer-complaint", "CC",
+            "quality-capa",              "CAP",
+            "quality-8d",                "8D"
+    );
+
     private final DocumentFacade svc;
     private final ExportService export;
     private final QualitySupportService support;
@@ -82,7 +93,11 @@ public class QualityDocsController {
 
     @GetMapping("/{type}/next-number")
     Map<String, Object> next(@PathVariable String type) {
-        return Map.of("nextNumber", svc.nextNumber(key(type)));
+        String prefix = FY_PREFIX.get(key(type));
+        if (prefix != null) {
+            return Map.of("nextNumber", svc.peekNumberFy(prefix));
+        }
+        return Map.of("nextNumber", svc.peekNumber(key(type)));
     }
 
     @PostMapping("/{type}/{id}/actions/{action}")

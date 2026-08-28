@@ -83,10 +83,10 @@ public class DocumentController {
             String issueType = q.get("issueType");
             if (issueType != null && !issueType.isBlank()) {
                 String prefix = "INTERNAL".equalsIgnoreCase(issueType) ? "INT" : "EXT";
-                return Map.of("prefix", prefix, "nextNumber", svc.nextNumber(type, prefix));
+                return Map.of("prefix", prefix, "nextNumber", svc.peekNumber(type, prefix));
             }
         }
-        return Map.of("nextNumber", svc.nextNumber(type));
+        return Map.of("nextNumber", svc.peekNumber(type));
     }
 
     @PostMapping({
@@ -123,7 +123,7 @@ public class DocumentController {
     }
 
     @GetMapping("/stock-issue-request/next-number")
-    Map<String, Object> sirN() { return Map.of("nextNumber", svc.nextNumber("stock-issue-request")); }
+    Map<String, Object> sirN() { return Map.of("nextNumber", svc.peekNumber("stock-issue-request")); }
 
     @GetMapping("/stock-issue-request/{id}")
     Map<String, Object> sirG(@PathVariable Long id) { return svc.toRow(svc.get("stock-issue-request", id)); }

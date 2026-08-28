@@ -1,7 +1,5 @@
-version: "3.8"
-
 services:
-  db:
+  database:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: zyger_erp
@@ -9,53 +7,9 @@ services:
       POSTGRES_PASSWORD: zyger123
     volumes:
       - pgdata:/var/lib/postgresql/data
-    networks:
-      - zyger-net
-    deploy:
-      replicas: 1
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 5
-      resources:
-        limits:
-          memory: 1G
-
-  backend:
-    image: zygererpupdate-backend:latest
-    environment:
-      DB_URL: jdbc:postgresql://db:5432/zyger_erp
-      DB_USERNAME: zyger
-      DB_PASSWORD: zyger123
-      SERVER_PORT: "9090"
-      SPRING_PROFILES_ACTIVE: dev
-      JWT_SECRET: zyger-erp-docker-swarm-jwt-secret-2026
-      JWT_EXPIRATION_MS: "3600000"
-      CORS_ORIGINS: "http://localhost,http://localhost:9091"
-      PASSWORD_MIN_LENGTH: "8"
-      MAX_LOGIN_ATTEMPTS: "5"
-      LOCKOUT_MINUTES: "15"
-      JAVA_OPTS: "-Xms512m -Xmx1g"
-    networks:
-      - zyger-net
-    deploy:
-      replicas: 1
-      restart_policy:
-        condition: on-failure
-        delay: 10s
-        max_attempts: 5
-      update_config:
-        parallelism: 1
-        delay: 30s
-      resources:
-        limits:
-          memory: 2G
-
-  frontend:
-    image: zygererpupdate-frontend:latest
     ports:
-      - target: 80
-        published: 9091
+      - target: 5432
+        published: 5433
         protocol: tcp
         mode: host
     networks:
@@ -63,21 +17,62 @@ services:
     deploy:
       replicas: 1
       restart_policy:
-        condition: on-failure
+        condition: any
         delay: 5s
-        max_attempts: 5
-      update_config:
-        parallelism: 1
-        delay: 10s
-      resources:
-        limits:
-          memory: 256M
+      placement:
+        constraints:
+          - node.role == manager
 
-networks:
-  zyger-net:
-    driver: overlay
-    attachable: true
+  backend:
+    image: zygererp-backend:latest
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_URL: jdbc:postgresql://database:5432/zyger_erp
+      DB_USERNAME: zyger
+      DB_PASSWORD: zyger123
+      SERVER_PORT: "9090"
+      CORS_ORIGINS: http://localhost,http://localhost:8081
+      JWT_SECRET: change-me-in-production-use-a-256-bit-random-string
+      JWT_EXPIRATION_MS: "3600000"
+    ports:
+      - target: 9090
+        published: 9090
+        protocol: tcp
+        mode: host
+    networks:
+      - zyger-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 5s
+      placement:
+        constraints:
+          - node.role == manager
+
+  frontend:
+    image: zygererp-frontend:latest
+    depends_on:
+      - backend
+    ports:
+      - target: 80
+        published: 8081
+        protocol: tcp
+        mode: host
+    networks:
+      - zyger-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 5s
+      placement:
+        constraints:
+          - node.role == manager
 
 volumes:
   pgdata:
-    driver: local
+
+networks:
+  zyger-net:
+    name: zyger-net

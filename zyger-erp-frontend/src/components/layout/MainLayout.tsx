@@ -80,7 +80,7 @@ function flattenNav(nodes: unknown[], icon?: string): SearchResult[] {
   return out;
 }
 
-function filterNavByPermission(nodes: NavNode[], hasModule: (mod: string) => boolean): NavNode[] {
+function filterNavByPermission(nodes: NavNode[], canView: (screenId: string) => boolean): NavNode[] {
   const result: NavNode[] = [];
   for (const node of nodes) {
     if (node.type === 'heading') {
@@ -88,11 +88,15 @@ function filterNavByPermission(nodes: NavNode[], hasModule: (mod: string) => boo
       continue;
     }
     if (node.type === 'item') {
-      result.push(node);
+      if (node.screenId) {
+        if (canView(node.screenId)) result.push(node);
+      } else {
+        result.push(node);
+      }
       continue;
     }
     if (node.type === 'group') {
-      const filtered = filterNavByPermission(node.children, hasModule);
+      const filtered = filterNavByPermission(node.children, canView);
       if (filtered.length > 0) {
         result.push({ ...node, children: filtered });
       }
@@ -101,19 +105,22 @@ function filterNavByPermission(nodes: NavNode[], hasModule: (mod: string) => boo
   return result;
 }
 
-function filterTopItems(items: NavTopItem[], hasModule: (mod: string) => boolean, _can: (mod: string, action: string) => boolean): NavTopItem[] {
-  return items.filter((item) => {
-    const modName = item.id === 'reports-menu' ? 'reports' : item.id;
-    if (!hasModule(modName) && modName !== 'dashboard') return false;
-
-    if (!item.children || item.children.length === 0) return true;
-
-    const filtered = filterNavByPermission(item.children, hasModule);
-    return filtered.length > 0;
-  }).map((item) => {
-    if (!item.children || item.children.length === 0) return item;
-    return { ...item, children: filterNavByPermission(item.children, hasModule) as NavNode[] };
-  });
+function filterTopItems(items: NavTopItem[], canView: (screenId: string) => boolean): NavTopItem[] {
+  const result: NavTopItem[] = [];
+  for (const item of items) {
+    const hasChildren = item.children && item.children.length > 0;
+    if (!hasChildren) {
+      if (item.id === 'dashboard') { result.push(item); continue; }
+      if (item.screenId) { if (canView(item.screenId)) result.push(item); }
+      else { result.push(item); }
+      continue;
+    }
+    const filtered = filterNavByPermission(item.children!, canView);
+    if (filtered.length > 0) {
+      result.push({ ...item, children: filtered });
+    }
+  }
+  return result;
 }
 
 function getInitialTheme(): 'light' | 'dark' {
@@ -128,7 +135,7 @@ function getInitialTheme(): 'light' | 'dark' {
 const NOTIF_POLL_MS = 60_000;
 
 export default function MainLayout() {
-  const { user, logout, hasModule, can } = useAuth();
+  const { user, logout, can, canScreen } = useAuth();
   const { tabs, activeTabId, openTab, closeTab, setActiveTab } = useTabs();
 
   const [searchOpen, setSearchOpen] = useState(false);
@@ -154,16 +161,41 @@ export default function MainLayout() {
 
   const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
 
-  useEffect(() => {
+  const refreshCompanyInfo = useCallback(() => {
     apiClient.get('/master/company-info').then(res => {
       const d = res.data;
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
       if (d?.companyLogoUrl) {
-        const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
-        setCompanyLogo(baseUrl.replace(/\/$/, '') + '/master/company-info/logo/company');
+        // Cache-buster from the stored URL so a freshly uploaded logo shows immediately.
+        setCompanyLogo(baseUrl.replace(/\/$/, '') + '/master/company-info/logo/company?v=' + encodeURIComponent(d.companyLogoUrl));
+      } else {
+        setCompanyLogo(null);
       }
       if (d?.companyName) setCompanyName(d.companyName);
     }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    refreshCompanyInfo();
+  }, [refreshCompanyInfo]);
+
+  // Refresh the branding immediately after a logo/company-info update (no page reload).
+  useEffect(() => {
+    const handler = () => refreshCompanyInfo();
+    window.addEventListener('company-info-updated', handler);
+    return () => window.removeEventListener('company-info-updated', handler);
+  }, [refreshCompanyInfo]);
+
+  // Show the uploaded company logo as the browser favicon.
+  useEffect(() => {
+    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'icon';
+      document.head.appendChild(link);
+    }
+    link.href = companyLogo ?? '/favicon.svg';
+  }, [companyLogo]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -198,18 +230,14 @@ export default function MainLayout() {
   }, []);
 
   const filteredNavItems = useMemo(
-    () => filterTopItems(NAV_ITEMS, (m: string) => hasModule(m as PermissionModule), (m, a) => can(m as PermissionModule, a as PermissionAction)),
-    [hasModule, can]
+    () => filterTopItems(NAV_ITEMS, (sid) => canScreen(sid, 'View')),
+    [canScreen]
   );
 
   const filteredScreens = useMemo(() => {
     const allScreens = flattenNav(NAV_ITEMS);
-    return allScreens.filter((s) => {
-      const parts = s.screenId.split('-');
-      const mod = parts[0];
-      return hasModule(mod as PermissionModule) || mod === 'reports';
-    });
-  }, [hasModule]);
+    return allScreens.filter((s) => canScreen(s.screenId, 'View'));
+  }, [canScreen]);
 
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];

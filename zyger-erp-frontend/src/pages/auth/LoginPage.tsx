@@ -29,6 +29,21 @@ export default function LoginPage() {
 
   useEffect(() => { requestAnimationFrame(() => setMounted(true)); }, []);
 
+  // Show the uploaded company logo as the favicon on the login page (logo endpoint is public).
+  useEffect(() => {
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+    const logoUrl = baseUrl.replace(/\/$/, '') + '/master/company-info/logo/company';
+    const existing = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (existing) {
+      existing.href = logoUrl;
+    } else {
+      const link = document.createElement('link');
+      link.rel = 'icon';
+      link.href = logoUrl;
+      document.head.appendChild(link);
+    }
+  }, []);
+
   useEffect(() => {
     const saved = localStorage.getItem('zyger-remember');
     if (saved) {

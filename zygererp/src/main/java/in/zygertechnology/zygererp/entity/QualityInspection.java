@@ -170,6 +170,22 @@ public class QualityInspection extends BaseDoc implements DocEntity {
     @Column(name = "inspection_plan_id", length = 60)
     String inspectionPlanId;
 
+    // --- spec §4.1 trackability fields ---
+    @Column(name = "priority", length = 20)
+    String priority = "Normal";                // Critical / High / Normal / Low
+    @Column(name = "priority_set_at")
+    Instant prioritySetAt;
+    @Column(name = "parent_inspection_id")
+    Long parentInspectionId;
+    @Column(name = "assigned_at")
+    Instant assignedAt;
+    @Column(name = "started_at")
+    Instant startedAt;
+    @Column(name = "completed_at")
+    Instant completedAt;
+    @Column(name = "is_locked")
+    Boolean isLocked = false;
+
     @OneToMany(mappedBy = "doc", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     List<QualityInspectionLine> lines = new ArrayList<>();
 

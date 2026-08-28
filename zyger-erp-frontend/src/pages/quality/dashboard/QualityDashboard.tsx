@@ -33,12 +33,12 @@ function buildCards(d: QualityDashboardData): Card[] {
   const passRate = decided === 0 ? null : (d.pass / decided) * 100;
 
   return [
-    { key: 'pending', label: 'Inspections Pending', icon: 'pending_actions', color: 'var(--yellow)', value: d.pendingTotal, sub: 'all types, awaiting decision', screenId: 'quality-docs', filterKey: 'status', filterValue: 'DRAFT,IN_PROGRESS' },
-    { key: 'openNcr', label: 'Open NCR', icon: 'report', color: 'var(--red)', value: d.openNcr, screenId: 'quality-docs', filterKey: 'docType', filterValue: 'QUALITY_NCR' },
-    { key: 'concession', label: 'Pending Concessions', icon: 'rule', color: '#b7791f', value: d.openConcession, screenId: 'quality-docs', filterKey: 'docType', filterValue: 'CONCESSION' },
-    { key: 'complaints', label: 'Customer Complaints', icon: 'support_agent', color: 'var(--red)', value: d.openComplaints, sub: 'open', screenId: 'quality-docs', filterKey: 'docType', filterValue: 'COMPLAINT' },
-    { key: 'capa', label: 'Open CAPA', icon: 'published_with_changes', color: 'var(--blue)', value: d.openCapa, screenId: 'quality-docs', filterKey: 'docType', filterValue: 'CAPA' },
-    { key: 'eightd', label: 'Open 8D', icon: 'article', color: 'var(--blue)', value: d.open8d, screenId: 'quality-docs', filterKey: 'docType', filterValue: 'EIGHT_D' },
+    { key: 'pending', label: 'Inspections Pending', icon: 'pending_actions', color: 'var(--yellow)', value: d.pendingTotal, sub: 'all types, awaiting decision', screenId: 'inspection-pending' },
+    { key: 'openNcr', label: 'Open NCR', icon: 'report', color: 'var(--red)', value: d.openNcr, screenId: 'quality-ncr' },
+    { key: 'concession', label: 'Pending Concessions', icon: 'rule', color: '#b7791f', value: d.openConcession, screenId: 'concession-entry' },
+    { key: 'complaints', label: 'Customer Complaints', icon: 'support_agent', color: 'var(--red)', value: d.openComplaints, sub: 'open', screenId: 'customer-complaint' },
+    { key: 'capa', label: 'Open CAPA', icon: 'published_with_changes', color: 'var(--blue)', value: d.openCapa, screenId: 'capa' },
+    { key: 'eightd', label: 'Open 8D', icon: 'article', color: 'var(--blue)', value: d.open8d, screenId: 'eight-d-report' },
     {
       key: 'pass',
       label: 'Decided PASS',
@@ -46,9 +46,7 @@ function buildCards(d: QualityDashboardData): Card[] {
       color: 'var(--green)',
       value: d.pass,
       sub: passRate != null ? `first-pass yield ${passRate.toFixed(1)}%` : `${formatNumber(d.fail)} failed • ${formatNumber(d.hold)} on hold`,
-      screenId: 'quality-docs',
-      filterKey: 'status',
-      filterValue: 'CLOSED',
+      screenId: 'quality-inspection',
     },
     { key: 'cal7', label: 'Calibration Due ≤ 7d', icon: 'event_upcoming', color: 'var(--yellow)', value: d.calibration.dueWithin7Days, sub: `${formatNumber(d.calibration.overdue)} overdue • ${formatNumber(d.calibration.failed)} failed`, screenId: 'calibration-schedule' },
   ];

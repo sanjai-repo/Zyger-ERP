@@ -330,6 +330,21 @@ public class DocumentFacade {
 
     public String nextNumber(String key, String prefix) { return numbers.next(key, prefix); }
 
+    /** Read-only preview of the next number — does NOT consume the sequence. */
+    public String peekNumber(String key) { return numbers.peek(key); }
+
+    /** Read-only preview of the next number — does NOT consume the sequence. */
+    public String peekNumber(String key, String prefix) { return numbers.peek(key, prefix); }
+
+    /** Allocates the next number (advances the sequence) — use on Save/Draft. */
+    public String allocateNumber(String key) { return numbers.allocate(key); }
+
+    /** FY-format preview (PREFIX/FY/00001). Does NOT consume the sequence. */
+    public String peekNumberFy(String prefix) { return numbers.peekFy(prefix); }
+
+    /** FY-format allocation (PREFIX/FY/00001). Consumes the sequence. */
+    public String nextNumberFy(String prefix) { return numbers.nextFy(prefix); }
+
     // --- Line field normalization: frontend key → backend entity field ---
     private static final Map<String, Map<String, String>> LINE_RENAME = Map.of(
         "sales-order", Map.of(

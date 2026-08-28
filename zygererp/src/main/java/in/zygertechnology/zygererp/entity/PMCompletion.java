@@ -74,6 +74,9 @@ public class PMCompletion {
     @Column(length = 500)
     private String remarks;
 
+    @Column(name = "supervisor_id")
+    private Long supervisorId;
+
     @Version private Long version;
     @Column(name = "created_by", length = 60) private String createdBy;
     @Column(name = "created_at") private Instant createdAt;

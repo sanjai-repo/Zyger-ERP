@@ -84,7 +84,7 @@ public class PurchaseController {
 
     @GetMapping("/{type}/next-number")
     Map<String, Object> next(@PathVariable String type) {
-        return Map.of("nextNumber", svc.nextNumber(key(type)));
+        return Map.of("nextNumber", svc.peekNumber(key(type)));
     }
 
     @PostMapping("/{type}/{id}/actions/{action}")
@@ -127,5 +127,22 @@ public class PurchaseController {
     @GetMapping("/dashboard")
     Map<String, Object> dashboard() {
         return purchase.dashboard();
+    }
+
+    // ---- Email dispatch ----
+
+    @PostMapping("/supplier-enquiry/{id}/send-email")
+    Map<String, Object> sendEnquiryEmail(@PathVariable Long id, Principal p) {
+        return purchase.sendEnquiryEmail(id, principalName(p));
+    }
+
+    @PostMapping("/purchase-order/{id}/send-email")
+    Map<String, Object> sendPoEmail(@PathVariable Long id, Principal p) {
+        return purchase.sendPoEmail(id, principalName(p));
+    }
+
+    @PostMapping("/job-order/{id}/send-email")
+    Map<String, Object> sendJoEmail(@PathVariable Long id, Principal p) {
+        return purchase.sendJoEmail(id, principalName(p));
     }
 }

@@ -67,6 +67,9 @@ public class BreakdownRectification {
     @Column(length = 500)
     private String remarks;
 
+    @Column(name = "failure_code_id")
+    private Long failureCodeId;
+
     @Version private Long version;
     @Column(name = "created_by", length = 60) private String createdBy;
     @Column(name = "created_at") private Instant createdAt;

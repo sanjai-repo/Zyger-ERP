@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { ReactNode } from 'react';
 import { getScreenComponent } from '../config/screenRegistry';
 import { NAV_ITEMS } from '../config/navigation';
+import { useAuth } from './AuthContext';
 
 export interface Tab {
   id: string;
@@ -85,6 +86,7 @@ function buildTabsFromIds(ids: string[]): Tab[] {
 }
 
 export function TabsProvider({ children }: { children: ReactNode }) {
+  const { screensLoaded, canScreen } = useAuth();
   const [tabs, setTabs] = useState<Tab[]>(() => {
     const saved = loadSavedState();
     if (saved && saved.tabIds.length > 0) {
@@ -102,6 +104,17 @@ export function TabsProvider({ children }: { children: ReactNode }) {
   });
 
   const isInitialMount = useRef(true);
+
+  // Once the user's screen matrix is loaded, drop restored tabs the user can no longer view.
+  useEffect(() => {
+    if (!screensLoaded) return;
+    setTabs(prev => {
+      const next = prev.filter(t => t.id === 'dashboard' || canScreen(t.id, 'View'));
+      setActiveTabId(active => (active === null || next.some(t => t.id === active) ? active : (next.length > 0 ? next[next.length - 1].id : null)));
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screensLoaded]);
 
   useEffect(() => {
     if (isInitialMount.current) {

@@ -5,11 +5,15 @@ import in.zygertechnology.zygererp.entity.QualityNcr;
 import in.zygertechnology.zygererp.service.DocumentFacade;
 import in.zygertechnology.zygererp.service.QualityInspectionService;
 import in.zygertechnology.zygererp.service.ExportService;
+import in.zygertechnology.zygererp.repo.QualityInspectionStatusHistoryRepository;
 import in.zygertechnology.zygererp.security.RequirePermission;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
+import java.time.Instant;
 import java.util.*;
 
 /**
@@ -27,6 +31,10 @@ public class QualityController {
     private final QualityInspectionService quality;
     private final DocumentFacade docs;
     private final ExportService export;
+    private final QualityInspectionStatusHistoryRepository statusHistoryRepo;
+
+    @PersistenceContext
+    private EntityManager em;
 
     private static String principalName(Principal p) { return p != null ? p.getName() : "system"; }
 
@@ -74,10 +82,10 @@ public class QualityController {
                 in.zygertechnology.zygererp.entity.QualityInspectionType type =
                     in.zygertechnology.zygererp.entity.QualityInspectionType.valueOf(inspectionType.toUpperCase());
                 String prefix = QualityInspectionService.prefixForType(type);
-                return Map.of("nextNumber", docs.nextNumber(QualityInspectionService.KEY, prefix));
+                return Map.of("nextNumber", docs.peekNumberFy(prefix));
             } catch (Exception ignored) {}
         }
-        return Map.of("nextNumber", docs.nextNumber(QualityInspectionService.KEY));
+        return Map.of("nextNumber", docs.peekNumberFy(QualityInspectionService.prefixForType(null)));
     }
 
     // ---------- Workflow actions (spec 6.4) ----------
@@ -194,6 +202,127 @@ public class QualityController {
         return Map.of("count", page.get("totalElements"));
     }
 
+    @GetMapping("/inspection-pending")
+    public Map<String, Object> inspectionPendingQueue(
+            @RequestParam(required = false) String inspectionType,
+            @RequestParam(required = false) String priority,
+            @RequestParam(required = false) String inspector,
+            @RequestParam(required = false) String itemCode,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+
+        StringBuilder jpql = new StringBuilder("SELECT q FROM QualityInspection q WHERE q.inspectionStatus IN ('DRAFT','PENDING','ASSIGNED') AND (q.isLocked = false OR q.isLocked IS NULL)");
+        Map<String, Object> params = new LinkedHashMap<>();
+
+        if (inspectionType != null && !inspectionType.isBlank()) {
+            jpql.append(" AND q.inspectionType = :inspectionType");
+            params.put("inspectionType", inspectionType);
+        }
+        if (priority != null && !priority.isBlank()) {
+            jpql.append(" AND q.priority = :priority");
+            params.put("priority", priority);
+        }
+        if (inspector != null && !inspector.isBlank()) {
+            jpql.append(" AND (q.inspector = :inspector OR q.assignedInspector = :inspector)");
+            params.put("inspector", inspector);
+        }
+        if (itemCode != null && !itemCode.isBlank()) {
+            jpql.append(" AND q.itemCode = :itemCode");
+            params.put("itemCode", itemCode);
+        }
+
+        jpql.append(" ORDER BY CASE q.priority WHEN 'Critical' THEN 1 WHEN 'High' THEN 2 WHEN 'Normal' THEN 3 WHEN 'Low' THEN 4 ELSE 5 END, q.dueDate ASC NULLS LAST, q.createdAt ASC");
+
+        var query = em.createQuery(jpql.toString(), QualityInspection.class);
+        params.forEach(query::setParameter);
+        query.setFirstResult(page * size);
+        query.setMaxResults(size);
+        List<QualityInspection> results = query.getResultList();
+
+        long total = countPending(inspectionType, priority, inspector, itemCode);
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("content", results.stream().map(docs::toRow).toList());
+        out.put("totalElements", total);
+        out.put("page", page);
+        out.put("size", size);
+        out.put("totalPages", (total + size - 1) / size);
+        return out;
+    }
+
+    private long countPending(String inspectionType, String priority, String inspector, String itemCode) {
+        StringBuilder jpql = new StringBuilder("SELECT COUNT(q) FROM QualityInspection q WHERE q.inspectionStatus IN ('DRAFT','PENDING','ASSIGNED') AND (q.isLocked = false OR q.isLocked IS NULL)");
+        Map<String, Object> params = new LinkedHashMap<>();
+        if (inspectionType != null && !inspectionType.isBlank()) { jpql.append(" AND q.inspectionType = :inspectionType"); params.put("inspectionType", inspectionType); }
+        if (priority != null && !priority.isBlank()) { jpql.append(" AND q.priority = :priority"); params.put("priority", priority); }
+        if (inspector != null && !inspector.isBlank()) { jpql.append(" AND (q.inspector = :inspector OR q.assignedInspector = :inspector)"); params.put("inspector", inspector); }
+        if (itemCode != null && !itemCode.isBlank()) { jpql.append(" AND q.itemCode = :itemCode"); params.put("itemCode", itemCode); }
+        var query = em.createQuery(jpql.toString(), Long.class);
+        params.forEach(query::setParameter);
+        return query.getSingleResult();
+    }
+
+    // ---------- Re-inspection chain (spec 6.3) ----------
+
+    @PostMapping("/inspections/{id}/re-inspection")
+    public Map<String, Object> createReInspection(@PathVariable Long id,
+                                                   @RequestBody Map<String, Object> body,
+                                                   Principal p) {
+        QualityInspection parent = quality.get(id);
+        body.put("parentInspectionId", parent.getId());
+        body.put("inspectionType", body.getOrDefault("inspectionType", parent.getInspectionType()));
+        body.put("itemCode", body.getOrDefault("itemCode", parent.getItemCode()));
+        body.put("sourceType", parent.getSourceType());
+        body.put("sourceId", parent.getSourceId());
+        body.put("sourceNumber", parent.getSourceNumber());
+        body.put("purchaseOrderNumber", parent.getPurchaseOrderNumber());
+        body.put("poInwardNumber", parent.getPoInwardNumber());
+        body.put("priority", body.getOrDefault("priority", "High"));
+        body.put("inspectionDate", java.time.LocalDate.now().toString());
+        QualityInspection re = quality.create(body, principalName(p));
+        return docs.toRow(re);
+    }
+
+    @GetMapping("/inspections/{id}/re-inspections")
+    public List<Map<String, Object>> listReInspections(@PathVariable Long id) {
+        List<QualityInspection> all = em.createQuery(
+            "SELECT q FROM QualityInspection q WHERE q.parentInspectionId = :parentId ORDER BY q.createdAt ASC",
+            QualityInspection.class).setParameter("parentId", id).getResultList();
+        return all.stream().map(docs::toRow).toList();
+    }
+
+    // ---------- Production gate (spec 6.4) ----------
+
+    @GetMapping("/production-gate/check")
+    public Map<String, Object> productionGateCheck(
+            @RequestParam(required = false) String itemCode,
+            @RequestParam(required = false) String machineCode) {
+
+        StringBuilder jpql = new StringBuilder("SELECT COUNT(q) FROM QualityInspection q WHERE q.inspectionStatus IN ('DRAFT','PENDING','ASSIGNED','HOLD')");
+        Map<String, Object> params = new LinkedHashMap<>();
+
+        if (itemCode != null && !itemCode.isBlank()) {
+            jpql.append(" AND q.itemCode = :itemCode");
+            params.put("itemCode", itemCode);
+        }
+        if (machineCode != null && !machineCode.isBlank()) {
+            jpql.append(" AND q.machine = :machineCode");
+            params.put("machineCode", machineCode);
+        }
+
+        var query = em.createQuery(jpql.toString(), Long.class);
+        params.forEach(query::setParameter);
+        long pendingCount = query.getSingleResult();
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("blocked", pendingCount > 0);
+        result.put("pendingInspectionCount", pendingCount);
+        result.put("message", pendingCount > 0
+            ? "Production blocked: " + pendingCount + " inspection(s) pending/hold"
+            : "Production allowed: no pending inspections");
+        return result;
+    }
+
     // ---------- Non-Conformance Reports ----------
 
     @GetMapping("/ncrs")
@@ -226,8 +355,74 @@ public class QualityController {
         docs.remove("quality-ncr", id, principalName(p));
     }
 
+    // ---------- Spec §4.2: Status History ----------
+
+    @GetMapping("/inspections/{id}/history")
+    public List<Map<String, Object>> inspectionHistory(@PathVariable Long id) {
+        return statusHistoryRepo.findByInspectionIdOrderByChangedAtAsc(id).stream()
+                .map(h -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("id", h.getId());
+                    m.put("previousStatus", h.getPreviousStatus());
+                    m.put("newStatus", h.getNewStatus());
+                    m.put("remarks", h.getRemarks());
+                    m.put("changedBy", h.getChangedBy());
+                    m.put("changedAt", h.getChangedAt());
+                    m.put("inspectionType", h.getInspectionType());
+                    return m;
+                }).toList();
+    }
+
     @GetMapping("/ncrs/next-number")
     public Map<String, Object> nextNcrNumber() {
-        return Map.of("nextNumber", docs.nextNumber("quality-ncr"));
+        return Map.of("nextNumber", docs.peekNumberFy("NCR"));
+    }
+
+    // ---------- Spec §7: SPC Data ----------
+
+    @GetMapping("/spc")
+    public Map<String, Object> spcData(
+            @RequestParam String itemCode,
+            @RequestParam(required = false) String characteristicCode) {
+        String where = "l.doc.itemCode = :itemCode AND l.actualValue IS NOT NULL";
+        Map<String, Object> params = new HashMap<>();
+        params.put("itemCode", itemCode);
+        if (characteristicCode != null && !characteristicCode.isBlank()) {
+            where += " AND l.characteristicCode = :charCode";
+            params.put("charCode", characteristicCode);
+        }
+
+        var query = em.createQuery(
+                "SELECT l.characteristicCode, l.characteristicName, l.nominalValue, l.lowerLimit, l.upperLimit, l.uom, l.actualValue, l.measuredAt, l.result, d.inspectionNumber " +
+                "FROM QualityInspectionLine l JOIN l.doc d WHERE " + where + " ORDER BY l.measuredAt ASC",
+                Object[].class);
+        for (var e : params.entrySet()) query.setParameter(e.getKey(), e.getValue());
+        List<Object[]> data = query.getResultList();
+
+        Map<String, Map<String, Object>> byChar = new LinkedHashMap<>();
+        for (Object[] r : data) {
+            String code = (String) r[0];
+            byChar.computeIfAbsent(code, k -> {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("characteristicCode", r[0]);
+                m.put("characteristicName", r[1]);
+                m.put("nominalValue", r[2]);
+                m.put("lowerLimit", r[3]);
+                m.put("upperLimit", r[4]);
+                m.put("uom", r[5]);
+                m.put("samples", new ArrayList<>());
+                return m;
+            });
+            Map<String, Object> sample = new LinkedHashMap<>();
+            sample.put("value", r[6]);
+            sample.put("measuredAt", r[7]);
+            sample.put("result", r[8]);
+            sample.put("inspectionNumber", r[9]);
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> samples = (List<Map<String, Object>>) byChar.get(code).get("samples");
+            samples.add(sample);
+        }
+
+        return Map.of("itemCode", itemCode, "characteristics", new ArrayList<>(byChar.values()));
     }
 }
