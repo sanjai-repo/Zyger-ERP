@@ -42,8 +42,6 @@ const SC: Record<string, { color: string; bg: string }> = {
 
 const TESTING_RESULTS = ['PASS', 'FAIL', 'PENDING'];
 
-interface MasterFailureCode { id: number; code: string; description: string; }
-
 export default function BreakdownRectificationScreen() {
   const { toast } = useToast();
   const [rows, setRows] = useState<Rectification[]>([]);
@@ -56,7 +54,6 @@ export default function BreakdownRectificationScreen() {
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<'list' | 'form'>('list');
   const [openActionMenu, setOpenActionMenu] = useState<number | null>(null);
-  const [failureCodes, setFailureCodes] = useState<MasterFailureCode[]>([]);
 
   const load = async () => {
     setLoading(true);
@@ -73,12 +70,7 @@ export default function BreakdownRectificationScreen() {
 
   useEffect(() => { load(); }, []);
 
-  useEffect(() => {
-    apiClient.get('/v1/maintenance/failure-codes').then(({ data }) => setFailureCodes(Array.isArray(data) ? data : [])).catch(() => {});
-  }, []);
-
   const save = async () => {
-    if (!String(form.technicianCode ?? '').trim()) { toast('Technician Code is required.', 'error'); return; }
     setBusy(true);
     try {
       if (editId) { await apiClient.put(`/v1/maintenance/breakdown-rectifications/${editId}`, form); toast('Rectification updated.'); }
@@ -145,15 +137,6 @@ export default function BreakdownRectificationScreen() {
                 {breakdowns.map((b) => <option key={b.id} value={b.id}>{b.breakdownNumber}</option>)}
               </select>
             </label>
-            <label className="fld"><span>Breakdown No</span><input className="in" value={String(form.breakdownNumber ?? '')} readOnly style={{ background: '#f3f4f6' }} /></label>
-            <label className="fld"><span>Machine Code</span><input className="in" value={String(form.machineCode ?? '')} readOnly style={{ background: '#f3f4f6' }} /></label>
-            <label className="fld"><span>Technician Code *</span><input className="in" value={String(form.technicianCode ?? '')} onChange={(e) => set('technicianCode', e.target.value)} /></label>
-            <label className="fld"><span>Failure Code</span>
-              <select className="in" value={String(form.failureCodeId ?? '')} onChange={(e) => set('failureCodeId', e.target.value)}>
-                <option value="">Select...</option>
-                {failureCodes.map((fc) => <option key={fc.id} value={fc.id}>{fc.code} — {fc.description}</option>)}
-              </select>
-            </label>
             <label className="fld" style={{ gridColumn: 'span 2' }}><span>Failure Cause</span><textarea className="in" rows={3} value={String(form.failureCause ?? '')} onChange={(e) => set('failureCause', e.target.value)} /></label>
             <label className="fld" style={{ gridColumn: 'span 2' }}><span>Corrective Action</span><textarea className="in" rows={3} value={String(form.correctiveAction ?? '')} onChange={(e) => set('correctiveAction', e.target.value)} /></label>
             <label className="fld" style={{ gridColumn: 'span 2' }}><span>Spare Parts Used</span><textarea className="in" rows={3} value={String(form.sparePartsUsed ?? '')} onChange={(e) => set('sparePartsUsed', e.target.value)} /></label>
@@ -161,7 +144,6 @@ export default function BreakdownRectificationScreen() {
             <label className="fld"><span>Start Time</span><input className="in" type="datetime-local" value={String(form.startTime ?? '').slice(0, 16)} onChange={(e) => handleStartTimeChange(e.target.value)} /></label>
             <label className="fld"><span>End Time</span><input className="in" type="datetime-local" value={String(form.endTime ?? '').slice(0, 16)} onChange={(e) => handleEndTimeChange(e.target.value)} /></label>
             <label className="fld"><span>Downtime (min)</span><input className="in" type="number" value={String(form.downtimeMinutes ?? '')} readOnly style={{ background: '#f3f4f6' }} /></label>
-            <label className="fld"><span>External Vendor</span><input className="in" value={String(form.externalVendor ?? '')} onChange={(e) => set('externalVendor', e.target.value)} /></label>
             <label className="fld"><span>Service Cost</span><input className="in" type="number" min={0} step="0.01" value={String(form.serviceCost ?? '')} onChange={(e) => set('serviceCost', Math.max(0, Number(e.target.value)))} /></label>
             <label className="fld"><span>Testing Result</span>
               <select className="in" value={String(form.testingResult ?? '')} onChange={(e) => set('testingResult', e.target.value)}>
