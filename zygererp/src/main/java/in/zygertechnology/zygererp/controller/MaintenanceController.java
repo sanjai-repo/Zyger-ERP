@@ -1,6 +1,7 @@
 package in.zygertechnology.zygererp.controller;
 
 import in.zygertechnology.zygererp.entity.*;
+import in.zygertechnology.zygererp.service.DocNumberService;
 import in.zygertechnology.zygererp.service.MaintenanceService;
 import in.zygertechnology.zygererp.security.RequirePermission;
 import lombok.RequiredArgsConstructor;
@@ -17,12 +18,18 @@ import java.util.*;
 public class MaintenanceController {
 
     private final MaintenanceService svc;
+    private final DocNumberService docNumbers;
 
     private String pn(Principal p) { return p != null ? p.getName() : "system"; }
 
     // ===========================
     // ---- BREAKDOWN INTIMATION
     // ===========================
+
+    @GetMapping("/api/v1/maintenance/breakdowns/next-code")
+    public Map<String, Object> nextBreakdownCode() {
+        return Map.of("code", docNumbers.peek("breakdown-intimation", "BDI"));
+    }
 
     @GetMapping("/api/v1/maintenance/breakdowns")
     public List<Map<String, Object>> listBreakdowns() { return svc.listBreakdowns(); }

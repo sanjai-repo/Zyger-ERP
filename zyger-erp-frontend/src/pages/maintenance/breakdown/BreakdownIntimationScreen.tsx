@@ -3,7 +3,6 @@ import apiClient from '../../../api/axiosClient';
 import { useToast } from '../../../contexts/ToastContext';
 import { getApiErrorMessage } from '../../../utils/apiError';
 import ConfirmActionModal from '../../../components/common/ConfirmActionModal';
-import QRScanInput from '../../../components/common/QRScanInput';
 import StatusBadge from '../../../components/common/StatusBadge';
 
 interface Breakdown {
@@ -14,18 +13,13 @@ interface Breakdown {
   machineCode: string;
   machineStatus: string;
   reportedBy: string;
-  operatorCode: string;
-  shiftCode: string;
-  breakdownCategory: string;
   cncAlarmCode: string;
   problemDescription: string;
-  productionImpact: string;
   priority: string;
-  assignedTo: string;
-  diagnosis: string;
   status: string;
-  remarks: string;
 }
+
+interface Machine { id: number; code: string; name: string; status: string; }
 
 const SC: Record<string, { color: string; bg: string }> = {
   OPEN: { color: '#2563eb', bg: '#dbeafe' },
@@ -36,15 +30,11 @@ const SC: Record<string, { color: string; bg: string }> = {
 };
 
 const MACHINE_STATUSES = ['RUNNING', 'STOPPED', 'DEGRADED'];
-const IMPACTS = ['NONE', 'MINOR', 'MODERATE', 'SEVERE', 'CRITICAL'];
-const PRIORITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
-
-interface MasterCategory { id: number; name: string; code: string; }
-interface MasterTechnician { id: number; firstName: string; lastName: string; designation: string; }
 
 export default function BreakdownIntimationScreen() {
   const { toast } = useToast();
   const [rows, setRows] = useState<Breakdown[]>([]);
+  const [machines, setMachines] = useState<Machine[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<Record<string, unknown>>({});
   const [editId, setEditId] = useState<number | null>(null);
@@ -52,11 +42,8 @@ export default function BreakdownIntimationScreen() {
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<'list' | 'form'>('list');
-  const [openActionMenu, setOpenActionMenu] = useState<number | null>(null);
-  const [actionTarget, setActionTarget] = useState<{ id: number; action: string } | null>(null);
+  const [actionTarget, setActionTarget] = useState<{ id: number; action: string; label: string } | null>(null);
   const [actionNote, setActionNote] = useState('');
-  const [categories, setCategories] = useState<MasterCategory[]>([]);
-  const [technicians, setTechnicians] = useState<MasterTechnician[]>([]);
 
   const load = async () => {
     setLoading(true);
@@ -70,12 +57,21 @@ export default function BreakdownIntimationScreen() {
   useEffect(() => { load(); }, []);
 
   useEffect(() => {
-    apiClient.get('/v1/maintenance/breakdown-categories').then(({ data }) => setCategories(Array.isArray(data) ? data : [])).catch(() => {});
-    apiClient.get('/v1/maintenance/technicians').then(({ data }) => setTechnicians(Array.isArray(data) ? data : [])).catch(() => {});
+    apiClient.get('/master/machines').then(({ data }) => setMachines(Array.isArray(data) ? data : [])).catch(() => {});
   }, []);
 
+  const openNew = async () => {
+    setForm({}); setEditId(null);
+    try {
+      const { data } = await apiClient.get('/v1/maintenance/breakdowns/next-code');
+      setForm((c) => ({ ...c, breakdownNumber: data?.code || 'BDI-', autoNumber: true }));
+    } catch { setForm((c) => ({ ...c, breakdownNumber: '', autoNumber: true })); }
+    setTab('form');
+  };
+
   const save = async () => {
-    if (!String(form.machineCode ?? '').trim()) { toast('Machine Code is required.', 'error'); return; }
+    if (!String(form.machineCode ?? '').trim()) { toast('Machine is required.', 'error'); return; }
+    if (!String(form.problemDescription ?? '').trim()) { toast('Problem description is required.', 'error'); return; }
     setBusy(true);
     try {
       if (editId) { await apiClient.put(`/v1/maintenance/breakdowns/${editId}`, form); toast('Breakdown updated.'); }
@@ -104,7 +100,20 @@ export default function BreakdownIntimationScreen() {
 
   const backToList = () => { setForm({}); setEditId(null); setTab('list'); };
   const set = (k: string, v: unknown) => setForm((c) => ({ ...c, [k]: v }));
-  const filtered = rows.filter((r) => !search || (r.breakdownNumber ?? '').toLowerCase().includes(search.toLowerCase()) || (r.machineCode ?? '').toLowerCase().includes(search.toLowerCase()) || (r.breakdownCategory ?? '').toLowerCase().includes(search.toLowerCase()));
+  const filtered = rows.filter((r) => !search || (r.breakdownNumber ?? '').toLowerCase().includes(search.toLowerCase()) || (r.machineCode ?? '').toLowerCase().includes(search.toLowerCase()));
+
+  const machineName = (code: string) => machines.find((m) => m.code === code)?.name ?? '-';
+
+  const inlineActions = (r: Breakdown) => {
+    const btns: { label: string; cls: string; onClick: () => void }[] = [];
+    if (r.status === 'OPEN') btns.push({ label: 'Assign', cls: '', onClick: () => setActionTarget({ id: r.id, action: 'assign', label: 'Assign' }) });
+    if (r.status === 'ASSIGNED') btns.push({ label: 'Diagnose', cls: '', onClick: () => setActionTarget({ id: r.id, action: 'diagnose', label: 'Diagnose' }) });
+    if (r.status === 'OPEN' || r.status === 'ASSIGNED' || r.status === 'DIAGNOSED') {
+      btns.push({ label: 'Close', cls: 'btn-g', onClick: () => action(r.id, 'close') });
+      btns.push({ label: 'Cancel', cls: 'btn-d', onClick: () => action(r.id, 'cancel') });
+    }
+    return btns;
+  };
 
   return (
     <>
@@ -113,48 +122,25 @@ export default function BreakdownIntimationScreen() {
       {tab === 'form' && (
         <div className="panel">
           <div className="panel-h"><h2>{editId ? 'Edit' : 'New'} Breakdown</h2></div>
-          <QRScanInput label="Scan Machine QR" placeholder="Scan or type machine code…" onScan={(code) => set('machineCode', code)} />
           <div className="fgrid">
-            <label className="fld"><span>Breakdown Date</span><input className="in" type="date" value={String(form.breakdownDate ?? '').slice(0, 10)} onChange={(e) => set('breakdownDate', e.target.value)} /></label>
+            <label className="fld"><span>Breakdown No. (Auto)</span>
+              <input className="in" value={String(form.breakdownNumber ?? '')} disabled placeholder="Auto-generated" />
+            </label>
+            <label className="fld"><span>Machine *</span>
+              <select className="in" value={String(form.machineCode ?? '')} onChange={(e) => set('machineCode', e.target.value)}>
+                <option value="">Select machine...</option>
+                {machines.map((m) => <option key={m.code} value={m.code}>{m.code} — {m.name}</option>)}
+              </select>
+            </label>
             <label className="fld"><span>Breakdown Time</span><input className="in" type="time" value={String(form.breakdownTime ?? '').slice(0, 5)} onChange={(e) => set('breakdownTime', e.target.value)} /></label>
-            <label className="fld"><span>Machine Code *</span><input className="in" value={String(form.machineCode ?? '')} onChange={(e) => set('machineCode', e.target.value)} /></label>
             <label className="fld"><span>Machine Status</span>
               <select className="in" value={String(form.machineStatus ?? '')} onChange={(e) => set('machineStatus', e.target.value)}>
                 <option value="">Select...</option>
                 {MACHINE_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </label>
-            <label className="fld"><span>Reported By</span><input className="in" value={String(form.reportedBy ?? '')} onChange={(e) => set('reportedBy', e.target.value)} /></label>
-            <label className="fld"><span>Operator Code</span><input className="in" value={String(form.operatorCode ?? '')} onChange={(e) => set('operatorCode', e.target.value)} /></label>
-            <label className="fld"><span>Shift Code</span><input className="in" value={String(form.shiftCode ?? '')} onChange={(e) => set('shiftCode', e.target.value)} /></label>
-            <label className="fld"><span>Breakdown Category</span>
-              <select className="in" value={String(form.breakdownCategoryId ?? form.breakdownCategory ?? '')} onChange={(e) => set('breakdownCategoryId', e.target.value)}>
-                <option value="">Select...</option>
-                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </label>
-            <label className="fld"><span>CNC Alarm Code</span><input className="in" value={String(form.cncAlarmCode ?? '')} onChange={(e) => set('cncAlarmCode', e.target.value)} /></label>
-            <label className="fld" style={{ gridColumn: 'span 2' }}><span>Problem Description</span><textarea className="in" rows={3} value={String(form.problemDescription ?? '')} onChange={(e) => set('problemDescription', e.target.value)} /></label>
-            <label className="fld"><span>Production Impact</span>
-              <select className="in" value={String(form.productionImpact ?? '')} onChange={(e) => set('productionImpact', e.target.value)}>
-                <option value="">Select...</option>
-                {IMPACTS.map((i) => <option key={i} value={i}>{i}</option>)}
-              </select>
-            </label>
-            <label className="fld"><span>Priority</span>
-              <select className="in" value={String(form.priority ?? '')} onChange={(e) => set('priority', e.target.value)}>
-                <option value="">Select...</option>
-                {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </label>
-            <label className="fld"><span>Assigned To</span>
-              <select className="in" value={String(form.assignedTechnicianId ?? form.assignedTo ?? '')} onChange={(e) => set('assignedTechnicianId', e.target.value)}>
-                <option value="">Select...</option>
-                {technicians.map((t) => <option key={t.id} value={t.id}>{t.firstName} {t.lastName} ({t.designation})</option>)}
-              </select>
-            </label>
-            <label className="fld" style={{ gridColumn: 'span 2' }}><span>Diagnosis</span><textarea className="in" rows={3} value={String(form.diagnosis ?? '')} onChange={(e) => set('diagnosis', e.target.value)} /></label>
-            <label className="fld"><span>Remarks</span><input className="in" value={String(form.remarks ?? '')} onChange={(e) => set('remarks', e.target.value)} /></label>
+            <label className="fld" style={{ gridColumn: 'span 2' }}><span>CNC Alarm Code</span><input className="in" value={String(form.cncAlarmCode ?? '')} onChange={(e) => set('cncAlarmCode', e.target.value)} /></label>
+            <label className="fld" style={{ gridColumn: 'span 2' }}><span>Problem Description *</span><textarea className="in" rows={3} value={String(form.problemDescription ?? '')} onChange={(e) => set('problemDescription', e.target.value)} /></label>
           </div>
           <div className="actbar">
             <span className="lft"><button className="btn btn-sm" onClick={backToList}><span className="material-symbols-rounded">arrow_back</span> Back</button></span>
@@ -170,36 +156,36 @@ export default function BreakdownIntimationScreen() {
         <div className="panel">
           <div className="toolbar" style={{ gap: '8px', justifyContent: 'flex-start' }}>
             <input className="in" placeholder="Search breakdowns..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: '250px' }} />
-            <button className="btn btn-p" onClick={() => { setForm({}); setEditId(null); setTab('form'); }}>+ New Breakdown</button>
+            <button className="btn btn-p" onClick={openNew}>+ New Breakdown</button>
           </div>
           <div className="twrap">
             {loading ? <div className="empty"><span className="material-symbols-rounded">hourglass_empty</span> Loading...</div> : (
               <table className="tbl">
-                <thead><tr><th>BDI No</th><th>Machine</th><th>Category</th><th>Priority</th><th>Status</th><th>Reported By</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Breakdown No.</th><th>Machine</th><th>Machine Status</th><th>Breakdown Time</th><th>CNC Alarm</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
                   {filtered.length === 0 ? <tr><td colSpan={7}><div className="empty"><span className="material-symbols-rounded">description</span> No breakdowns.</div></td></tr> : filtered.map((r) => (
                     <tr key={r.id}>
                       <td><b>{r.breakdownNumber}</b></td>
-                      <td>{r.machineCode}</td>
-                      <td>{(r.breakdownCategory ?? '').replace(/_/g, ' ')}</td>
-                      <td>{r.priority ?? '-'}</td>
+                      <td>{r.machineCode}<div style={{ fontSize: 12, color: 'var(--muted)' }}>{machineName(r.machineCode)}</div></td>
+                      <td>{r.machineStatus ?? '-'}</td>
+                      <td>{r.breakdownTime ? r.breakdownTime.slice(0, 5) : '-'}</td>
+                      <td>{r.cncAlarmCode ?? '-'}</td>
                       <td><StatusBadge status={r.status} variant={SC} /></td>
-                      <td>{r.reportedBy ?? '-'}</td>
-                      <td style={{ position: 'relative' }}>
-                        <button className="ibtn" title="Actions" onClick={(e) => { e.stopPropagation(); setOpenActionMenu(openActionMenu === r.id ? null : r.id); }}>
-                          <span className="material-symbols-rounded">more_vert</span>
-                        </button>
-                        {openActionMenu === r.id && (
-                          <div style={{ position: 'absolute', right: 0, top: '100%', zIndex: 20, background: 'var(--card-bg, #fff)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.12)', minWidth: 180, padding: '4px 0' }} onClick={(e) => e.stopPropagation()}>
-                            {r.status === 'OPEN' && <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); setActionTarget({ id: r.id, action: 'assign' }); }}><span className="material-symbols-rounded" style={{ fontSize: 18, color: '#f59e0b' }}>person_add</span> Assign</button>}
-                            {r.status === 'ASSIGNED' && <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); setActionTarget({ id: r.id, action: 'diagnose' }); }}><span className="material-symbols-rounded" style={{ fontSize: 18, color: '#0d9488' }}>search</span> Diagnose</button>}
-                            {(r.status === 'OPEN' || r.status === 'ASSIGNED' || r.status === 'DIAGNOSED') && <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); action(r.id, 'close'); }}><span className="material-symbols-rounded" style={{ fontSize: 18, color: '#22c55e' }}>check_circle</span> Close</button>}
-                            {(r.status === 'OPEN' || r.status === 'ASSIGNED' || r.status === 'DIAGNOSED') && <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); action(r.id, 'cancel'); }}><span className="material-symbols-rounded" style={{ fontSize: 18, color: '#991b1b' }}>cancel</span> Cancel</button>}
-                            <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '4px 0' }} />
-                            <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); setForm(r as unknown as Record<string, unknown>); setEditId(r.id); setTab('form'); }}><span className="material-symbols-rounded" style={{ fontSize: 18 }}>edit</span> Edit</button>
-                            {(r.status === 'OPEN') && <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left', color: '#ef4444' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(239,68,68,0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); setDeleteTarget(r); }}><span className="material-symbols-rounded" style={{ fontSize: 18 }}>delete</span> Delete</button>}
-                          </div>
-                        )}
+                      <td>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                          {inlineActions(r).length === 0 && <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>}
+                          {inlineActions(r).map((b) => (
+                            <button key={b.label} className={`btn btn-sm ${b.cls}`} onClick={b.onClick} disabled={busy}>{b.label}</button>
+                          ))}
+                          <button className="ibtn" title="Edit" onClick={() => { setForm(r as unknown as Record<string, unknown>); setEditId(r.id); setTab('form'); }}>
+                            <span className="material-symbols-rounded">edit</span>
+                          </button>
+                          {r.status === 'OPEN' && (
+                            <button className="ibtn" title="Delete" onClick={() => setDeleteTarget(r)}>
+                              <span className="material-symbols-rounded" style={{ color: '#ef4444' }}>delete</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -213,7 +199,7 @@ export default function BreakdownIntimationScreen() {
       {actionTarget && (
         <div className="search-pop" onClick={() => setActionTarget(null)}>
           <div className="search-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400 }}>
-            <h3 style={{ margin: '0 0 12px' }}>{actionTarget.action.charAt(0).toUpperCase() + actionTarget.action.slice(1)} Breakdown</h3>
+            <h3 style={{ margin: '0 0 12px' }}>{actionTarget.label} Breakdown</h3>
             <label className="fld"><span>Note (optional)</span>
               <input className="in" value={actionNote} onChange={(e) => setActionNote(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') { action(actionTarget.id, actionTarget.action, actionNote); setActionTarget(null); setActionNote(''); } }} autoFocus />
