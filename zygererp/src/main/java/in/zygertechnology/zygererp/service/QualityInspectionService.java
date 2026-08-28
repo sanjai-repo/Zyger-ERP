@@ -448,7 +448,7 @@ public class QualityInspectionService {
             return ins;
         }
 
-        require(ins, INSPECT);
+        require(ins, "SUBMITTED", "PASS", "IN_PROGRESS");
         validateWorkflowTransition(ins, "APPROVE");
         if (hasCriticalFail(ins)) {
             throw new IllegalArgumentException("Cannot approve: inspection has critical characteristic failures. Use HOLD disposition instead.");
