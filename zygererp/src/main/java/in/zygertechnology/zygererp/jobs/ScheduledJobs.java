@@ -1,10 +1,15 @@
 package in.zygertechnology.zygererp.jobs;
 
 import in.zygertechnology.zygererp.entity.CalibrationSchedule;
+import in.zygertechnology.zygererp.entity.InstrumentMaster;
 import in.zygertechnology.zygererp.entity.ItemMaster;
+import in.zygertechnology.zygererp.entity.PMSchedule;
 import in.zygertechnology.zygererp.entity.PurchaseOrder;
 import in.zygertechnology.zygererp.entity.WorkOrder;
+import in.zygertechnology.zygererp.repo.CalibrationScheduleRepository;
+import in.zygertechnology.zygererp.repo.InstrumentMasterRepository;
 import in.zygertechnology.zygererp.repo.NotificationRepository;
+import in.zygertechnology.zygererp.repo.PMScheduleRepository;
 import in.zygertechnology.zygererp.repo.RefreshTokenRepository;
 import in.zygertechnology.zygererp.service.EscalationEngine;
 import in.zygertechnology.zygererp.service.EmailService;
@@ -44,6 +49,9 @@ public class ScheduledJobs {
     private final RefreshTokenRepository refreshTokens;
     private final EscalationEngine escalationEngine;
     private final EmailService emailService;
+    private final PMScheduleRepository pmSchedules;
+    private final CalibrationScheduleRepository calSchedules;
+    private final InstrumentMasterRepository instruments;
 
     /**
      * Daily at 3 AM: delete refresh tokens that have expired (security housekeeping).
@@ -566,6 +574,74 @@ public class ScheduledJobs {
             }
         } catch (Exception ex) {
             log.error("[Quality SLA Check] Failed", ex);
+        }
+    }
+
+    /**
+     * Daily: recalculate PM schedule statuses. UPCOMING schedules whose due date has
+     * passed are flagged OVERDUE; UPCOMING ones due today are flagged DUE.
+     * §5.2
+     */
+    @Scheduled(cron = "${zyger.scheduling.pm-status-recalc:0 30 6 * * *}")
+    @Transactional
+    public void pmScheduleStatusRecalc() {
+        try {
+            LocalDate today = LocalDate.now();
+            List<PMSchedule> all = pmSchedules.findAll();
+            int updated = 0;
+            for (PMSchedule s : all) {
+                if (s.getDueDate() == null) continue;
+                if (!"UPCOMING".equals(s.getStatus())) continue;
+                if (s.getDueDate().isBefore(today)) {
+                    s.setStatus("OVERDUE");
+                    s.setUpdatedAt(Instant.now());
+                    pmSchedules.save(s);
+                    updated++;
+                }
+            }
+            log.info("[PM Status Recalc] {} PM schedule(s) marked OVERDUE", updated);
+        } catch (Exception ex) {
+            log.error("[PM Status Recalc] Failed", ex);
+        }
+    }
+
+    /**
+     * Daily: recalculate calibration status on maintenance instrument master and
+     * calibration schedules. When next due is past, calibrationStatus becomes
+     * UNDER_CALIBRATION/OUT_OF_SERVICE and the instrument is blocked. §18.4/§20
+     */
+    @Scheduled(cron = "${zyger.scheduling.calibration-status-recalc:0 30 6 * * *}")
+    @Transactional
+    public void calibrationStatusRecalc() {
+        try {
+            LocalDate today = LocalDate.now();
+            int updated = 0;
+            for (CalibrationSchedule c : calSchedules.findAll()) {
+                if (c.getNextDueDate() == null) continue;
+                if (c.getNextDueDate().isBefore(today)
+                        && !"INACTIVE".equals(c.getStatus())
+                        && !"UNDER_CALIBRATION".equals(c.getCalibrationStatus())) {
+                    c.setCalibrationStatus("OUT_OF_SERVICE");
+                    c.setStatus("INACTIVE");
+                    c.setUpdatedAt(Instant.now());
+                    calSchedules.save(c);
+                    updated++;
+                }
+            }
+            for (InstrumentMaster i : instruments.findByActiveTrue()) {
+                if (i.getCalibrationDue() == null) continue;
+                if (i.getCalibrationDue().isBefore(today)
+                        && !"UNDER_CALIBRATION".equals(i.getCalibrationStatus())) {
+                    i.setCalibrationStatus("OUT_OF_SERVICE");
+                    i.setCurrentStatus("QUARANTINED");
+                    i.setUpdatedAt(Instant.now());
+                    instruments.save(i);
+                    updated++;
+                }
+            }
+            log.info("[Calibration Status Recalc] {} calibration record(s) updated", updated);
+        } catch (Exception ex) {
+            log.error("[Calibration Status Recalc] Failed", ex);
         }
     }
 }

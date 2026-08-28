@@ -1103,6 +1103,13 @@ export const NAV_ITEMS: NavTopItem[] = [
             icon: 'task_alt',
             screenId: 'pm-completion',
           },
+          {
+            type: 'item',
+            id: 'pm-work-order',
+            label: 'PM Work Order',
+            icon: 'assignment_turned_in',
+            screenId: 'pm-work-order',
+          },
         ],
       },
       {
@@ -1230,6 +1237,20 @@ export const NAV_ITEMS: NavTopItem[] = [
         label: 'Downtime & Cost Report',
         icon: 'bar_chart',
         screenId: 'downtime-cost-report',
+      },
+      {
+        type: 'item',
+        id: 'spare-request',
+        label: 'Spare Request',
+        icon: 'inventory_2',
+        screenId: 'spare-request',
+      },
+      {
+        type: 'item',
+        id: 'maintenance-cost',
+        label: 'Maintenance Cost',
+        icon: 'payments',
+        screenId: 'maintenance-cost',
       },
       {
         type: 'item',

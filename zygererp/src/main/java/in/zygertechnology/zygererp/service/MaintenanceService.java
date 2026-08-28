@@ -53,6 +53,7 @@ public class MaintenanceService {
     private final NotificationLogRepository notificationLogs;
     private final NotificationService notificationService;
     private final InstrumentMasterRepository instruments;
+    private final MaintenanceCostTransactionRepository maintenanceCosts;
 
     // ===========================
     // ---- HELPER METHODS -------
@@ -131,6 +132,26 @@ public class MaintenanceService {
             case "YEARLY" -> from.plusYears(1);
             default -> from.plusMonths(1);
         };
+    }
+
+    /**
+     * §10.4: When a maintenance document is CLOSED (breakdown/tool rectification) or
+     * finalized (calibration entry COMPLETED), its cost transactions become immutable so
+     * they can no longer be edited or reversed.
+     */
+    public void finalizeCostOnClose(String parentType, Long parentId) {
+        try {
+            maintenanceCosts.findByParentTypeAndParentId(parentType, parentId)
+                    .forEach(c -> {
+                        if (!Boolean.TRUE.equals(c.getImmutable())) {
+                            c.setImmutable(true);
+                            c.setUpdatedAt(Instant.now());
+                            maintenanceCosts.save(c);
+                        }
+                    });
+        } catch (Exception ex) {
+            log.error("finalizeCostOnClose failed parentType={} parentId={}", parentType, parentId, ex);
+        }
     }
 
     // ===========================
@@ -341,6 +362,7 @@ public class MaintenanceService {
                 }
                 r.setStatus("CLOSED");
                 releaseMachineFromBreakdown(r.getBreakdownId(), r.getMachineCode());
+                finalizeCostOnClose("BREAKDOWN", r.getBreakdownId());
                 if (r.getStartTime() != null && r.getEndTime() != null) {
                     createDowntimeTransaction(r.getMachineCode(), "BREAKDOWN", r.getBreakdownId(), r.getStartTime(), r.getEndTime());
                 }
@@ -725,7 +747,7 @@ public class MaintenanceService {
         ToolServiceRectification r = toolRectifications.findById(id).orElseThrow(() -> new RuntimeException("Tool Rectification not found"));
         switch (action.toLowerCase()) {
             case "complete": r.setStatus("COMPLETED"); r.setServiceEnd(Instant.now()); break;
-            case "close": r.setStatus("CLOSED"); break;
+            case "close": r.setStatus("CLOSED"); finalizeCostOnClose("TOOLING", r.getId()); break;
             case "pass": r.setResult("PASS"); break;
             case "fail": r.setResult("FAIL"); break;
             default: throw new RuntimeException("Unknown action: " + action);
@@ -836,8 +858,8 @@ public class MaintenanceService {
         CalibrationEntry ce = calEntries.findById(id).orElseThrow(() -> new RuntimeException("Calibration Entry not found"));
         String user = principalName(principal);
         switch (action.toLowerCase()) {
-            case "pass": { ce.setResult("PASS"); ce.setStatus("COMPLETED"); applyCalPass(ce); break; }
-            case "fail": { ce.setResult("FAIL"); ce.setStatus("COMPLETED"); applyCalFail(ce, user); break; }
+            case "pass": { ce.setResult("PASS"); ce.setStatus("COMPLETED"); finalizeCostOnClose("CALIBRATION", ce.getId()); applyCalPass(ce); break; }
+            case "fail": { ce.setResult("FAIL"); ce.setStatus("COMPLETED"); finalizeCostOnClose("CALIBRATION", ce.getId()); applyCalFail(ce, user); break; }
             case "submit": ce.setStatus("SUBMITTED"); break;
             default: throw new RuntimeException("Unknown action: " + action);
         }

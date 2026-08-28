@@ -118,6 +118,9 @@ import PowerConsumptionScreen from '../pages/maintenance/utilities/PowerConsumpt
 import WaterConsumptionScreen from '../pages/maintenance/utilities/WaterConsumptionScreen';
 import RootCauseAnalysisScreen from '../pages/maintenance/analysis/RootCauseAnalysisScreen';
 import MaintenanceAnalysisScreen from '../pages/maintenance/analysis/MaintenanceAnalysisScreen';
+import PmWorkOrderScreen from '../pages/maintenance/pm/PmWorkOrderScreen';
+import SpareRequestScreen from '../pages/maintenance/spare/SpareRequestScreen';
+import MaintenanceCostScreen from '../pages/maintenance/cost/MaintenanceCostScreen';
 import MaintenanceReportsScreen from '../pages/maintenance/reports/MaintenanceReportsScreen';
 import DowntimeCostReportPage from '../pages/maintenance/reports/DowntimeCostReportPage';
 import NotificationLogPage from '../pages/maintenance/notifications/NotificationLogPage';
@@ -268,6 +271,7 @@ export const SCREEN_REGISTRY: Record<string, ScreenDefinition> = {
   'pm-plan': { component: PmPlanScreen },
   'pm-schedule': { component: PmScheduleScreen },
   'pm-completion': { component: PmCompletionScreen },
+  'pm-work-order': { component: PmWorkOrderScreen },
   'tool-service-intimation': { component: ToolServiceIntimationScreen },
   'tool-service-rectification': { component: ToolServiceRectificationScreen },
   'calibration-schedule': { component: CalibrationScheduleScreen },
@@ -279,6 +283,8 @@ export const SCREEN_REGISTRY: Record<string, ScreenDefinition> = {
   'maintenance-reports': { component: MaintenanceReportsScreen },
   'downtime-cost-report': { component: DowntimeCostReportPage },
   'notification-log': { component: NotificationLogPage },
+  'spare-request': { component: SpareRequestScreen },
+  'maintenance-cost': { component: MaintenanceCostScreen },
   'company-info': { component: CompanyInfoScreen },
   'uom-master': { component: UOMScreen },
   'item-group-master': { component: ItemGroupScreen },
