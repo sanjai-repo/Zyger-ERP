@@ -5,6 +5,7 @@ import in.zygertechnology.zygererp.repo.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -54,6 +55,9 @@ public class MaintenanceService {
     private final NotificationService notificationService;
     private final InstrumentMasterRepository instruments;
     private final MaintenanceCostTransactionRepository maintenanceCosts;
+    private final VendorMasterRepository vendors;
+    private final MachineOperatingHoursRepository operatingHoursRepo;
+    private final MaintenanceCostAdjustmentRepository costAdjustments;
 
     // ===========================
     // ---- HELPER METHODS -------
@@ -154,6 +158,52 @@ public class MaintenanceService {
         }
     }
 
+    /** BR-12: corrections on a CLOSED/immutable cost row go through adjustment records, never an UPDATE/DELETE. */
+    @Transactional
+    public Map<String, Object> adjustCost(Long costId, BigDecimal deltaAmount, String reason, String user) {
+        MaintenanceCostTransaction c = maintenanceCosts.findById(costId)
+                .orElseThrow(() -> new IllegalArgumentException("Cost row not found: " + costId));
+        if (deltaAmount == null || deltaAmount.signum() == 0) {
+            throw new IllegalArgumentException("Adjustment amount must be non-zero");
+        }
+        if (Boolean.TRUE.equals(c.getImmutable())) {
+            MaintenanceCostAdjustment a = MaintenanceCostAdjustment.builder()
+                    .costTransactionId(c.getId())
+                    .parentType(c.getParentType())
+                    .parentId(c.getParentId())
+                    .parentNumber(c.getParentNumber())
+                    .machineCode(c.getMachineCode())
+                    .adjustmentType("ADJUST")
+                    .deltaAmount(deltaAmount)
+                    .reason(reason)
+                    .postedBy(user)
+                    .postedAt(Instant.now())
+                    .build();
+            costAdjustments.save(a);
+            return Map.of("id", a.getId(), "costTransactionId", c.getId(), "deltaAmount", deltaAmount,
+                    "adjusted", true, "message", "Adjustment recorded against immutable cost row");
+        }
+        // Not yet immutable: apply the correction directly on the row itself.
+        c.setAmount(c.getAmount() == null ? deltaAmount : c.getAmount().add(deltaAmount));
+        c.setUpdatedAt(Instant.now());
+        maintenanceCosts.save(c);
+        return Map.of("costTransactionId", c.getId(), "amount", c.getAmount(), "adjusted", false);
+    }
+
+    public List<Map<String, Object>> listCostAdjustments(Long costId) {
+        return costAdjustments.findByCostTransactionId(costId).stream().map(a -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", a.getId());
+            m.put("costTransactionId", a.getCostTransactionId());
+            m.put("adjustmentType", a.getAdjustmentType());
+            m.put("deltaAmount", a.getDeltaAmount());
+            m.put("reason", a.getReason());
+            m.put("postedBy", a.getPostedBy());
+            m.put("postedAt", a.getPostedAt());
+            return m;
+        }).toList();
+    }
+
     // ===========================
     // ---- BREAKDOWN INTIMATION -
     // ===========================
@@ -207,6 +257,43 @@ public class MaintenanceService {
         setCreated(bd, principalName(principal));
         breakdowns.save(bd);
         if (isCriticalOrHigh(bd.getPriority())) updateMachineStatus(bd.getMachineCode(), "BREAKDOWN");
+
+        try {
+            String mDisplay = bd.getMachineCode() != null ? bd.getMachineCode() : "N/A";
+            if (bd.getMachineCode() != null && !bd.getMachineCode().isBlank()) {
+                mDisplay = machines.findByCode(bd.getMachineCode())
+                        .map(m -> m.getName() != null && !m.getName().isBlank() ? bd.getMachineCode() + " (" + m.getName() + ")" : bd.getMachineCode())
+                        .orElse(bd.getMachineCode());
+            }
+            String alarmCode = (bd.getCncAlarmCode() != null && !bd.getCncAlarmCode().isBlank()) ? bd.getCncAlarmCode() : "N/A";
+            String notifMsg = String.format("Breakdown Intimation Created - Breakdown No: %s | Machine: %s | Alarm Code: %s",
+                    bd.getBreakdownNumber(), mDisplay, alarmCode);
+
+            notificationService.notify(
+                    "BREAKDOWN_CREATED",
+                    "MAINTENANCE",
+                    "BreakdownIntimation",
+                    bd.getId(),
+                    isCriticalOrHigh(bd.getPriority()) ? "CRITICAL" : "WARNING",
+                    notifMsg,
+                    bd.getBreakdownNumber()
+            );
+
+            NotificationLog nl = NotificationLog.builder()
+                    .recipient("ALL")
+                    .channel("IN_APP")
+                    .subject("Breakdown Intimation Created: " + bd.getBreakdownNumber())
+                    .body(notifMsg)
+                    .sourceType("BREAKDOWN_INTIMATION")
+                    .sourceId(bd.getId())
+                    .status("SENT")
+                    .sentAt(Instant.now())
+                    .build();
+            notificationLogs.save(nl);
+        } catch (Exception ex) {
+            log.error("Failed to generate breakdown creation notification for id={}", bd.getId(), ex);
+        }
+
         return bd;
     }
 
@@ -292,6 +379,7 @@ public class MaintenanceService {
         }
         if (r.getServiceCost() == null) r.setServiceCost(BigDecimal.ZERO);
         if (r.getStatus() == null) r.setStatus("IN_PROGRESS");
+        denormalizeRectificationVendor(r);
         setCreated(r, principalName(principal));
         BreakdownRectification saved = rectifications.save(r);
 
@@ -314,6 +402,7 @@ public class MaintenanceService {
         r.setCreatedAt(e.getCreatedAt());
         r.setCreatedBy(e.getCreatedBy());
         audit(r, principalName(principal));
+        denormalizeRectificationVendor(r);
         if (r.getStartTime() != null && r.getEndTime() != null) {
             long mins = ChronoUnit.MINUTES.between(r.getStartTime(), r.getEndTime());
             r.setDowntimeMinutes(BigDecimal.valueOf(mins));
@@ -541,6 +630,11 @@ public class MaintenanceService {
         setCreated(c, principalName(principal));
         PMCompletion saved = pmCompletions.save(c);
 
+        // BR-15: auto-generate checklist items from the linked PM plan's checklist template
+        // so that Verify can pass once every item has a result.
+        try { generateChecklistForCompletion(saved); }
+        catch (Exception ex) { log.warn("Auto checklist generation failed for PM completion {}: {}", saved.getId(), ex.getMessage()); }
+
         // §7.3: Auto-post stock issues for linked spare parts
         try { sparePartStockService.postPmCompletionStockIssues(saved.getId(), saved.getCompletionNumber(), saved.getMachineCode()); }
         catch (Exception ex) { log.warn("Spare part stock issue posting failed for PM completion {}: {}", saved.getId(), ex.getMessage()); }
@@ -664,6 +758,7 @@ public class MaintenanceService {
         if (t.getServiceDate() == null) t.setServiceDate(LocalDate.now());
         if (t.getStatus() == null) t.setStatus("OPEN");
         if (t.getPriority() == null) t.setPriority("MEDIUM");
+        denormalizeToolServiceVendor(t);
         setCreated(t, principalName(principal));
         return toolServices.save(t);
     }
@@ -675,6 +770,7 @@ public class MaintenanceService {
         t.setCreatedAt(e.getCreatedAt());
         t.setCreatedBy(e.getCreatedBy());
         audit(t, principalName(principal));
+        denormalizeToolServiceVendor(t);
         return toolServices.save(t);
     }
 
@@ -791,12 +887,13 @@ public class MaintenanceService {
 
     public CalibrationSchedule calScheduleAction(Long id, String action, Principal principal) {
         CalibrationSchedule cs = calSchedules.findById(id).orElseThrow(() -> new RuntimeException("Calibration Schedule not found"));
-        switch (action.toLowerCase()) {
-            case "send": cs.setCalibrationStatus("UNDER_CALIBRATION"); cs.setStatus("IN_PROGRESS"); break;
-            case "valid": cs.setCalibrationStatus("VALID"); cs.setStatus("ACTIVE"); break;
-            case "fail": cs.setCalibrationStatus("FAILED"); cs.setStatus("INACTIVE"); break;
-            case "deactivate": cs.setCalibrationStatus("OUT_OF_SERVICE"); cs.setStatus("INACTIVE"); break;
-            default: throw new RuntimeException("Unknown action: " + action);
+        String a = action == null ? "" : action.toLowerCase().replace("mark-", "");
+        switch (a) {
+            case "send", "send-for-calibration" -> { cs.setCalibrationStatus("UNDER_CALIBRATION"); cs.setStatus("IN_PROGRESS"); }
+            case "valid", "mark-valid" -> { cs.setCalibrationStatus("VALID"); cs.setStatus("ACTIVE"); }
+            case "fail", "mark-failed" -> { cs.setCalibrationStatus("FAILED"); cs.setStatus("INACTIVE"); }
+            case "deactivate" -> { cs.setCalibrationStatus("OUT_OF_SERVICE"); cs.setStatus("INACTIVE"); }
+            default -> throw new RuntimeException("Unknown action: " + action);
         }
         audit(cs, principalName(principal));
         return calSchedules.save(cs);
@@ -1139,6 +1236,13 @@ public class MaintenanceService {
         return result;
     }
 
+    /** §10.3 Real operating hours from machine_operating_hours; falls back to an estimate when no production feed exists yet. */
+    public double operatingHoursFor(String machineCode, double fallbackDowntimeMinutes) {
+        BigDecimal recorded = operatingHoursRepo.sumOperatingHours(machineCode, LocalDate.MIN, LocalDate.now());
+        if (recorded != null && recorded.doubleValue() > 0) return recorded.doubleValue();
+        return fallbackDowntimeMinutes > 0 ? fallbackDowntimeMinutes * 5.0 / 60.0 : 60.0;
+    }
+
     public List<Map<String, Object>> downtimeAnalysis() {
         List<BreakdownIntimation> allBd = breakdowns.findAll();
         List<BreakdownRectification> allRects = rectifications.findAll();
@@ -1204,8 +1308,8 @@ public class MaintenanceService {
             long failures = entry.getValue().size();
             double totalDowntime = machineDowntime.getOrDefault(machine, 0.0);
             double mttr = failures > 0 ? totalDowntime / failures : 0;
-            double operatingTime = failures > 0 ? totalDowntime * 5 : 3600; // estimate
-            double mtbf = failures > 0 ? operatingTime / failures : operatingTime;
+            double operatingHours = operatingHoursFor(machine, totalDowntime);
+            double mtbf = failures > 0 ? operatingHours * 60.0 / failures : operatingHours * 60.0;
 
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("machineCode", machine);
@@ -1427,9 +1531,13 @@ public class MaintenanceService {
         }
 
         Map<String, Object> result = new LinkedHashMap<>();
+        BigDecimal totalAdjustment = costAdjustments.findAll().stream()
+            .map(a -> a.getDeltaAmount() != null ? a.getDeltaAmount() : BigDecimal.ZERO)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
         result.put("totalBreakdownCost", totalBreakdownCost);
         result.put("totalToolServiceCost", totalToolCost);
-        result.put("grandTotal", totalBreakdownCost.add(totalToolCost));
+        result.put("totalAdjustment", totalAdjustment);
+        result.put("grandTotal", totalBreakdownCost.add(totalToolCost).add(totalAdjustment));
         result.put("costByMachine", costByMachine);
         result.put("breakdownTransactions", rects.size());
         result.put("toolServiceTransactions", toolRects.size());
@@ -1510,6 +1618,26 @@ public class MaintenanceService {
         d.setId(id); audit(d, principalName(principal)); return departments.save(d);
     }
 
+    // Service Vendors (spec 3: vendor_master replaces free-text vendor fields)
+    public List<VendorMaster> listVendors() { return vendors.findAll(); }
+    public VendorMaster createVendor(VendorMaster v, Principal principal) {
+        v.setId(null); v.setActive(true); setCreated(v, principalName(principal));
+        return vendors.save(v);
+    }
+    public VendorMaster updateVendor(Long id, VendorMaster v, Principal principal) {
+        v.setId(id); audit(v, principalName(principal)); return vendors.save(v);
+    }
+
+    private void denormalizeRectificationVendor(BreakdownRectification r) {
+        if (r.getVendorId() == null) return;
+        vendors.findById(r.getVendorId()).ifPresent(v -> r.setExternalVendor(v.getName()));
+    }
+
+    private void denormalizeToolServiceVendor(ToolServiceIntimation t) {
+        if (t.getVendorId() == null) return;
+        vendors.findById(t.getVendorId()).ifPresent(v -> t.setVendor(v.getName()));
+    }
+
     // Technicians
     public List<TechnicianMaster> listTechnicians() { return technicians.findAll(); }
     public TechnicianMaster createTechnician(TechnicianMaster t, Principal principal) {
@@ -1587,6 +1715,38 @@ public class MaintenanceService {
             item.setId(null); item.setCompletionId(completionId);
         }
         return pmChecklistItems.saveAll(items);
+    }
+
+    /**
+     * BR-15: resolve the PM completion's schedule -> plan -> checklist template and
+     * materialise one checklist item per template item so the technician can record a
+     * result for each before verifying.
+     */
+    public void generateChecklistForCompletion(PMCompletion completion) {
+        if (completion == null || completion.getScheduleId() == null) return;
+        PMSchedule sched = pmSchedules.findById(completion.getScheduleId()).orElse(null);
+        if (sched == null || sched.getPlanId() == null) return;
+        PMPlan plan = pmPlans.findById(sched.getPlanId()).orElse(null);
+        if (plan == null || plan.getChecklistTemplateId() == null) return;
+
+        PmChecklistTemplate template = pmChecklistTemplates.findById(plan.getChecklistTemplateId()).orElse(null);
+        if (template == null || template.getItems() == null || template.getItems().isEmpty()) return;
+
+        if (!pmChecklistItems.findByCompletionId(completion.getId()).isEmpty()) return;
+
+        List<PmCompletionChecklistItem> items = new ArrayList<>();
+        int order = 0;
+        for (PmChecklistTemplateItem t : template.getItems()) {
+            order++;
+            items.add(PmCompletionChecklistItem.builder()
+                    .completionId(completion.getId())
+                    .activityId(t.getActivityId())
+                    .activityName(t.getActivityName() != null ? t.getActivityName() : ("Checklist item " + order))
+                    .isMandatory(t.getIsMandatory() != null ? t.getIsMandatory() : true)
+                    .sortOrder(t.getSortOrder() != null ? t.getSortOrder() : order)
+                    .build());
+        }
+        pmChecklistItems.saveAll(items);
     }
 
     // Attachments

@@ -55,6 +55,9 @@ public class BreakdownRectification {
     @Column(name = "external_vendor", length = 120)
     private String externalVendor;
 
+    @Column(name = "vendor_id")
+    private Long vendorId;
+
     @Column(name = "service_cost", precision = 18, scale = 2)
     private BigDecimal serviceCost;
 

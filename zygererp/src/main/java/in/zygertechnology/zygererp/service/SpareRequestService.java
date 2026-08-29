@@ -26,6 +26,7 @@ public class SpareRequestService {
     private final MaintenanceSpareRequestRepository requests;
     private final MaintenanceSpareRequestLineRepository lines;
     private final SparePartMasterRepository spareParts;
+    private final ItemRepository items;
     private final StockBalanceRepository stockBalances;
     private final StockLedgerRepository ledger;
     private final MaintenanceCostTransactionRepository costTransactions;
@@ -143,6 +144,12 @@ public class SpareRequestService {
                 if (itemName == null) itemName = sp.get().getName();
                 l.setSparePartId(sp.get().getId());
                 unitCost = sp.get().getUnitCost() == null ? BigDecimal.ZERO : sp.get().getUnitCost();
+            } else {
+                Optional<ItemMaster> item = itemCode != null ? items.findByCode(itemCode) : Optional.empty();
+                if (item.isPresent()) {
+                    if (itemName == null) itemName = item.get().getName();
+                    unitCost = item.get().getDefaultRate() == null ? BigDecimal.ZERO : item.get().getDefaultRate();
+                }
             }
             l.setItemName(itemName);
             l.setUom(str(line.get("uom")) != null ? str(line.get("uom")) : "NOS");

@@ -19,6 +19,7 @@ public class MasterDataController {
     private final InspectionPlanCharacteristicRepository ipcRepo;
     private final EscalationRuleRepository escRuleRepo;
     private final EscalationLogRepository escLogRepo;
+    private final in.zygertechnology.zygererp.repo.ItemRepository items;
 
     public MasterDataController(PlantMasterRepository plantRepo,
                                 WorkCenterMasterRepository wcRepo,
@@ -34,7 +35,8 @@ public class MasterDataController {
                                 RejectReasonMasterRepository rejectReasonRepo,
                                 ApprovalStepRepository approvalStepRepo,
                                 in.zygertechnology.zygererp.service.WorkflowStateMachine stateMachine,
-                                jakarta.persistence.EntityManager em) {
+                                jakarta.persistence.EntityManager em,
+                                in.zygertechnology.zygererp.repo.ItemRepository items) {
         this.plantRepo = plantRepo;
         this.wcRepo = wcRepo;
         this.meterRepo = meterRepo;
@@ -50,6 +52,7 @@ public class MasterDataController {
         this.approvalStepRepo = approvalStepRepo;
         this.stateMachine = stateMachine;
         this.em = em;
+        this.items = items;
     }
 
     // ── PLANT ──
@@ -152,6 +155,8 @@ public class MasterDataController {
             m.put("uom", sp.getUom());
             m.put("reorderLevel", sp.getReorderLevel());
             m.put("unitCost", sp.getUnitCost());
+            m.put("itemId", sp.getItemId());
+            m.put("itemCode", sp.getItemCode());
             return m;
         }).toList();
     }
@@ -159,17 +164,31 @@ public class MasterDataController {
     @PostMapping("/spare-parts")
     public Map<String, Object> saveSparePart(@RequestBody Map<String, Object> body) {
         PlantMaster plant = plantRepo.findById(((Number) body.getOrDefault("plantId", 1L)).longValue()).orElseThrow();
+        Long itemId = body.get("itemId") != null ? ((Number) body.get("itemId")).longValue() : null;
+        String itemCode = (String) body.get("itemCode");
+        String code = (String) body.get("code");
+        String name = (String) body.get("name");
+        in.zygertechnology.zygererp.entity.ItemMaster item = null;
+        if (itemId != null) item = items.findById(itemId).orElse(null);
+        else if (itemCode != null && !itemCode.isBlank()) item = items.findByCode(itemCode).orElse(null);
+        if (item != null) {
+            if (code == null || code.isBlank()) code = item.getCode();
+            if (name == null || name.isBlank()) name = item.getName();
+            itemCode = item.getCode();
+        }
         SparePartMaster sp = SparePartMaster.builder()
                 .plant(plant)
-                .code((String) body.get("code"))
-                .name((String) body.get("name"))
+                .itemId(item != null ? item.getId() : null)
+                .itemCode(item != null ? item.getCode() : itemCode)
+                .code(code)
+                .name(name)
                 .description((String) body.get("description"))
-                .uom((String) body.getOrDefault("uom", "NOS"))
+                .uom(body.get("uom") != null ? (String) body.get("uom") : (item != null && item.getUom() != null ? item.getUom() : "NOS"))
                 .unitCost(body.get("unitCost") != null ? new java.math.BigDecimal(body.get("unitCost").toString()) : java.math.BigDecimal.ZERO)
                 .active(true)
                 .build();
         spareRepo.save(sp);
-        return Map.of("id", sp.getId(), "code", sp.getCode());
+        return Map.of("id", sp.getId(), "code", sp.getCode(), "itemId", sp.getItemId(), "itemCode", sp.getItemCode());
     }
 
     // ── SAMPLING PLANS ──

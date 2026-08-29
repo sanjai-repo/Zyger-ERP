@@ -58,6 +58,9 @@ public class ToolServiceIntimation {
     @Column(length = 120)
     private String vendor;
 
+    @Column(name = "vendor_id")
+    private Long vendorId;
+
     @Column(length = 30)
     private String status;
 

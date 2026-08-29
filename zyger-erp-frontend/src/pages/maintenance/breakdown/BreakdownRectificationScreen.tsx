@@ -28,6 +28,7 @@ interface Rectification {
   endTime: string;
   downtimeMinutes: number;
   externalVendor: string;
+  vendorId?: number;
   serviceCost: number;
   testingResult: string;
   status: string;
@@ -35,6 +36,7 @@ interface Rectification {
 }
 
 interface Machine { id: number; code: string; name: string; }
+interface Vendor { id: number; code: string; name: string; }
 
 const SC: Record<string, { color: string; bg: string }> = {
   DRAFT: { color: '#888', bg: '#e9ecef' },
@@ -52,11 +54,11 @@ export default function BreakdownRectificationScreen() {
   const [rows, setRows] = useState<Rectification[]>([]);
   const [breakdowns, setBreakdowns] = useState<BreakdownOption[]>([]);
   const [machines, setMachines] = useState<Machine[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<Record<string, unknown>>({});
   const [selBd, setSelBd] = useState<BreakdownOption | null>(null);
   const [serviceType, setServiceType] = useState('');
-  const [extName, setExtName] = useState('');
   const [editId, setEditId] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Rectification | null>(null);
   const [busy, setBusy] = useState(false);
@@ -80,6 +82,7 @@ export default function BreakdownRectificationScreen() {
 
   useEffect(() => {
     apiClient.get('/master/machines').then(({ data }) => setMachines(Array.isArray(data) ? data : [])).catch(() => {});
+    apiClient.get('/v1/maintenance/vendors').then(({ data }) => setVendors(Array.isArray(data) ? data : [])).catch(() => {});
   }, []);
 
   const machineName = (code: string) => machines.find((m) => m.code === code)?.name ?? '-';
@@ -89,12 +92,20 @@ export default function BreakdownRectificationScreen() {
     setBusy(true);
     try {
       const payload: Record<string, unknown> = { ...form };
-      if (serviceType === 'EXTERNAL SERVICE') payload.externalVendor = extName.trim();
-      else if (serviceType === 'BRAND SERVICE') payload.externalVendor = 'BRAND SERVICE';
-      else payload.externalVendor = null;
+      if (serviceType === 'EXTERNAL SERVICE') {
+        if (!form.vendorId) { toast('Please select an external vendor.', 'error'); return; }
+        payload.vendorId = Number(form.vendorId);
+        payload.externalVendor = null;
+      } else if (serviceType === 'BRAND SERVICE') {
+        payload.vendorId = null;
+        payload.externalVendor = 'BRAND SERVICE';
+      } else {
+        payload.vendorId = null;
+        payload.externalVendor = null;
+      }
       if (editId) { await apiClient.put(`/v1/maintenance/breakdown-rectifications/${editId}`, payload); toast('Rectification updated.'); }
       else { await apiClient.post('/v1/maintenance/breakdown-rectifications', payload); toast('Rectification created.'); }
-      setForm({}); setEditId(null); setSelBd(null); setServiceType(''); setExtName(''); setTab('list'); load();
+      setForm({}); setEditId(null); setSelBd(null); setServiceType(''); setTab('list'); load();
     } catch (e) { toast(getApiErrorMessage(e, 'Save failed.'), 'error'); }
     setBusy(false);
   };
@@ -112,7 +123,7 @@ export default function BreakdownRectificationScreen() {
     catch (e) { toast(getApiErrorMessage(e, 'Action failed.'), 'error'); }
   };
 
-  const backToList = () => { setForm({}); setEditId(null); setSelBd(null); setServiceType(''); setExtName(''); setTab('list'); };
+  const backToList = () => { setForm({}); setEditId(null); setSelBd(null); setServiceType(''); setTab('list'); };
   const set = (k: string, v: unknown) => setForm((c) => ({ ...c, [k]: v }));
 
   const handleBreakdownSelect = (val: string) => {
@@ -121,15 +132,17 @@ export default function BreakdownRectificationScreen() {
     setSelBd(bd ?? null);
   };
 
-  const openNew = () => { setForm({}); setEditId(null); setSelBd(null); setServiceType(''); setExtName(''); setTab('form'); };
+  const openNew = () => { setForm({}); setEditId(null); setSelBd(null); setServiceType(''); setTab('form'); };
 
   const openEdit = (r: Rectification) => {
     setForm(r as unknown as Record<string, unknown>);
     setEditId(r.id);
     setSelBd(breakdowns.find((b) => b.id === r.breakdownId) ?? null);
     const ev = r.externalVendor ?? '';
+    const vMatch = vendors.find((v) => v.code === ev || v.name === ev);
     if (ev === 'BRAND SERVICE') setServiceType('BRAND SERVICE');
-    else if (ev) { setServiceType('EXTERNAL SERVICE'); setExtName(ev); }
+    else if (vMatch) { setServiceType('EXTERNAL SERVICE'); set('vendorId', vMatch.id); }
+    else if (ev) { setServiceType('EXTERNAL SERVICE'); set('vendorId', r.vendorId ?? ''); }
     else setServiceType('');
     setTab('form');
   };
@@ -196,7 +209,12 @@ export default function BreakdownRectificationScreen() {
               </select>
             </label>
             {serviceType === 'EXTERNAL SERVICE' && (
-              <label className="fld"><span>External Service Name</span><input className="in" value={extName} onChange={(e) => setExtName(e.target.value)} placeholder="Vendor / service provider" /></label>
+              <label className="fld"><span>External Vendor *</span>
+                <select className="in" value={String(form.vendorId ?? '')} onChange={(e) => set('vendorId', e.target.value ? Number(e.target.value) : '')}>
+                  <option value="">Select vendor...</option>
+                  {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+              </label>
             )}
             <label className="fld"><span>Service Cost</span><input className="in" type="number" min={0} step="0.01" value={String(form.serviceCost ?? '')} onChange={(e) => set('serviceCost', Math.max(0, Number(e.target.value)))} /></label>
             <label className="fld"><span>Testing Result</span>

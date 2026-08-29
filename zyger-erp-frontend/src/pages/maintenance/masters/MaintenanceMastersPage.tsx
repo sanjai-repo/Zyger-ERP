@@ -3,9 +3,9 @@ import apiClient from '../../../api/axiosClient';
 import { useToast } from '../../../contexts/ToastContext';
 import { getApiErrorMessage } from '../../../utils/apiError';
 
-interface Master { id: number; code: string; name: string; active: boolean; description?: string; skillCategory?: string; machineType?: string; defaultFrequency?: string; breakdownCategoryId?: number; }
+interface Master { id: number; code: string; name: string; active: boolean; description?: string; skillCategory?: string; machineType?: string; defaultFrequency?: string; breakdownCategoryId?: number; contactPerson?: string; contactPhone?: string; email?: string; serviceCategory?: string; }
 
-const TABS = ['Departments', 'Technicians', 'Breakdown Categories', 'Failure Codes', 'Root Cause Codes', 'Activities', 'PM Checklist Templates'] as const;
+const TABS = ['Departments', 'Technicians', 'Breakdown Categories', 'Failure Codes', 'Root Cause Codes', 'Activities', 'PM Checklist Templates', 'Service Vendors'] as const;
 type TabKey = typeof TABS[number];
 
 const ENDPOINTS: Record<TabKey, { list: string; create: string; fields: string[] }> = {
@@ -16,9 +16,10 @@ const ENDPOINTS: Record<TabKey, { list: string; create: string; fields: string[]
   'Root Cause Codes':       { list: '/v1/maintenance/root-cause-codes',       create: '/v1/maintenance/root-cause-codes',       fields: ['code', 'description'] },
   'Activities':             { list: '/v1/maintenance/activities',             create: '/v1/maintenance/activities',             fields: ['code', 'name', 'defaultFrequency'] },
   'PM Checklist Templates': { list: '/v1/maintenance/pm-checklist-templates', create: '/v1/maintenance/pm-checklist-templates', fields: ['code', 'name', 'machineType'] },
+  'Service Vendors':        { list: '/v1/maintenance/vendors',                create: '/v1/maintenance/vendors',                fields: ['code', 'name', 'contactPerson', 'contactPhone', 'email', 'serviceCategory'] },
 };
 
-const FIELD_LABELS: Record<string, string> = { code: 'Code', name: 'Name', description: 'Description', skillCategory: 'Skill Category', userId: 'User ID', defaultFrequency: 'Default Frequency', machineType: 'Machine Type' };
+const FIELD_LABELS: Record<string, string> = { code: 'Code', name: 'Name', description: 'Description', skillCategory: 'Skill Category', userId: 'User ID', defaultFrequency: 'Default Frequency', machineType: 'Machine Type', contactPerson: 'Contact Person', contactPhone: 'Contact Phone', email: 'Email', serviceCategory: 'Service Category' };
 
 export default function MaintenanceMastersPage() {
   const { toast } = useToast();
@@ -63,7 +64,7 @@ export default function MaintenanceMastersPage() {
     setBusy(false);
   };
 
-  const edit = (r: Master) => { setEditId(r.id); setForm({ code: r.code ?? '', name: r.name ?? '', description: r.description ?? '', skillCategory: r.skillCategory ?? '', userId: (r as any).userId ?? '', defaultFrequency: r.defaultFrequency ?? '', machineType: r.machineType ?? '' }); };
+  const edit = (r: Master) => { setEditId(r.id); setForm({ code: r.code ?? '', name: r.name ?? '', description: r.description ?? '', skillCategory: r.skillCategory ?? '', userId: (r as any).userId ?? '', defaultFrequency: r.defaultFrequency ?? '', machineType: r.machineType ?? '', contactPerson: r.contactPerson ?? '', contactPhone: r.contactPhone ?? '', email: r.email ?? '', serviceCategory: r.serviceCategory ?? '' }); };
 
   const set = (k: string, v: string) => setForm((c) => ({ ...c, [k]: v }));
   const filtered = rows.filter((r) => !search || (r.code ?? '').toLowerCase().includes(search.toLowerCase()) || (r.name ?? '').toLowerCase().includes(search.toLowerCase()) || (r.description ?? '').toLowerCase().includes(search.toLowerCase()));
@@ -109,6 +110,7 @@ export default function MaintenanceMastersPage() {
               {activeTab === 'Technicians' && <th>Skill Category</th>}
               {activeTab === 'PM Checklist Templates' && <th>Machine Type</th>}
               {activeTab === 'Activities' && <th>Default Frequency</th>}
+              {activeTab === 'Service Vendors' && <th>Contact</th>}
               <th>Active</th>
               <th>Actions</th>
             </tr>
@@ -122,6 +124,7 @@ export default function MaintenanceMastersPage() {
                 {activeTab === 'Technicians' && <td>{r.skillCategory}</td>}
                 {activeTab === 'PM Checklist Templates' && <td>{r.machineType}</td>}
                 {activeTab === 'Activities' && <td>{r.defaultFrequency}</td>}
+                {activeTab === 'Service Vendors' && <td>{r.contactPerson || r.contactPhone || r.email || '-'}</td>}
                 <td><span style={{ color: r.active ? '#22c55e' : '#ef4444', fontWeight: 600 }}>{r.active ? 'Yes' : 'No'}</span></td>
                 <td>
                   <button className="btn" onClick={() => edit(r)} style={{ marginRight: 4 }}>Edit</button>

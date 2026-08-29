@@ -20,6 +20,7 @@ interface ToolService {
   toolCondition: string;
   priority: string;
   vendor: string;
+  vendorId?: number;
   status: string;
   remarks: string;
 }
@@ -38,10 +39,12 @@ const TOOL_TYPES = ['CUTTING_TOOL', 'FIXTURE', 'TOOL_HOLDER', 'JIG', 'GAUGE', 'O
 const SERVICE_REASONS = ['SHARPENING', 'REPAIR', 'INSPECTION', 'REFURBISHMENT', 'REPLACEMENT', 'OTHER'];
 const TOOL_CONDITIONS = ['GOOD', 'FAIR', 'POOR', 'DAMAGED'];
 const PRIORITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+interface Vendor { id: number; code: string; name: string; }
 
 export default function ToolServiceIntimationScreen() {
   const { toast } = useToast();
   const [rows, setRows] = useState<ToolService[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<Record<string, unknown>>({});
   const [editId, setEditId] = useState<number | null>(null);
@@ -61,6 +64,10 @@ export default function ToolServiceIntimationScreen() {
   };
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    apiClient.get('/v1/maintenance/vendors').then(({ data }) => setVendors(Array.isArray(data) ? data : [])).catch(() => {});
+  }, []);
 
   const save = async () => {
     if (!String(form.toolId ?? '').trim()) { toast('Tool ID is required.', 'error'); return; }
@@ -129,7 +136,12 @@ export default function ToolServiceIntimationScreen() {
                 {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
               </select>
             </label>
-            <label className="fld"><span>Vendor</span><input className="in" value={String(form.vendor ?? '')} onChange={(e) => set('vendor', e.target.value)} /></label>
+            <label className="fld"><span>Vendor</span>
+              <select className="in" value={String(form.vendorId ?? '')} onChange={(e) => { const vid = e.target.value ? Number(e.target.value) : ''; set('vendorId', vid); const v = vendors.find((x) => x.id === vid); set('vendor', v ? v.name : null); }}>
+                <option value="">Select vendor...</option>
+                {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+              </select>
+            </label>
             <label className="fld"><span>Remarks</span><input className="in" value={String(form.remarks ?? '')} onChange={(e) => set('remarks', e.target.value)} /></label>
           </div>
           <div className="actbar">

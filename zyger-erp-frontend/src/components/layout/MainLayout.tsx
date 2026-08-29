@@ -438,6 +438,26 @@ export default function MainLayout() {
       }
     } catch { /* best-effort */ }
 
+    try {
+      const res = await apiClient.get('/api/v1/notifications');
+      const list = Array.isArray(res.data) ? (res.data as Record<string, unknown>[]) : [];
+      for (const n of list) {
+        const sev = String(n.severity ?? 'INFO');
+        const color = sev === 'CRITICAL' ? 'var(--red)' : sev === 'WARNING' ? 'var(--yellow)' : 'var(--blue)';
+        const evt = String(n.eventType ?? '');
+        const icon = evt.startsWith('BREAKDOWN') ? 'report' : evt.startsWith('CALIBRATION') ? 'science' : evt.startsWith('PM_') || evt.includes('PM') ? 'build' : 'notifications';
+        items.push({
+          id: `notif-${String(n.id)}`,
+          message: String(n.message ?? ''),
+          detail: String(n.entityRef ?? '') || 'New notification',
+          icon,
+          color,
+          timestamp: typeof n.createdAt === 'number' ? n.createdAt : now,
+          screenId: 'notification-log',
+        });
+      }
+    } catch { /* best-effort */ }
+
     setNotifications(items);
   }, [can]);
 

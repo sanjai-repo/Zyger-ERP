@@ -33,6 +33,12 @@ public class SparePartMaster {
     @Column(name = "reorder_level")
     @Builder.Default BigDecimal reorderLevel = BigDecimal.ZERO;
 
+    @Column(name = "item_id")
+    Long itemId;
+
+    @Column(name = "item_code", length = 60)
+    String itemCode;
+
     @Column(name = "unit_cost")
     @Builder.Default BigDecimal unitCost = BigDecimal.ZERO;
 

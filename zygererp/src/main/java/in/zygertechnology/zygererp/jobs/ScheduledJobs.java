@@ -421,6 +421,16 @@ public class ScheduledJobs {
                         .setParameter("qr", quality)
                         .setParameter("oee", oee)
                         .executeUpdate();
+
+                // §10.3 Feed real operating hours for MTBF/MTTR
+                em.createNativeQuery(
+                        "INSERT INTO machine_operating_hours (machine_code, work_date, operating_hours, source, plant_id, created_at) " +
+                        "VALUES (:mc, :dt, :oh, 'PRODUCTION', 1, NOW()) " +
+                        "ON CONFLICT (machine_code, work_date) DO UPDATE SET operating_hours = :oh")
+                        .setParameter("mc", machineCode)
+                        .setParameter("dt", yesterday)
+                        .setParameter("oh", runHrs)
+                        .executeUpdate();
             }
             log.info("[OEE Populate] Processed {} machines for {}", prodMachines.size(), yesterday);
         } catch (Exception ex) {

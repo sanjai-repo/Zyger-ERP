@@ -44,6 +44,12 @@ export default function BreakdownIntimationScreen() {
   const [tab, setTab] = useState<'list' | 'form'>('list');
   const [actionTarget, setActionTarget] = useState<{ id: number; action: string; label: string } | null>(null);
   const [actionNote, setActionNote] = useState('');
+  const [createdNotice, setCreatedNotice] = useState<{
+    breakdownNumber: string;
+    machineCode: string;
+    machineName: string;
+    cncAlarmCode: string;
+  } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -74,8 +80,26 @@ export default function BreakdownIntimationScreen() {
     if (!String(form.problemDescription ?? '').trim()) { toast('Problem description is required.', 'error'); return; }
     setBusy(true);
     try {
-      if (editId) { await apiClient.put(`/v1/maintenance/breakdowns/${editId}`, form); toast('Breakdown updated.'); }
-      else { await apiClient.post('/v1/maintenance/breakdowns', form); toast('Breakdown created.'); }
+      if (editId) {
+        await apiClient.put(`/v1/maintenance/breakdowns/${editId}`, form);
+        toast('Breakdown updated.');
+      } else {
+        const { data } = await apiClient.post('/v1/maintenance/breakdowns', form);
+        const mCode = data?.machineCode || String(form.machineCode || 'N/A');
+        const mObj = machines.find((m) => m.code === mCode);
+        const mName = mObj?.name ?? '-';
+        const mDisplay = mObj ? `${mCode} (${mName})` : mCode;
+        const alarmCode = data?.cncAlarmCode || form.cncAlarmCode || 'N/A';
+        const bdNo = data?.breakdownNumber || form.breakdownNumber || 'BDI-';
+
+        toast(`Breakdown Created! No: ${bdNo} | Machine: ${mDisplay} | Alarm Code: ${alarmCode}`);
+        setCreatedNotice({
+          breakdownNumber: bdNo,
+          machineCode: mCode,
+          machineName: mName,
+          cncAlarmCode: String(alarmCode),
+        });
+      }
       setForm({}); setEditId(null); setTab('list'); load();
     } catch (e) { toast(getApiErrorMessage(e, 'Save failed.'), 'error'); }
     setBusy(false);
@@ -118,6 +142,39 @@ export default function BreakdownIntimationScreen() {
   return (
     <>
       <div className="pg-head"><h1>Breakdown Intimation</h1><p>Record and track machine breakdowns</p></div>
+
+      {createdNotice && (
+        <div style={{
+          background: 'var(--blue-bg, #eff6ff)',
+          border: '1px solid var(--blue-border, #bfdbfe)',
+          borderRadius: '8px',
+          padding: '16px 20px',
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          boxShadow: '0 4px 12px rgba(37, 99, 235, 0.12)'
+        }}>
+          <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
+            <span className="material-symbols-rounded" style={{ color: '#2563eb', fontSize: '32px' }}>
+              notifications_active
+            </span>
+            <div>
+              <div style={{ fontWeight: 700, color: '#1e40af', fontSize: '15px', marginBottom: '4px' }}>
+                Breakdown Intimation Created
+              </div>
+              <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', fontSize: '14px', color: '#1e293b' }}>
+                <span><strong>Breakdown No:</strong> <span style={{ color: '#2563eb', fontWeight: 600 }}>{createdNotice.breakdownNumber}</span></span>
+                <span><strong>Machine Name:</strong> <span>{createdNotice.machineCode} {createdNotice.machineName !== '-' ? `(${createdNotice.machineName})` : ''}</span></span>
+                <span><strong>Alarm Code:</strong> <span style={{ fontFamily: 'monospace', background: '#dbeafe', color: '#1e40af', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>{createdNotice.cncAlarmCode || 'N/A'}</span></span>
+              </div>
+            </div>
+          </div>
+          <button className="ibtn" onClick={() => setCreatedNotice(null)} title="Dismiss notification" style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}>
+            <span className="material-symbols-rounded">close</span>
+          </button>
+        </div>
+      )}
 
       {tab === 'form' && (
         <div className="panel">

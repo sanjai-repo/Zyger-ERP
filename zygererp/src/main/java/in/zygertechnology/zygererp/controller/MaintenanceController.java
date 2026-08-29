@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
+import java.math.BigDecimal;
 import java.util.*;
 
 @RestController
@@ -382,6 +383,17 @@ public class MaintenanceController {
     // ---- REPORTS
     // ===========================
 
+    @PostMapping("/api/v1/maintenance/costs/{id}/adjust")
+    public Map<String, Object> adjustCost(@PathVariable Long id,
+                                          @RequestBody Map<String, Object> body,
+                                          Principal principal) {
+        BigDecimal delta = new BigDecimal(body.get("deltaAmount").toString());
+        return svc.adjustCost(id, delta, (String) body.get("reason"), svc.principalName(principal));
+    }
+
+    @GetMapping("/api/v1/maintenance/costs/{id}/adjustments")
+    public List<Map<String, Object>> costAdjustments(@PathVariable Long id) { return svc.listCostAdjustments(id); }
+
     @GetMapping("/api/v1/maintenance/reports/breakdown")
     public Map<String, Object> breakdownReport(@RequestParam(required = false) String machineCode,
                                                 @RequestParam(required = false) String category,
@@ -423,6 +435,13 @@ public class MaintenanceController {
     public DepartmentMaster createDepartment(@RequestBody DepartmentMaster d, Principal principal) { return svc.createDepartment(d, principal); }
     @PutMapping("/api/v1/maintenance/departments/{id}")
     public DepartmentMaster updateDepartment(@PathVariable Long id, @RequestBody DepartmentMaster d, Principal principal) { return svc.updateDepartment(id, d, principal); }
+
+    @GetMapping("/api/v1/maintenance/vendors")
+    public List<VendorMaster> listVendors() { return svc.listVendors(); }
+    @PostMapping("/api/v1/maintenance/vendors")
+    public VendorMaster createVendor(@RequestBody VendorMaster v, Principal principal) { return svc.createVendor(v, principal); }
+    @PutMapping("/api/v1/maintenance/vendors/{id}")
+    public VendorMaster updateVendor(@PathVariable Long id, @RequestBody VendorMaster v, Principal principal) { return svc.updateVendor(id, v, principal); }
 
     @GetMapping("/api/v1/maintenance/technicians")
     public List<TechnicianMaster> listTechnicians() { return svc.listTechnicians(); }
