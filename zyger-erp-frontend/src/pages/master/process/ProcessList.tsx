@@ -42,9 +42,9 @@ export default function ProcessList({ onAdd, onEdit, onView }: Props) {
     setBusy(true);
     try {
       await apiClient.delete(`/master/processes/${deleteTarget.id}`);
-      toast('Process inactivated.');
+      toast('Process deleted.');
       setDeleteTarget(null); load();
-    } catch (e) { toast(getApiErrorMessage(e, 'Inactivate failed.'), 'error'); }
+    } catch (e) { toast(getApiErrorMessage(e, 'Delete failed.'), 'error'); }
     setBusy(false);
   };
 
@@ -73,20 +73,26 @@ export default function ProcessList({ onAdd, onEdit, onView }: Props) {
               <thead>
                 <tr>
                   <th style={{ width: 50 }}>#</th>
-                  <th>Code</th>
-                  <th>Name</th>
-                  <th>Active/Inactive</th>
-                  <th style={{ width: 120 }}>Action</th>
+                  <th>Process Code</th>
+                  <th>Process Name</th>
+                  <th>Required Resource</th>
+                  <th>Resource Type</th>
+                  <th>Process Type</th>
+                  <th>Status</th>
+                  <th style={{ width: 120 }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 ? (
-                  <tr><td colSpan={5}><div className="empty"><span className="material-symbols-rounded">description</span> No processes found.</div></td></tr>
+                  <tr><td colSpan={8}><div className="empty"><span className="material-symbols-rounded">description</span> No processes found.</div></td></tr>
                 ) : rows.map((r, idx) => (
                   <tr key={r.id}>
                     <td>{page * PAGE_SIZE + idx + 1}</td>
                     <td className="cell-b">{r.code}</td>
                     <td>{r.name}</td>
+                    <td>{r.resourceName || '—'}</td>
+                    <td>{r.resourceType || '—'}</td>
+                    <td><span className={`bdg bdg-${r.processType === 'Outsource' ? 'CANCELLED' : 'COMPLETED'}`}>{r.processType || 'Insource'}</span></td>
                     <td><span className={`bdg bdg-${r.active ? 'COMPLETED' : 'CANCELLED'}`}>{r.active ? 'Active' : 'Inactive'}</span></td>
                     <td>
                       <div style={{ display: 'flex', gap: 4 }}>
@@ -96,8 +102,8 @@ export default function ProcessList({ onAdd, onEdit, onView }: Props) {
                         <button className="ibtn" title="Edit" onClick={() => onEdit(r.id)}>
                           <span className="material-symbols-rounded">edit</span>
                         </button>
-                        <button className="ibtn danger" title="Inactivate" onClick={() => setDeleteTarget(r)}>
-                          <span className="material-symbols-rounded">toggle_off</span>
+                        <button className="ibtn danger" title="Delete" onClick={() => setDeleteTarget(r)}>
+                          <span className="material-symbols-rounded">delete</span>
                         </button>
                       </div>
                     </td>
@@ -120,8 +126,8 @@ export default function ProcessList({ onAdd, onEdit, onView }: Props) {
         )}
       </div>
 
-      <ConfirmActionModal open={Boolean(deleteTarget)} title={`Inactivate ${deleteTarget?.code ?? ''}`}
-        body="Inactivate this process? It will be hidden from new selections but retained on existing route sheets." okLabel="Inactivate" danger busy={busy}
+      <ConfirmActionModal open={Boolean(deleteTarget)} title={`Delete ${deleteTarget?.code ?? ''}`}
+        body={`Delete process "${deleteTarget?.name ?? ''}" (${deleteTarget?.code ?? ''})?`} okLabel="Delete" danger busy={busy}
         onClose={() => setDeleteTarget(null)} onConfirm={del} />
     </>
   );

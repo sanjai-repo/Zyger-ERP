@@ -158,33 +158,8 @@ export default function ProcessForm({ processId, viewOnly = false, onBack, onSav
               <input className="in" value={String(form.description ?? '')}
                 onChange={(e) => updateForm('description', e.target.value)} disabled={viewOnly} />
             </label>
-            <label className="fld">
-              <span>Cycle Time (min)</span>
-              <input className="in" type="number" step="0.01" value={String(form.cycleTime ?? '')}
-                onChange={(e) => updateForm('cycleTime', e.target.value ? Number(e.target.value) : null)} disabled={viewOnly} />
-            </label>
-            <label className="fld">
-              <span>Setup Time (min)</span>
-              <input className="in" type="number" step="0.01" value={String(form.setupTime ?? '')}
-                onChange={(e) => updateForm('setupTime', e.target.value ? Number(e.target.value) : null)} disabled={viewOnly} />
-            </label>
-            <label className="fld">
-              <span>Unit Rate</span>
-              <input className="in" type="number" step="0.01" value={String(form.unitRate ?? '')}
-                onChange={(e) => updateForm('unitRate', e.target.value ? Number(e.target.value) : null)} disabled={viewOnly} />
-            </label>
             <label className="fld chk">
-              <input type="checkbox" checked={Boolean(form.machineRequired)}
-                onChange={(e) => updateForm('machineRequired', e.target.checked)} disabled={viewOnly} />
-              <span>Machine Required</span>
-            </label>
-            <label className="fld chk">
-              <input type="checkbox" checked={Boolean(form.inspection)}
-                onChange={(e) => updateForm('inspection', e.target.checked)} disabled={viewOnly} />
-              <span>Inspection Required</span>
-            </label>
-            <label className="fld chk">
-              <input type="checkbox" checked={Boolean(form.active)}
+              <input type="checkbox" checked={Boolean(form.active ?? true)}
                 onChange={(e) => updateForm('active', e.target.checked)} disabled={viewOnly} />
               <span>Active</span>
             </label>

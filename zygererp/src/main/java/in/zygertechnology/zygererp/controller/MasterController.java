@@ -1102,7 +1102,6 @@ public class MasterController {
     @DeleteMapping("/api/master/process-groups/{id}") void delProcessGroup(@PathVariable Long id){ processGroups.findById(id).ifPresent(g -> { g.setActive(false); processGroups.save(g); }); }
 
     // ---- Process Master ----
-    @Cacheable("masterRefs")
     @GetMapping("/api/master/processes")
     List<Map<String,Object>> processList() {
         return processMasters.findAll().stream().filter(ProcessMaster::isActive).map(this::toProcessMap).toList();
@@ -1124,6 +1123,7 @@ public class MasterController {
         m.put("requiredResource", p.getRequiredResource() != null ? p.getRequiredResource().getId() : null);
         m.put("resourceName", p.getResourceName());
         m.put("resourceType", p.getResourceType());
+        m.put("department", p.getDepartment());
         return m;
     }
     @PostMapping("/api/master/processes") @Transactional
@@ -1133,6 +1133,7 @@ public class MasterController {
         if (body.has("name")) p.setName(body.get("name").asText());
         if (body.has("description")) p.setDescription(body.get("description").asText());
         if (body.has("processType")) p.setProcessType(body.get("processType").asText());
+        if (body.has("department")) p.setDepartment(body.get("department").isNull() ? null : body.get("department").asText());
         if (body.has("cycleTime") && !body.get("cycleTime").isNull()) p.setCycleTime(body.get("cycleTime").decimalValue());
         if (body.has("setupTime") && !body.get("setupTime").isNull()) p.setSetupTime(body.get("setupTime").decimalValue());
         if (body.has("unitRate") && !body.get("unitRate").isNull()) p.setUnitRate(body.get("unitRate").decimalValue());
@@ -1178,13 +1179,16 @@ public class MasterController {
         deriveResourceFields(merged);
         return processMasters.save(merged);
     }
-    @DeleteMapping("/api/master/processes/{id}") void delProcess(@PathVariable Long id){
+    @DeleteMapping("/api/master/processes/{id}") @Transactional void delProcess(@PathVariable Long id){
         Long count = em.createQuery("SELECT COUNT(ro) FROM RouteOperation ro WHERE ro.process.id = :processId", Long.class)
                 .setParameter("processId", id).getSingleResult();
         if (count > 0) {
-            throw new IllegalStateException("This Process is referenced in existing Route Operations and cannot be deleted.");
+            ProcessMaster p = processMasters.findById(id).orElseThrow(() -> new RuntimeException("Process not found"));
+            p.setActive(false);
+            processMasters.save(p);
+        } else {
+            processMasters.deleteById(id);
         }
-        processMasters.findById(id).ifPresent(p -> { p.setActive(false); processMasters.save(p); });
     }
 
     /** FRS §4.2: Server-side auto-derive — selecting resource auto-fills resourceName, resourceType; Vendor → outsource. */

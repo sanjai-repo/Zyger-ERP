@@ -198,6 +198,8 @@ export const ROUTE_SHEET_CONFIG: DocScreenConfig = {
     { key: 'itemRevision', label: 'Revision *', type: 'text', required: true },
     { key: 'revisionLabel', label: 'Revision Label', type: 'text', readonly: true },
     { key: 'status', label: 'Status', type: 'select', options: ['DRAFT', 'RELEASED', 'UNDER_REVISION', 'OBSOLETE'], readonly: true },
+    { key: 'effectiveFrom', label: 'Effective From', type: 'date' },
+    { key: 'effectiveTo', label: 'Effective To', type: 'date' },
     { key: 'remarks', label: 'Remarks', type: 'textarea', span2: true },
   ],
   lines: {
@@ -215,24 +217,6 @@ export const ROUTE_SHEET_CONFIG: DocScreenConfig = {
       { key: 'remarks', label: 'Remarks', type: 'text' },
     ],
   },
-  childGrids: [
-    {
-      title: 'Inspection Parameters',
-      parentIdField: 'id',
-      apiPath: '/v1/planning/route-operations/{parentId}/inspections',
-      fields: [
-        { key: 'parameterName', label: 'Parameter Name', type: 'text' },
-        { key: 'parameterType', label: 'Type', type: 'select', options: ['Dimensional', 'Visual', 'Functional', 'Surface Finish', 'Hardness', 'Chemical', 'Other'] },
-        { key: 'nominalValue', label: 'Nominal Value', type: 'text' },
-        { key: 'tolerancePlus', label: 'Tolerance +', type: 'text' },
-        { key: 'toleranceMinus', label: 'Tolerance -', type: 'text' },
-        { key: 'method', label: 'Method', type: 'text' },
-        { key: 'toolGauge', label: 'Tool/Gauge', type: 'text' },
-        { key: 'frequency', label: 'Frequency', type: 'text' },
-        { key: 'mandatory', label: 'Mandatory', type: 'select', options: ['true', 'false'] },
-      ],
-    },
-  ],
 };
 
 export const WORK_ORDER_CONFIG: DocScreenConfig = {

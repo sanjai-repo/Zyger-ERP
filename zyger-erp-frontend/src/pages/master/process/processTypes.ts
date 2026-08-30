@@ -15,10 +15,11 @@ export interface Process {
   requiredResource?: number;
   resourceName?: string;
   resourceType?: string;
+  department?: string;
 }
 
 export const defaultForm = (): Record<string, unknown> => ({
-  code: '', name: '', description: '',
+  code: '', name: '', description: '', department: '',
   processGroupId: null, cycleTime: null, setupTime: null, unitRate: null,
   machineRequired: false, inspection: false, active: true,
   processType: 'Insource', requiredResource: null, resourceName: '', resourceType: '',
