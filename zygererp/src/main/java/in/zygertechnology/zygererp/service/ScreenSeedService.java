@@ -123,6 +123,7 @@ public class ScreenSeedService {
 
         // Production
         put("production-dashboard", "Production Dashboard", "PRODUCTION");
+        put("production-bom-fresh", "Production BOM", "PRODUCTION");
         put("job-card", "Job Card", "PRODUCTION");
         put("job-card-kanban", "Job Card Kanban", "PRODUCTION");
         put("production-entry", "Production Entry", "PRODUCTION");

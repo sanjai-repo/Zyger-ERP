@@ -7,6 +7,7 @@ const SalesDashboard = lazy(() => import('../pages/sales/dashboard/SalesDashboar
 const PurchaseDashboard = lazy(() => import('../pages/purchase/dashboard/PurchaseDashboard'));
 const PlanningDashboard = lazy(() => import('../pages/planning/dashboard/PlanningDashboard'));
 const ProductionDashboard = lazy(() => import('../pages/production/dashboard/ProductionDashboard'));
+const ProductionBomFreshScreen = lazy(() => import('../pages/production/bom/ProductionBomScreen'));
 const InwardEntryPage = lazy(() => import('../pages/inventory/inward/InwardEntryPage'));
 const PoInwardPage = lazy(() => import('../pages/inventory/inward/po-inward/PoInwardPage'));
 const GrnPage = lazy(() => import('../pages/inventory/store-receipt/grn/GrnPage'));
@@ -166,6 +167,7 @@ export const SCREEN_REGISTRY: Record<string, ScreenDefinition> = {
   'purchase-dashboard': { component: PurchaseDashboard },
   'planning-dashboard': { component: PlanningDashboard },
   'production-dashboard': { component: ProductionDashboard },
+  'production-bom-fresh': { component: ProductionBomFreshScreen },
   'inward-entry': { component: InwardEntryPage },
   'po-inward': { component: PoInwardPage },
   grn: { component: GrnPage },
@@ -236,7 +238,7 @@ export const SCREEN_REGISTRY: Record<string, ScreenDefinition> = {
   'sales-schedule': { component: SoSchedulePage },
   'sales-dc-return': { component: DcReturnSalesPage },
   'sales-invoice-return': { component: InvoiceReturnSalesPage },
-  'production-bom': { component: BomMasterScreen },
+  'production-bom': { component: ProductionBomFreshScreen },
   'route-sheet': { component: RouteSheetPage },
   'work-order': { component: WorkOrderPage },
   'work-order-reports': { component: WorkOrderReportsScreen },

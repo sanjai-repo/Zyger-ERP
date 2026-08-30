@@ -22,6 +22,7 @@ public class ProcessMaster {
     @Column(name = "resource_type", length = 30) String resourceType;
     /** FRS §4.2: Insource or Outsource */
     @Column(name = "process_type", length = 30) String processType;
+    @Column(name = "department", length = 100) String department;
     @Column(name = "cycle_time", precision = 10, scale = 2) BigDecimal cycleTime;
     @Column(name = "setup_time", precision = 10, scale = 2) BigDecimal setupTime;
     @Column(name = "unit_rate", precision = 12, scale = 2) BigDecimal unitRate;

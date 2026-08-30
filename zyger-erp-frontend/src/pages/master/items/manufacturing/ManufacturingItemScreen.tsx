@@ -1008,8 +1008,8 @@ export default function ManufacturingItemScreen() {
                   <input className="in" type="number" step="0.01" value={form.surfaceArea} onChange={e => setFld('surfaceArea', parseFloat(e.target.value))} />
                 </label>
                 <label className="fld">
-                  <span>Net Weight</span>
-                  <input className="in" type="number" step="0.01" value={form.netWeight} onChange={e => setFld('netWeight', parseFloat(e.target.value))} />
+                  <span>Weight of Material (kg)</span>
+                  <input className="in" type="number" step="0.001" value={form.netWeight} onChange={e => { const w = parseFloat(e.target.value); setFld('netWeight', w); setFld('weight', w); }} />
                 </label>
                 <label className="fld span2">
                   <span>Color Pallet</span>

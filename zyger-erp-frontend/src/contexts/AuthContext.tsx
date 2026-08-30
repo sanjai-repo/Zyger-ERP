@@ -32,7 +32,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 function readStoredUser(): User | null {
   try {
-    const raw = sessionStorage.getItem(USER_KEY);
+    const raw = localStorage.getItem(USER_KEY) || sessionStorage.getItem(USER_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed.username === 'string' && typeof parsed.role === 'string') {
@@ -43,6 +43,8 @@ function readStoredUser(): User | null {
 }
 
 function clearSession() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
   sessionStorage.removeItem(TOKEN_KEY);
   sessionStorage.removeItem(USER_KEY);
 }
@@ -57,7 +59,7 @@ const SCREEN_ACTION_KEY = {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {
-    if (!sessionStorage.getItem(TOKEN_KEY)) return null;
+    if (!localStorage.getItem(TOKEN_KEY) && !sessionStorage.getItem(TOKEN_KEY)) return null;
     return readStoredUser();
   });
   const [screenPerms, setScreenPerms] = useState<ScreenAccessMap>({});
@@ -69,6 +71,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user?.role]);
 
   const persist = (token: string, u: User) => {
+    localStorage.setItem(TOKEN_KEY, token);
+    localStorage.setItem(USER_KEY, JSON.stringify(u));
     sessionStorage.setItem(TOKEN_KEY, token);
     sessionStorage.setItem(USER_KEY, JSON.stringify(u));
     setUser(u);
@@ -148,31 +152,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setScreenPerms({});
     setScreensLoaded(false);
   };
-
-  // Auto-logout after 1 hour of inactivity (matches JWT expiry).
-  useEffect(() => {
-    if (!user) return;
-    let idleTimer: number | undefined;
-    const onIdle = () => {
-      clearSession();
-      setUser(null);
-      setScreenPerms({});
-      setScreensLoaded(false);
-      if (!window.location.pathname.startsWith('/login')) {
-        window.location.assign('/login');
-      }
-    };
-    const reset = () => {
-      if (idleTimer) window.clearTimeout(idleTimer);
-      idleTimer = window.setTimeout(onIdle, SESSION_IDLE_MS);
-    };
-    IDLE_EVENTS.forEach((e) => window.addEventListener(e, reset, { passive: true }));
-    reset();
-    return () => {
-      IDLE_EVENTS.forEach((e) => window.removeEventListener(e, reset));
-      if (idleTimer) window.clearTimeout(idleTimer);
-    };
-  }, [user]);
 
   return (
     <AuthContext.Provider value={{ user, isAuthenticated: !!user, screenPerms, screensLoaded, can, canAny, hasModule, canScreen, login, loginDemo, logout }}>

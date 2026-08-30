@@ -48,6 +48,10 @@ export interface TNode {
   code?: string;
   type: 'FG' | 'SFG' | 'RM' | 'MBM';
   path: string;
+  qty?: number;
+  weightPerQty?: number;
+  totalWeight?: number;
+  remarks?: string;
   children: TNode[];
 }
 
@@ -76,7 +80,7 @@ export default function BomMappingEditor({ onBack, onSaveSuccess, mapping, mode 
   useEffect(() => {
     apiClient.get('/master/bom-mappings/next-codes')
       .then(({ data }) => setCodes({
-        bmp: data.bmp || 'BOM-2026-0001',
+        bmp: data.bmp || 'BMM-2026-0001',
         sfm: data.sfm || 'SFM-2026-1001',
         fgm: data.fgm || 'FGM-2026-1001',
         mbm: data.mbm || 'MBM-2026-1001',
@@ -479,7 +483,7 @@ export default function BomMappingEditor({ onBack, onSaveSuccess, mapping, mode 
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr auto', gap: 20, alignItems: 'end' }}>
           <div>
-            <label style={label}>BOM CODE</label>
+            <label style={label}>BOM Mapping Code</label>
             <input type="text" value={bmpAutoCode || codes.bmp} readOnly style={{ ...input, background: '#f1f5f9' }} />
           </div>
           <div>
@@ -1033,51 +1037,88 @@ export function TreeRow({ node, expanded, toggle }: { node: TNode; expanded: Set
   const typeColor = node.type === 'MBM' ? '#8b5cf6' : node.type === 'FG' ? '#3b82f6' : node.type === 'SFG' ? '#10b981' : '#f59e0b';
   const typeBg = node.type === 'MBM' ? '#f5f3ff' : node.type === 'FG' ? '#eff6ff' : node.type === 'SFG' ? '#ecfdf5' : '#fffbeb';
   const isRoot = depth === 0;
-  const rootBorder = node.type === 'MBM' ? '#ddd6fe' : '#c7d2fe';
+  const rootBorder = node.type === 'MBM' ? '#ddd6fe' : node.type === 'FG' ? '#c7d2fe' : node.type === 'SFG' ? '#a7f3d0' : '#fde68a';
 
   return (
-    <div style={{ marginLeft: isRoot ? 0 : depth * 32, position: 'relative', marginTop: 2 }}>
+    <div style={{ marginLeft: isRoot ? 0 : depth * 28, position: 'relative', marginTop: 4, width: isRoot ? '100%' : `calc(100% - ${depth * 28}px)` }}>
       {!isRoot && (
         <>
-          <div style={{ position: 'absolute', left: -20, top: 0, bottom: 0, width: 1, background: '#d1d5db' }} />
-          <div style={{ position: 'absolute', left: -20, top: '50%', width: 16, height: 1, background: '#d1d5db' }} />
+          <div style={{ position: 'absolute', left: -18, top: -14, bottom: '50%', width: 1, background: '#cbd5e1' }} />
+          <div style={{ position: 'absolute', left: -18, top: '50%', width: 14, height: 1, background: '#cbd5e1' }} />
         </>
       )}
       <div
         onClick={() => node.children.length > 0 && toggle(node.path)}
         style={{
-          display: 'flex', alignItems: 'center', gap: 16,
-          padding: isRoot ? '14px 20px' : '10px 16px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+          padding: isRoot ? '12px 18px' : '9px 14px',
           cursor: node.children.length > 0 ? 'pointer' : 'default',
           borderRadius: isRoot ? 10 : 8,
-          border: isRoot ? `1.5px solid ${rootBorder}` : '1px solid #e5e7eb',
-          background: isRoot ? '#f5f3ff' : '#fff',
-          boxShadow: isRoot ? '0 2px 8px rgba(99,102,241,0.08)' : '0 1px 3px rgba(0,0,0,0.04)',
+          border: isRoot ? `1.5px solid ${rootBorder}` : '1px solid #e2e8f0',
+          background: isRoot ? '#f8fafc' : '#ffffff',
+          boxShadow: isRoot ? '0 2px 8px rgba(0,0,0,0.05)' : '0 1px 3px rgba(0,0,0,0.03)',
         }}
       >
-        <span style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          {node.children.length > 0 ? (
-            <span className="material-symbols-rounded" style={{ fontSize: '1.1rem', color: '#6366f1' }}>
-              {isExpanded ? 'expand_more' : 'chevron_right'}
-            </span>
-          ) : (
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#d1d5db', flexShrink: 0 }} />
-          )}
-        </span>
-        <span style={{ width: 44, flexShrink: 0, fontWeight: 600, color: '#64748b', fontSize: '0.72rem', fontFamily: 'monospace', textAlign: 'center', background: '#f1f5f9', borderRadius: 4, padding: '2px 4px' }}>
-          {node.path}
-        </span>
-        <span style={{
-          display: 'inline-flex', padding: '2px 8px', borderRadius: 5, fontSize: '0.62rem', fontWeight: 700,
-          background: typeBg, color: typeColor, border: `1px solid ${typeColor}25`,
-          letterSpacing: '0.04em', flexShrink: 0, textTransform: 'uppercase',
-        }}>{node.type}</span>
-        {node.code && <span style={{ fontWeight: 700, color: '#1e293b', fontSize: isRoot ? '0.92rem' : '0.85rem', flexShrink: 0 }}>{node.code}</span>}
-        {node.label && (
-          <span style={{ color: '#6b7280', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
-            {node.label}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+          <span style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            {node.children.length > 0 ? (
+              <span className="material-symbols-rounded" style={{ fontSize: '1.15rem', color: '#6366f1' }}>
+                {isExpanded ? 'expand_more' : 'chevron_right'}
+              </span>
+            ) : (
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#94a3b8', flexShrink: 0 }} />
+            )}
           </span>
-        )}
+          <span style={{ width: 44, flexShrink: 0, fontWeight: 600, color: '#475569', fontSize: '0.75rem', fontFamily: 'monospace', textAlign: 'center', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 4, padding: '2px 4px' }}>
+            {node.path}
+          </span>
+          <span style={{
+            display: 'inline-flex', padding: '2px 8px', borderRadius: 5, fontSize: '0.65rem', fontWeight: 700,
+            background: typeBg, color: typeColor, border: `1px solid ${typeColor}30`,
+            letterSpacing: '0.04em', flexShrink: 0, textTransform: 'uppercase',
+          }}>{node.type === 'SFG' ? 'Semi FG' : node.type}</span>
+          {node.code && <span style={{ fontWeight: 700, color: '#0f172a', fontSize: isRoot ? '0.92rem' : '0.86rem', flexShrink: 0 }}>{node.code}</span>}
+          {node.label && (
+            <span style={{ color: '#475569', fontSize: '0.84rem', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
+              {node.label}
+            </span>
+          )}
+        </div>
+
+        {/* Fixed Width Vertical Column Alignment for Qty, Weights & Remarks */}
+        <div style={{ display: 'grid', gridTemplateColumns: '74px 110px 130px 90px', gap: 8, flexShrink: 0, alignItems: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            {node.qty != null && node.qty > 0 ? (
+              <span style={{ width: '100%', textAlign: 'center', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 6, padding: '2px 4px', fontSize: '0.74rem', color: '#334155', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                Qty: <strong style={{ color: '#0f172a' }}>{node.qty}</strong>
+              </span>
+            ) : <span />}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            {node.weightPerQty != null && node.weightPerQty > 0 ? (
+              <span style={{ width: '100%', textAlign: 'center', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '2px 4px', fontSize: '0.74rem', color: '#475569', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                W/Unit: <strong style={{ color: '#0f172a' }}>{node.weightPerQty} kg</strong>
+              </span>
+            ) : <span />}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            {node.totalWeight != null && node.totalWeight > 0 ? (
+              <span style={{ width: '100%', textAlign: 'center', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 6, padding: '2px 4px', fontSize: '0.74rem', color: '#0369a1', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                Total Wt: <strong>{node.totalWeight} kg</strong>
+              </span>
+            ) : <span />}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            {node.remarks && String(node.remarks).trim() !== '' ? (
+              <span style={{ width: '100%', textAlign: 'center', background: '#fdf4ff', border: '1px solid #f0abfc', borderRadius: 6, padding: '2px 4px', fontSize: '0.74rem', color: '#86198f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={String(node.remarks)}>
+                {node.remarks}
+              </span>
+            ) : <span />}
+          </div>
+        </div>
       </div>
       {isExpanded && node.children.length > 0 && (
         <div style={{ position: 'relative' }}>

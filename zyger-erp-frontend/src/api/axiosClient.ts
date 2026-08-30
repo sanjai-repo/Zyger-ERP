@@ -15,7 +15,7 @@ const apiClient = axios.create({
 
 apiClient.interceptors.request.use(
   (config) => {
-    const token = sessionStorage.getItem('zyger-access-token');
+    const token = localStorage.getItem('zyger-access-token') || sessionStorage.getItem('zyger-access-token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -52,8 +52,11 @@ apiClient.interceptors.response.use(
 
     const isAuthRequest = config?.url?.includes('/auth/');
     const status = error.response?.status;
+    const hasToken = localStorage.getItem('zyger-access-token') || sessionStorage.getItem('zyger-access-token');
 
-    if ((status === 401 || (status === 403 && !sessionStorage.getItem('zyger-access-token'))) && !isAuthRequest) {
+    if ((status === 401 || (status === 403 && !hasToken)) && !isAuthRequest) {
+      localStorage.removeItem('zyger-access-token');
+      localStorage.removeItem('zyger-user');
       sessionStorage.removeItem('zyger-access-token');
       sessionStorage.removeItem('zyger-user');
       if (!window.location.pathname.startsWith('/login')) {

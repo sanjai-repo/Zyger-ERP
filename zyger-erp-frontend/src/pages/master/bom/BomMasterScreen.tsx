@@ -883,7 +883,7 @@ export default function BomMasterScreen() {
           <div className="panel">
             <div className="panel-h"><h2><span className="material-symbols-rounded">description</span> BOM Header</h2></div>
             <div className="fgrid">
-              <label className="fld"><span>BOM Code</span>
+              <label className="fld"><span>BOM Mapping Code</span>
                 <input className="in" value={bom.bomNumber || bom.docNo || nextBomNumber || (editId ? '\u2014' : '\u2014')} readOnly tabIndex={-1} style={{ background: '#f9fafb', fontWeight: 600 }} />
               </label>
 

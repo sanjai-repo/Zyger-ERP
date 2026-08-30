@@ -1,11 +1,26 @@
+export interface LookupDef {
+  api: string;
+  valueKey: string;
+  labelKeys?: string[];
+  separator?: string;
+  /** UI-only control — its value is never sent in the payload. */
+  ephemeral?: boolean;
+  /** Only shown while creating a new document, hidden when editing an existing one. */
+  addOnly?: boolean;
+}
+
 export interface FieldDef {
   key: string;
   label: string;
   type?: 'text' | 'number' | 'date' | 'select' | 'checkbox' | 'textarea';
   options?: string[];
+  optionLabels?: Record<string, string>;
   required?: boolean;
   span2?: boolean;
   readonly?: boolean;
+  lookup?: LookupDef;
+  /** Field must hold a value (e.g. Item Type) before this field can be edited. */
+  enableField?: string;
 }
 
 export interface LineFieldDef {
@@ -34,6 +49,7 @@ export interface DocScreenConfig {
   docType: string;
   title: string;
   subtitle: string;
+  addButtonLabel?: string;
   columns: ColumnDef[];
   statusField: string;
   statusOptions: string[];
@@ -48,6 +64,72 @@ export interface DocScreenConfig {
   includeInactive?: boolean;
 }
 
+export const PRODUCTION_BOM_FRESH_CONFIG: DocScreenConfig = {
+  docType: 'production-bom',
+  title: 'Production BOM',
+  subtitle: 'Bill of materials for shop-floor planning',
+  addButtonLabel: 'Add Production BOM',
+  columns: [
+    { label: 'Doc No', field: 'docNo' },
+    { label: 'Date', field: 'date' },
+    { label: 'Item', field: 'itemCode' },
+    { label: 'Revision', field: 'revisionLabel' },
+    { label: 'Version', field: 'bomVersion' },
+    { label: 'Type', field: 'itemType' },
+  ],
+  statusField: 'status',
+  statusOptions: ['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'CANCELLED'],
+  fields: [
+    {
+      key: 'copyBomCode',
+      label: 'BOM Mapping Code',
+      lookup: {
+        api: '/master/bom-mappings',
+        valueKey: 'id',
+        labelKeys: ['code', 'name'],
+        separator: ' — ',
+        ephemeral: true,
+        addOnly: true,
+      },
+    },
+    {
+      key: 'salesOrderId',
+      label: 'Sales Order',
+      type: 'number',
+      lookup: {
+        api: '/v1/sales/sales-order',
+        valueKey: 'id',
+        labelKeys: ['docNo', 'customer'],
+        separator: ' — ',
+      },
+    },
+    {
+      key: 'itemType',
+      label: 'Item Type',
+      type: 'select',
+      options: ['FG', 'SEMI_FG'],
+      optionLabels: { FG: 'Finished Goods (FG)', SEMI_FG: 'Semi Finished Goods (Semi FG)' },
+      required: true,
+    },
+    { key: 'itemCode', label: 'BOM Item', type: 'select', required: true, enableField: 'itemType' },
+    { key: 'baseQuantity', label: 'Quantity', type: 'number', required: true },
+    { key: 'weight', label: 'Weight', type: 'number', readonly: true },
+    { key: 'specifications', label: 'Specifications', type: 'textarea', span2: true },
+    { key: 'remarks', label: 'Remarks', type: 'textarea', span2: true },
+  ],
+  lines: {
+    title: 'Components',
+    fields: [
+      { key: 'bomLevel', label: 'Level', type: 'text' },
+      { key: 'componentItemCode', label: 'Component Item (Code / Name) *', type: 'text', required: true },
+      { key: 'quantityPer', label: 'Quantity *', type: 'number', required: true },
+      { key: 'weightPerQty', label: 'Weight/Unit', type: 'number' },
+      { key: 'totalWeight', label: 'Total Weight', type: 'number' },
+      { key: 'remarks', label: 'Remarks', type: 'text' },
+    ],
+  },
+};
+
 export const PRODUCTION_BOM_CONFIG: DocScreenConfig = {
   docType: 'production-bom',
   title: 'Production BOM',
@@ -59,7 +141,6 @@ export const PRODUCTION_BOM_CONFIG: DocScreenConfig = {
     { label: 'Revision', field: 'itemRevision' },
     { label: 'Version', field: 'bomVersion' },
     { label: 'Type', field: 'itemType' },
-    { label: 'Status', field: 'status' },
   ],
   statusField: 'status',
   statusOptions: ['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'CANCELLED'],
@@ -87,32 +168,11 @@ export const PRODUCTION_BOM_CONFIG: DocScreenConfig = {
   lines: {
     title: 'BOM Components',
     fields: [
-      { key: 'lineNo', label: 'Line #', type: 'number' },
-      { key: 'componentItemCode', label: 'Component Item *', type: 'text' },
-      { key: 'componentRevision', label: 'Revision', type: 'text' },
-      { key: 'quantityPer', label: 'Qty/Unit *', type: 'number' },
-      { key: 'uom', label: 'UOM', type: 'text' },
-      { key: 'componentType', label: 'Component Type', type: 'select', options: ['RAW_MATERIAL', 'SEMI_FG', 'FINISHED_GOOD'] },
-      { key: 'bomLevel', label: 'BOM Level', type: 'text' },
-      { key: 'weightPerQty', label: 'Weight/Unit (kg)', type: 'number' },
-      { key: 'totalWeight', label: 'Total Weight (kg)', type: 'number' },
-      { key: 'scrapPercentage', label: 'Scrap %', type: 'number' },
-      { key: 'scrapPercent', label: 'Scrap % (alt)', type: 'number' },
-      { key: 'yieldPercentage', label: 'Yield %', type: 'number' },
-      { key: 'operationSequenceLink', label: 'Op Link', type: 'number' },
-      { key: 'issueMethod', label: 'Issue Method', type: 'select', options: ['Manual', 'Backflush', 'Auto'] },
-      { key: 'supplyType', label: 'Supply Type', type: 'select', options: ['Make', 'Buy', 'Subcontract'] },
-      { key: 'isPhantom', label: 'Phantom', type: 'select', options: ['true', 'false'] },
-      { key: 'childBomId', label: 'Child BOM ID', type: 'number' },
-      { key: 'warehouse', label: 'Warehouse', type: 'text' },
-      { key: 'isActive', label: 'Active', type: 'select', options: ['true', 'false'] },
-      { key: 'materialGrade', label: 'Material Grade', type: 'text' },
-      { key: 'materialForm', label: 'Form', type: 'select', options: ['Round Bar', 'Plate', 'Casting', 'Forging', 'Sheet', 'Tube', 'Extrusion', 'Other'] },
-      { key: 'diameter', label: 'Diameter (mm)', type: 'number' },
-      { key: 'requiredLength', label: 'Req Length (mm)', type: 'number' },
-      { key: 'requiredQty', label: 'Req Quantity', type: 'number' },
-      { key: 'scrapAllowance', label: 'Scrap Allowance %', type: 'number' },
-      { key: 'heatLotNumber', label: 'Heat/Lot No', type: 'text' },
+      { key: 'bomLevel', label: 'Level', type: 'text' },
+      { key: 'componentItemCode', label: 'Component Item (Code / Name) *', type: 'text', required: true },
+      { key: 'quantityPer', label: 'Quantity *', type: 'number', required: true },
+      { key: 'weightPerQty', label: 'Weight/Unit', type: 'number' },
+      { key: 'totalWeight', label: 'Total Weight', type: 'number' },
       { key: 'remarks', label: 'Remarks', type: 'text' },
     ],
   },

@@ -1412,24 +1412,80 @@ public class PlanningService {
         ProductionBOM bom = (ProductionBOM) docs.get("production-bom", bomId);
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("id", bom.getId());
-        root.put("bomNumber", bom.getBomNumber());
+        root.put("bomNumber", bom.getBomNumber() != null ? bom.getBomNumber() : bom.getDocNo());
         root.put("itemCode", bom.getItemCode());
         root.put("itemType", bom.getItemType());
+        root.put("description", bom.getDescription());
         root.put("level", 1);
         root.put("levelPath", "1");
         root.put("quantityPer", bom.getBaseQuantity());
         root.put("totalWeight", bom.getWeight());
-        List<Map<String, Object>> children = new ArrayList<>();
-        if (bom.getLines() != null) {
+
+        List<ProductionBOMLine> activeLines = (bom.getLines() == null) ? List.of()
+            : bom.getLines().stream().filter(l -> !Boolean.TRUE.equals(l.getIsDeleted())).toList();
+
+        boolean hasLevelPaths = activeLines.stream().anyMatch(l -> l.getBomLevel() != null && l.getBomLevel().matches("^[0-9]+(\\.[0-9]+)*.*"));
+
+        List<Map<String, Object>> children;
+        if (hasLevelPaths) {
+            children = buildTreeFromBomLevels(activeLines);
+        } else {
             int seq = 1;
-            for (ProductionBOMLine line : bom.getLines()) {
-                if (Boolean.TRUE.equals(line.getIsDeleted())) continue;
-                Map<String, Object> node = buildBomTreeNode(line, seq++, "1");
-                children.add(node);
+            children = new ArrayList<>();
+            for (ProductionBOMLine line : activeLines) {
+                children.add(buildBomTreeNode(line, seq++, "1"));
             }
         }
+
         root.put("children", children);
         return root;
+    }
+
+    private List<Map<String, Object>> buildTreeFromBomLevels(List<ProductionBOMLine> lines) {
+        Map<String, Map<String, Object>> nodeMap = new LinkedHashMap<>();
+        List<Map<String, Object>> rootNodes = new ArrayList<>();
+
+        for (int i = 0; i < lines.size(); i++) {
+            ProductionBOMLine line = lines.get(i);
+            String rawLevel = line.getBomLevel() != null ? line.getBomLevel().trim() : "";
+            String path = rawLevel.replaceAll("^[\\s]*([0-9]+(?:\\.[0-9]+)*).*", "$1");
+            if (path.isBlank()) {
+                path = String.valueOf(i + 1);
+            }
+
+            Map<String, Object> node = new LinkedHashMap<>();
+            node.put("id", line.getId());
+            node.put("lineNo", line.getLineNo());
+            node.put("componentItemCode", line.getComponentItemCode());
+            node.put("componentRevision", line.getComponentRevision());
+            node.put("description", line.getDescription());
+            node.put("quantityPer", line.getQuantityPer());
+            node.put("weightPerQty", line.getWeightPerQty());
+            node.put("totalWeight", line.getTotalWeight());
+            node.put("componentType", line.getComponentType());
+            node.put("bomLevel", line.getBomLevel());
+            node.put("remarks", line.getRemarks());
+            node.put("levelPath", path);
+            node.put("children", new ArrayList<Map<String, Object>>());
+
+            nodeMap.put(path, node);
+
+            int lastDot = path.lastIndexOf('.');
+            if (lastDot > 0) {
+                String parentPath = path.substring(0, lastDot);
+                Map<String, Object> parentNode = nodeMap.get(parentPath);
+                if (parentNode != null) {
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> parentChildren = (List<Map<String, Object>>) parentNode.get("children");
+                    parentChildren.add(node);
+                } else {
+                    rootNodes.add(node);
+                }
+            } else {
+                rootNodes.add(node);
+            }
+        }
+        return rootNodes;
     }
 
     private Map<String, Object> buildBomTreeNode(ProductionBOMLine line, int seq, String parentPath) {
@@ -1442,8 +1498,11 @@ public class PlanningService {
         node.put("quantityPer", line.getQuantityPer());
         node.put("weightPerQty", line.getWeightPerQty());
         node.put("totalWeight", line.getTotalWeight());
+        node.put("componentType", line.getComponentType());
+        node.put("bomLevel", line.getBomLevel());
+        node.put("remarks", line.getRemarks());
         node.put("level", levelPath.split("\\.").length);
-        node.put("levelPath", levelPath);
+        node.put("levelPath", line.getBomLevel() != null ? line.getBomLevel() : levelPath);
 
         // FRS FR-09: recursively load child BOM for Semi-FG components
         List<Map<String, Object>> children = new ArrayList<>();

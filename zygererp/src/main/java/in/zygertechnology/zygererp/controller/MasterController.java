@@ -237,6 +237,7 @@ public class MasterController {
         if (b.containsKey("dimensionType")) i.setDimensionType((String) b.get("dimensionType"));
         if (b.containsKey("hsCode")) i.setHsCode((String) b.get("hsCode"));
         if (b.containsKey("weight")) i.setWeight(b.get("weight") != null ? new java.math.BigDecimal(b.get("weight").toString()) : null);
+        else if (b.containsKey("netWeight")) i.setWeight(b.get("netWeight") != null ? new java.math.BigDecimal(b.get("netWeight").toString()) : null);
         if (b.containsKey("weightUom")) i.setWeightUom((String) b.get("weightUom"));
         if (b.containsKey("minStockLevel")) i.setMinStockLevel(b.get("minStockLevel") != null ? new java.math.BigDecimal(b.get("minStockLevel").toString()) : null);
         if (b.containsKey("maxStockLevel")) i.setMaxStockLevel(b.get("maxStockLevel") != null ? new java.math.BigDecimal(b.get("maxStockLevel").toString()) : null);
@@ -349,7 +350,7 @@ public class MasterController {
         Map<String,Object> m = new LinkedHashMap<>();
         m.put("id", i.getId()); m.put("code", i.getCode()); m.put("description", i.getDescription());
         m.put("name", i.getName()); m.put("uom", i.getUom()); m.put("category", i.getCategory()); m.put("active", i.isActive());
-        m.put("itemType", i.getItemType()); m.put("weight", i.getWeight()); m.put("drawingNumber", i.getDrawingNumber());
+        m.put("itemType", i.getItemType()); m.put("weight", i.getWeight()); m.put("netWeight", i.getWeight()); m.put("drawingNumber", i.getDrawingNumber());
         m.put("hsnCode", i.getHsnCode()); m.put("batchControl", i.getBatchControl());
         m.put("inspectionRequired", i.getInspectionRequired()); m.put("reorderPoint", i.getReorderPoint());
         m.put("minOrderQty", i.getMinOrderQty()); m.put("safetyStock", i.getSafetyStock());
@@ -667,7 +668,7 @@ public class MasterController {
     Map<String,String> bomMappingNextCodes() {
         int y = java.time.Year.now().getValue();
         Map<String,String> out = new LinkedHashMap<>();
-        out.put("bmp", bomMappingNextCode("BOM", y, bomMappings.findAll().stream().map(BomMapping::getAutoCode).toList()));
+        out.put("bmp", bomMappingNextCode("BMM", y, bomMappings.findAll().stream().map(BomMapping::getAutoCode).toList()));
         out.put("sfm", bomMappingNextCode("SFM", y, semiFgMappings.findAll().stream().map(SemiFgMapping::getAutoCode).toList()));
         out.put("fgm", bomMappingNextCode("FGM", y, fgMappings.findAll().stream().map(FgMapping::getAutoCode).toList()));
         out.put("mbm", bomMappingNextCode("MBM", y, multiLevelBoms.findAll().stream().map(MultiLevelBom::getAutoCode).toList()));
@@ -676,7 +677,7 @@ public class MasterController {
 
     private String bomMappingNextCode(String prefix, int year, List<String> codes) {
         int max = codes.stream()
-            .filter(c -> c != null && c.startsWith(prefix + "-"))
+            .filter(c -> c != null && (c.startsWith(prefix + "-") || ("BMM".equals(prefix) && c.startsWith("BOM-"))))
             .mapToInt(c -> {
                 try { return Integer.parseInt(c.substring(c.lastIndexOf('-') + 1)); } catch (Exception e) { return 0; }
             }).max().orElse(0);

@@ -721,6 +721,14 @@ export const NAV_ITEMS: NavTopItem[] = [
       },
       {
         type: 'item',
+        id: 'production-bom-fresh',
+        label: 'Production BOM',
+        icon: 'account_tree',
+        screenId: 'production-bom-fresh',
+        tabIcon: 'account_tree',
+      },
+      {
+        type: 'item',
         id: 'job-card',
         label: 'Job Card',
         icon: 'assignment',

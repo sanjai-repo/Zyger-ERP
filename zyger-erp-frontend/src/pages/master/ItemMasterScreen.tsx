@@ -13,7 +13,7 @@ interface Item {
   orderMultiple?: number; shelfLifeDays?: number;
   batchControl?: boolean; serialControl?: boolean;
   inspectionRequired?: boolean; defaultWarehouse?: string;
-  itemGroup?: string;
+  itemGroup?: string; weight?: number;
 }
 
 const PAGE_SIZE = 20;
@@ -140,6 +140,9 @@ export default function ItemMasterScreen() {
                   <option value="SPARE">Spare Part</option>
                 </select>
               </label>
+              <label className="fld"><span>Weight of Material (kg)</span>
+                <input className="in" type="number" step="0.001" placeholder="e.g. 1.250" value={form.weight != null ? String(form.weight) : ''} onChange={(e) => set('weight', e.target.value ? Number(e.target.value) : null)} />
+              </label>
               <label className="fld"><span>Active</span>
                 <select className="in" value={String(form.active ?? 'true')} onChange={(e) => set('active', e.target.value === 'true')}>
                   <option value="true">Yes</option><option value="false">No</option>
@@ -218,16 +221,17 @@ export default function ItemMasterScreen() {
           ) : (
             <table className="tbl">
               <thead>
-                <tr><th>Code</th><th>Description</th><th>UOM</th><th>Group</th><th>Category</th><th>Type</th><th>Rate</th><th>Active</th><th>Actions</th></tr>
+                <tr><th>Code</th><th>Description</th><th>UOM</th><th>Weight of Material (kg)</th><th>Group</th><th>Category</th><th>Type</th><th>Rate</th><th>Active</th><th>Actions</th></tr>
               </thead>
               <tbody>
                 {rows.length === 0 ? (
-                  <tr><td colSpan={9}><div className="empty"><span className="material-symbols-rounded">description</span> No items.</div></td></tr>
+                  <tr><td colSpan={10}><div className="empty"><span className="material-symbols-rounded">description</span> No items.</div></td></tr>
                 ) : rows.map((r) => (
                   <tr key={r.id}>
                     <td>{r.code}</td>
                     <td>{r.description}</td>
                     <td>{r.uom ?? ''}</td>
+                    <td>{r.weight != null && Number(r.weight) > 0 ? `${r.weight} kg` : '—'}</td>
                     <td>{groupRows.find(g => g.code === r.itemGroup)?.name ?? r.itemGroup ?? ''}</td>
                     <td>{r.category ?? ''}</td>
                     <td>{r.itemType ?? ''}</td>
