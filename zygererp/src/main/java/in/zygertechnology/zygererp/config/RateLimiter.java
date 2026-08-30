@@ -1,5 +1,6 @@
 package in.zygertechnology.zygererp.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.ConcurrentHashMap;
@@ -14,8 +15,12 @@ public class RateLimiter {
 
     private final ConcurrentHashMap<String, RequestWindow> windows = new ConcurrentHashMap<>();
 
-    private static final int MAX_REQUESTS_PER_MINUTE = 120;
+    private final int maxRequestsPerMinute;
     private static final long WINDOW_MS = 60_000;
+
+    public RateLimiter(@Value("${app.rate-limit.per-minute:600}") int maxRequestsPerMinute) {
+        this.maxRequestsPerMinute = maxRequestsPerMinute;
+    }
 
     public boolean isAllowed(String clientKey) {
         long now = System.currentTimeMillis();
@@ -26,7 +31,7 @@ public class RateLimiter {
             existing.count.incrementAndGet();
             return existing;
         });
-        return w.count.get() <= MAX_REQUESTS_PER_MINUTE;
+        return w.count.get() <= maxRequestsPerMinute;
     }
 
     public long retryAfterMs(String clientKey) {

@@ -25,7 +25,7 @@ interface AuthContextType {
 const TOKEN_KEY = 'zyger-access-token';
 const USER_KEY = 'zyger-user';
 
-const SESSION_IDLE_MS = 30 * 60 * 1000;
+const SESSION_IDLE_MS = 60 * 60 * 1000;
 const IDLE_EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'] as const;
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -149,7 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setScreensLoaded(false);
   };
 
-  // Auto-logout after 30 minutes of inactivity.
+  // Auto-logout after 1 hour of inactivity (matches JWT expiry).
   useEffect(() => {
     if (!user) return;
     let idleTimer: number | undefined;

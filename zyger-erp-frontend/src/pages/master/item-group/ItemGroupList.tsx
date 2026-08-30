@@ -19,6 +19,7 @@ export default function ItemGroupList({ onAdd, onEdit }: Props) {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<ItemGroup | null>(null);
   const [busy, setBusy] = useState(false);
@@ -27,6 +28,7 @@ export default function ItemGroupList({ onAdd, onEdit }: Props) {
     setLoading(true);
     try {
       const params = new URLSearchParams({ page: String(page), size: String(PAGE_SIZE) });
+      params.set('activeOnly', 'false');
       if (search) params.set('search', search);
       const { data } = await apiClient.get(`/master/item-groups?${params}`);
       const content = data?.content ?? data ?? [];
@@ -44,25 +46,36 @@ export default function ItemGroupList({ onAdd, onEdit }: Props) {
     if (!deleteTarget) return;
     setBusy(true);
     try {
-      await apiClient.delete(`/master/item-groups/${deleteTarget.id}`);
-      toast('Item Group deleted.');
+      const { data } = await apiClient.delete(`/master/item-groups/${deleteTarget.id}`);
+      if (data?.deactivated) toast(data.message || 'Item Group is in use; it was deactivated.', 'success');
+      else toast('Item Group deleted.');
       setDeleteTarget(null);
       load();
     } catch (e) {
       toast(getApiErrorMessage(e, 'Delete failed.'), 'error');
+      setDeleteTarget(null);
+      load();
     }
     setBusy(false);
   };
 
-  const filteredRows = rows.filter(r => {
-    if (!search.trim()) return true;
-    const s = search.toLowerCase();
-    return (
-      (r.code && r.code.toLowerCase().includes(s)) ||
-      (r.name && r.name.toLowerCase().includes(s)) ||
-      (r.itemType && r.itemType.toLowerCase().includes(s))
-    );
-  });
+  const filteredRows = rows
+    .filter(r => statusFilter === 'ALL' || (statusFilter === 'ACTIVE') === Boolean(r.active))
+    .filter(r => {
+      if (!search.trim()) return true;
+      const s = search.toLowerCase();
+      return (
+        (r.code && r.code.toLowerCase().includes(s)) ||
+        (r.name && r.name.toLowerCase().includes(s)) ||
+        (r.itemType && r.itemType.toLowerCase().includes(s))
+      );
+    })
+    .sort((a, b) => {
+      if (Boolean(a.active) !== Boolean(b.active)) return Boolean(a.active) ? -1 : 1;
+      const ta = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime();
+      const tb = new Date(b.updatedAt ?? b.createdAt ?? 0).getTime();
+      return tb - ta;
+    });
 
   return (
     <>
@@ -90,6 +103,16 @@ export default function ItemGroupList({ onAdd, onEdit }: Props) {
             onChange={(e) => { setSearch(e.target.value); setPage(0); }}
             style={{ width: '300px' }}
           />
+          <select
+            className="in"
+            value={statusFilter}
+            onChange={(e) => { setStatusFilter(e.target.value as typeof statusFilter); setPage(0); }}
+            style={{ width: '180px' }}
+          >
+            <option value="ALL">All Status</option>
+            <option value="ACTIVE">Active</option>
+            <option value="INACTIVE">Inactive</option>
+          </select>
           <span style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600 }}>{total} records</span>
         </div>
 
@@ -101,7 +124,6 @@ export default function ItemGroupList({ onAdd, onEdit }: Props) {
               <thead>
                 <tr>
                   <th>GROUP ID</th>
-                  <th>ITEM TYPE</th>
                   <th>GROUP NAME</th>
                   <th>DESCRIPTION</th>
                   <th>STATUS</th>
@@ -111,7 +133,7 @@ export default function ItemGroupList({ onAdd, onEdit }: Props) {
               <tbody>
                 {filteredRows.length === 0 ? (
                   <tr>
-                    <td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>
+                    <td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>
                       No item groups found.
                     </td>
                   </tr>
@@ -119,7 +141,6 @@ export default function ItemGroupList({ onAdd, onEdit }: Props) {
                   filteredRows.map((r) => (
                     <tr key={r.id}>
                       <td style={{ fontWeight: 700, color: '#0f172a' }}>{r.code}</td>
-                      <td>{r.itemType || 'Manufacturing Item'}</td>
                       <td style={{ fontWeight: 600 }}>{r.name}</td>
                       <td style={{ color: '#64748b' }}>{r.description || '-'}</td>
                       <td>

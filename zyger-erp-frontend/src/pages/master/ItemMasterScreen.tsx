@@ -13,6 +13,7 @@ interface Item {
   orderMultiple?: number; shelfLifeDays?: number;
   batchControl?: boolean; serialControl?: boolean;
   inspectionRequired?: boolean; defaultWarehouse?: string;
+  itemGroup?: string;
 }
 
 const PAGE_SIZE = 20;
@@ -30,6 +31,9 @@ export default function ItemMasterScreen() {
   const [deleteTarget, setDeleteTarget] = useState<Item | null>(null);
   const [busy, setBusy] = useState(false);
   const [activeTab, setActiveTab] = useState('basic');
+  const [groupRows, setGroupRows] = useState<Array<{id:number;code:string;name:string;itemType?:string}>>([]);
+
+  useEffect(() => { apiClient.get('/master/item-groups').then(r => setGroupRows(r.data ?? [])).catch(() => {}); }, []);
 
   const load = async () => {
     setLoading(true);
@@ -118,6 +122,12 @@ export default function ItemMasterScreen() {
               </label>
               <label className="fld"><span>Category</span>
                 <input className="in" value={String(form.category ?? '')} onChange={(e) => set('category', e.target.value)} />
+              </label>
+              <label className="fld"><span>Item Group</span>
+                <select className="in" value={String(form.itemGroupId ?? '')} onChange={(e) => set('itemGroupId', e.target.value ? Number(e.target.value) : null)}>
+                  <option value="">Select...</option>
+                  {groupRows.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
               </label>
               <label className="fld"><span>Item Type</span>
                 <select className="in" value={String(form.itemType ?? '')} onChange={(e) => set('itemType', e.target.value)}>
@@ -208,22 +218,23 @@ export default function ItemMasterScreen() {
           ) : (
             <table className="tbl">
               <thead>
-                <tr><th>Code</th><th>Description</th><th>UOM</th><th>Category</th><th>Type</th><th>Rate</th><th>Active</th><th>Actions</th></tr>
+                <tr><th>Code</th><th>Description</th><th>UOM</th><th>Group</th><th>Category</th><th>Type</th><th>Rate</th><th>Active</th><th>Actions</th></tr>
               </thead>
               <tbody>
                 {rows.length === 0 ? (
-                  <tr><td colSpan={8}><div className="empty"><span className="material-symbols-rounded">description</span> No items.</div></td></tr>
+                  <tr><td colSpan={9}><div className="empty"><span className="material-symbols-rounded">description</span> No items.</div></td></tr>
                 ) : rows.map((r) => (
                   <tr key={r.id}>
                     <td>{r.code}</td>
                     <td>{r.description}</td>
                     <td>{r.uom ?? ''}</td>
+                    <td>{groupRows.find(g => g.code === r.itemGroup)?.name ?? r.itemGroup ?? ''}</td>
                     <td>{r.category ?? ''}</td>
                     <td>{r.itemType ?? ''}</td>
                     <td>{r.defaultRate != null ? `₹${r.defaultRate}` : ''}</td>
                     <td>{r.active ? 'Yes' : 'No'}</td>
                     <td>
-                      <button className="ibtn" title="Edit" onClick={() => { setForm(r as unknown as Record<string, unknown>); setEditId(r.id); }}>
+                      <button className="ibtn" title="Edit" onClick={() => { const g = groupRows.find(x => x.code === (r as unknown as Record<string, unknown>).itemGroup); setForm({ ...(r as unknown as Record<string, unknown>), itemGroupId: g?.id ?? null }); setEditId(r.id); }}>
                         <span className="material-symbols-rounded">edit</span>
                       </button>
                       <button className="ibtn danger" title="Delete" onClick={() => setDeleteTarget(r)}>

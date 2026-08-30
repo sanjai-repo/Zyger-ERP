@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import { Suspense, useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTabs } from '../../contexts/TabsContext';
 import Navigation, { type NavigationNavigatePayload } from './Navigation';
@@ -691,8 +691,10 @@ export default function MainLayout() {
         {tabs.map((tab) => {
           const Comp = tab.component;
           return (
-            <div key={tab.id} style={{ display: tab.id === activeTabId ? 'block' : 'none' }}>
-              <Comp {...(tab.props ?? {})} />
+            <div key={tab.stamp != null ? `${tab.id}:${tab.stamp}` : tab.id} style={{ display: tab.id === activeTabId ? 'block' : 'none' }}>
+              <Suspense fallback={<div className="empty" style={{ padding: 32 }}>Loading…</div>}>
+                <Comp {...(tab.props ?? {})} />
+              </Suspense>
             </div>
           );
         })}

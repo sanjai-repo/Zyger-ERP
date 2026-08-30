@@ -5,6 +5,9 @@ import { getApiErrorMessage } from '../../../utils/apiError';
 import StatusBadge from '../../../components/common/StatusBadge';
 import ConfirmActionModal from '../../../components/common/ConfirmActionModal';
 import AuditHistoryDrawer from '../../../components/common/AuditHistoryDrawer';
+import BomMappingEditor from './BomMappingEditor';
+import type { BomMappingDoc } from './BomMappingEditor';
+import { TreeRow, type TNode } from './BomMappingEditor';
 
 /* ── Types ── */
 
@@ -69,6 +72,7 @@ interface ItemOption {
   weight: number;
   uom: string;
   itemType: string;
+  itemGroup?: string;
   active: boolean;
 }
 
@@ -137,21 +141,18 @@ export default function BomMasterScreen() {
   const { toast } = useToast();
 
   // List state
-  const [rows, setRows] = useState<BomDoc[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchText, setSearchText] = useState('');
+  const [allBoms, setAllBoms] = useState<BomDoc[]>([]);
 
   // Form state
   const [bom, setBom] = useState(emptyBom());
   const [editId, setEditId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
-  const [viewMode, setViewMode] = useState<'LIST' | 'FORM'>('LIST');
+  const [viewMode, setViewMode] = useState<'LIST' | 'FORM' | 'MAPPING_EDITOR'>('LIST');
   const [formTab, setFormTab] = useState<'details' | 'where-used' | 'version-compare' | 'revisions'>('details');
 
   // Lookup data
   const [items, setItems] = useState<ItemOption[]>([]);
   const [salesOrders, setSalesOrders] = useState<SoOption[]>([]);
-  const [allBoms, setAllBoms] = useState<BomDoc[]>([]);
 
   // Copy BOM
   const [copyBomId, setCopyBomId] = useState('');
@@ -172,6 +173,12 @@ export default function BomMasterScreen() {
   const [treeLoading, setTreeLoading] = useState(false);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
 
+  // BOM Mapping tree view (list)
+  const [bmTreeOpen, setBmTreeOpen] = useState(false);
+  const [bmTreeLoading, setBmTreeLoading] = useState(false);
+  const [bmTreeMeta, setBmTreeMeta] = useState<{ code: string; name: string }>({ code: '', name: '' });
+  const [bmTreeRoots, setBmTreeRoots] = useState<TNode[]>([]);
+
   // Next BOM number
   const [nextBomNumber, setNextBomNumber] = useState('');
 
@@ -181,27 +188,31 @@ export default function BomMasterScreen() {
   const [reviseRemarks, setReviseRemarks] = useState('');
   const [auditOpen, setAuditOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{ action: string; danger: boolean; body: string } | null>(null);
+  const [bmDocs, setBmDocs] = useState<Array<{ id: number; bmId: number; code: string; name: string; fgCount: number; semiFgCount: number; rmCount: number; multiLevelCount: number; active: boolean }>>([]);
+  const [bmLoading, setBmLoading] = useState(false);
+  const [bmDelTarget, setBmDelTarget] = useState<{ bmId: number; fgItemCode: string } | null>(null);
+  const [bmEditor, setBmEditor] = useState<{ mapping: BomMappingDoc | null; mode: 'new' | 'view' | 'edit' }>({ mapping: null, mode: 'new' });
 
   /* ── Loaders ── */
 
   const loadBoms = useCallback(async () => {
-    setLoading(true);
     try {
       const { data } = await apiClient.get('/v1/planning/production-bom', { params: { size: 500, page: 0 } });
       const list = data.content ?? data ?? [];
-      setRows(list);
       setAllBoms(list);
     } catch (e) { toast(getApiErrorMessage(e, 'Load failed.'), 'error'); }
-    setLoading(false);
   }, []);
 
   const loadItems = useCallback(async () => {
     try {
-      const { data } = await apiClient.get('/master/items', { params: { size: 500, page: 0, active: true } });
-      const list = (data.content ?? data ?? []).map((i: Record<string, unknown>) => ({
+      const { data } = await apiClient.get('/master/items', { params: { size: 500, page: 0 } });
+      const rawList = data.content ?? data ?? [];
+      const list = rawList.map((i: Record<string, unknown>) => ({
         id: i.id as number, code: i.code as string, name: (i.name as string) || (i.description as string) || '',
         weight: (i.weight as number) || 0, uom: (i.uom as string) || 'PCS',
-        itemType: (i.itemType as string) || '', active: i.active as boolean,
+        itemType: (i.itemType as string) || (i.groupType as string) || '',
+        itemGroup: (i.itemGroup as string) || (i.groupName as string) || '',
+        active: i.active !== false,
       }));
       setItems(list);
     } catch { /* silent */ }
@@ -225,15 +236,24 @@ export default function BomMasterScreen() {
     } catch { /* silent */ }
   }, []);
 
-  useEffect(() => { loadBoms(); loadItems(); loadSalesOrders(); loadNextNumber(); }, [loadBoms, loadItems, loadSalesOrders, loadNextNumber]);
+  const loadBmDocs = useCallback(async () => {
+    setBmLoading(true);
+    try {
+      const { data } = await apiClient.get('/master/bom-mappings');
+      setBmDocs(Array.isArray(data) ? data : (data?.content ?? []));
+    } catch (e) { toast(getApiErrorMessage(e, 'Load BOM Mappings failed.'), 'error'); }
+    setBmLoading(false);
+  }, []);
+
+  useEffect(() => { loadBoms(); loadItems(); loadSalesOrders(); loadNextNumber(); loadBmDocs(); }, [loadBoms, loadItems, loadSalesOrders, loadNextNumber, loadBmDocs]);
+
+  useEffect(() => {
+    const refresh = () => loadBmDocs();
+    window.addEventListener('bomMappingsChanged', refresh);
+    return () => window.removeEventListener('bomMappingsChanged', refresh);
+  }, [loadBmDocs]);
 
   /* ── Derived ── */
-
-  const filteredRows = useMemo(() => {
-    if (!searchText.trim()) return rows;
-    const q = searchText.toLowerCase();
-    return rows.filter((r) => (r.bomNumber || r.docNo || '').toLowerCase().includes(q) || (r.itemCode || '').toLowerCase().includes(q) || (r.description || '').toLowerCase().includes(q));
-  }, [rows, searchText]);
 
   const filteredItems = useMemo(() => {
     if (!bom.itemType) return items;
@@ -603,23 +623,6 @@ export default function BomMasterScreen() {
 
   /* ── Navigation ── */
 
-  const openNew = () => {
-    setBom(emptyBom());
-    setEditId(null);
-    setFormTab('details');
-    setViewMode('FORM');
-  };
-
-  const editBom = (r: BomDoc) => {
-    setBom({ ...r, lines: r.lines ? r.lines.map((l) => ({ ...l })) : [] });
-    setEditId(r.id);
-    setFormTab('details');
-    setViewMode('FORM');
-    if (!r.isActive && r.status !== 'DRAFT') {
-      toast('This revision is inactive. Opening in read-only mode.', 'success');
-    }
-  };
-
   const openFormTab = (tab: typeof formTab) => {
     setFormTab(tab);
     if (!editId) return;
@@ -628,65 +631,154 @@ export default function BomMasterScreen() {
     if (tab === 'revisions') fetchRevisions(editId);
   };
 
+  /* ── BOM Mapping actions (list) ── */
+
+  const openMappingEditor = async (r?: { id: number; bmId: number }, mode: 'new' | 'view' | 'edit' = 'new') => {
+    if (r && mode !== 'new') {
+      setBusy(true);
+      try {
+        const { data } = await apiClient.get(`/master/bom-mappings/editor/${r.bmId}`);
+        setBmEditor({ mapping: data as BomMappingDoc, mode });
+      } catch (e) {
+        setBusy(false);
+        toast(getApiErrorMessage(e, 'Load mapping failed.'), 'error');
+        return;
+      }
+      setBusy(false);
+    } else {
+      setBmEditor({ mapping: null, mode: 'new' });
+    }
+    setViewMode('MAPPING_EDITOR');
+  };
+
+  const delBmRow = async () => {
+    const t = bmDelTarget;
+    if (!t) return;
+    setBusy(true);
+    try {
+      await apiClient.delete(`/master/bom-mappings/${t.bmId}`);
+      toast('BOM Mapping deleted.');
+      setBmDelTarget(null);
+      loadBmDocs();
+    } catch (e) { toast(getApiErrorMessage(e, 'Delete failed.'), 'error'); }
+    setBusy(false);
+  };
+
+  /* ── BOM Mapping tree view (read-only) ── */
+
+  const buildMappingTree = (d: BomMappingDoc): TNode[] => d.fgMappings.map((f, i) => ({
+    id: f.autoCode,
+    label: f.name,
+    code: f.fgItemCode,
+    type: 'FG',
+    path: String(i + 1),
+    children: f.semis.map((s, j) => {
+      const sfm = d.semiFgs.find((x) => x.autoCode === s.autoCode);
+      return {
+        id: s.autoCode,
+        label: sfm?.name ?? s.name,
+        code: sfm?.semiFgItemCode,
+        type: 'SFG',
+        path: `${i + 1}.${j + 1}`,
+        children: (sfm?.rms ?? []).map((r, k) => ({
+          id: r.code, label: r.name, code: r.code, type: 'RM', path: `${i + 1}.${j + 1}.${k + 1}`, children: [],
+        })),
+      };
+    }),
+  }));
+
+  const openBmTree = async (m: { bmId: number; code: string; name: string }) => {
+    setBmTreeMeta({ code: m.code, name: m.name });
+    setBmTreeOpen(true);
+    setBmTreeLoading(true);
+    try {
+      const { data } = await apiClient.get(`/master/bom-mappings/editor/${m.bmId}`);
+      const roots = buildMappingTree(data as BomMappingDoc);
+      setBmTreeRoots(roots);
+      const expanded = new Set<string>();
+      const expandAll = (n: TNode) => { if (n.children.length > 0) { expanded.add(n.path); n.children.forEach(expandAll); } };
+      roots.forEach(expandAll);
+      setExpandedNodes(expanded);
+    } catch (e) {
+      setBmTreeOpen(false);
+      toast(getApiErrorMessage(e, 'Failed to load BOM tree.'), 'error');
+    }
+    setBmTreeLoading(false);
+  };
+
   /* ── List View ── */
+
+  if (viewMode === 'MAPPING_EDITOR') {
+    return (
+      <BomMappingEditor
+        onBack={() => setViewMode('LIST')}
+        mode={bmEditor.mode}
+        mapping={bmEditor.mapping}
+        onSaveSuccess={() => loadBmDocs()}
+      />
+    );
+  }
 
   if (viewMode === 'LIST') {
     return (
       <>
-        <div className="pg-head">
-          <div>
-            <h1>Bill of Material (BOM)</h1>
-            <p>Multi-level BOM with components, quantities, and structure</p>
+        <div className="pg-head pg-head-flex" style={{ marginBottom: '20px' }}>
+          <div className="pg-head-text" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div>
+              <h1>Bill of Material (BOM)</h1>
+              <p>Multi-level BOM with components, quantities, and structure</p>
+            </div>
           </div>
-          <button className="btn btn-sm btn-p" onClick={openNew}><span className="material-symbols-rounded">add</span> New BOM</button>
         </div>
 
         <div className="panel">
           <div className="panel-h">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input className="in" placeholder="Search BOM No / Item / Description..." value={searchText} onChange={(e) => setSearchText(e.target.value)} style={{ width: 320 }} />
+            <span style={{ fontSize: '0.85em', color: '#6b7280' }}>{bmDocs.length} BOM Mappings</span>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <button className="btn" onClick={loadBmDocs} title="Refresh"><span className="material-symbols-rounded" style={{ fontSize: '1.1rem' }}>refresh</span></button>
+              <button className="btn btn-primary" onClick={() => openMappingEditor()}><span className="material-symbols-rounded">alt_route</span> New BOM Mapping</button>
             </div>
-            <span style={{ fontSize: '0.85em', color: '#6b7280' }}>{filteredRows.length} BOMs</span>
           </div>
           <div className="twrap">
             <table className="tbl">
               <thead>
                 <tr>
-                  <th>BOM No</th>
-                  <th>Version</th>
-                  <th>Item Code</th>
-                  <th>Description</th>
-                  <th>Type</th>
-                  <th>BOM Type</th>
-                  <th>Base Qty</th>
-                  <th>Components</th>
-                  <th>Weight</th>
-                  <th>Status</th>
-                  <th>Actions</th>
+                  <th>BOM Mapping Code</th>
+                  <th>BOM Mapping Name</th>
+                  <th style={{ textAlign: 'center' }}>FG</th>
+                  <th style={{ textAlign: 'center' }}>Semi FG</th>
+                  <th style={{ textAlign: 'center' }}>RM</th>
+                  <th style={{ textAlign: 'center' }}>Multi Level</th>
+                  <th style={{ textAlign: 'center' }}>Status</th>
+                  <th style={{ textAlign: 'center' }}>Tree</th>
+                  <th style={{ textAlign: 'center' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {loading ? (
-                  <tr><td colSpan={11} className="empty">Loading...</td></tr>
-                ) : filteredRows.length === 0 ? (
-                  <tr><td colSpan={11} className="empty">No BOMs found. Click "New BOM" to create one.</td></tr>
-                ) : filteredRows.map((r) => (
-                  <tr key={r.id}>
-                    <td style={{ fontWeight: 600 }}>{r.bomNumber || r.docNo || '\u2014'}</td>
-                    <td>{r.bomVersion}</td>
-                    <td>{r.itemCode}</td>
-                    <td>{r.description || '\u2014'}</td>
-                    <td><StatusBadge status={r.itemType === 'SEMI_FG' ? 'Semi-FG' : r.itemType || '\u2014'} /></td>
-                    <td>{r.bomType || '\u2014'}</td>
-                    <td>{r.baseQuantity} {r.baseUom}</td>
-                    <td>{r.lines?.length || 0}</td>
-                    <td>{r.weight ? `${r.weight} kg` : '\u2014'}</td>
-                    <td><StatusBadge status={r.status} /></td>
-                    <td style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                      <button className="btn btn-sm" onClick={() => editBom(r)} title="Edit"><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>edit</span></button>
-                      {r.status === 'DRAFT' && <button className="btn btn-sm btn-g" onClick={() => { setConfirmAction({ action: 'submit', danger: false, body: 'Submit this BOM for review?' }); setEditId(r.id); setBom({ ...r, lines: r.lines ?? [] }); setViewMode('FORM'); }} title="Submit"><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>send</span></button>}
-                      {r.status === 'SUBMITTED' && <button className="btn btn-sm btn-g" onClick={() => { setConfirmAction({ action: 'approve', danger: false, body: 'Approve this BOM?' }); setEditId(r.id); setBom({ ...r, lines: r.lines ?? [] }); setViewMode('FORM'); }} title="Approve"><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>thumb_up</span></button>}
-                      <button className="btn btn-sm btn-d" onClick={() => setDeleteTarget(r)} title="Delete"><span className="material-symbols-rounded" style={{ fontSize: '1rem' }}>delete</span></button>
+                {bmLoading ? (
+                  <tr><td colSpan={9} className="empty">Loading...</td></tr>
+                ) : bmDocs.length === 0 ? (
+                  <tr><td colSpan={9} className="empty">No BOM Mappings yet.</td></tr>
+                ) : bmDocs.map((m) => (
+                  <tr key={m.id}>
+                    <td style={{ fontWeight: 700 }}>{m.code}</td>
+                    <td>{m.name || '\u2014'}</td>
+                    <td style={{ textAlign: 'center' }}><span style={{ fontWeight: 700, color: '#6d28d9' }}>{m.fgCount ?? 0} FG</span></td>
+                    <td style={{ textAlign: 'center' }}><span style={{ fontWeight: 700, color: '#166534' }}>{m.semiFgCount ?? 0} SEMI-FG</span></td>
+                    <td style={{ textAlign: 'center' }}><span style={{ fontWeight: 700, color: '#b45309' }}>{m.rmCount ?? 0} RM</span></td>
+                    <td style={{ textAlign: 'center' }}><span style={{ fontWeight: 700, color: '#0e7490' }}>{m.multiLevelCount ?? 0} MBM</span></td>
+                    <td style={{ textAlign: 'center' }}><StatusBadge status={m.active ? 'ACTIVE' : 'INACTIVE'} /></td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button className="ibtn" title="Tree View" onClick={() => openBmTree(m)}>
+                        <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>account_tree</span>
+                      </button>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <button className="ibtn" title="View" onClick={() => openMappingEditor(m, 'view')}><span className="material-symbols-rounded" style={{ fontSize: '18px' }}>visibility</span></button>
+                        <button className="ibtn" title="Edit" onClick={() => openMappingEditor(m, 'edit')}><span className="material-symbols-rounded" style={{ fontSize: '18px' }}>edit</span></button>
+                        <button className="ibtn danger" title="Delete" onClick={() => setBmDelTarget({ bmId: m.bmId, fgItemCode: m.name || m.code })}><span className="material-symbols-rounded" style={{ fontSize: '18px' }}>delete</span></button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -695,8 +787,50 @@ export default function BomMasterScreen() {
           </div>
         </div>
 
-        {deleteTarget && (
-          <ConfirmActionModal open title="Delete BOM" body={`Delete ${deleteTarget.bomNumber || deleteTarget.itemCode}? This action cannot be undone.`} okLabel="Delete" danger busy={busy} onClose={() => setDeleteTarget(null)} onConfirm={del} />
+        {bmDelTarget && (
+          <ConfirmActionModal open title="Delete BOM Mapping" body={`Delete mapping for ${bmDelTarget.fgItemCode}? Its FG, Semi-FG, RM and Multi-Level BOM lines will be deleted too.`} okLabel="Delete" danger busy={busy} onClose={() => setBmDelTarget(null)} onConfirm={delBmRow} />
+        )}
+
+        {bmTreeOpen && (
+          <div className="mwrap" onClick={() => setBmTreeOpen(false)} style={{ background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(6px)' }}>
+            <div onClick={(e) => e.stopPropagation()} style={{
+              width: 720, maxWidth: '94vw', background: '#ffffff', borderRadius: 14, boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+              border: '1px solid #e2e8f0', padding: 24, maxHeight: '85vh', overflow: 'auto', display: 'flex', flexDirection: 'column',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span className="material-symbols-rounded" style={{ color: '#6366f1', fontSize: '1.4rem' }}>account_tree</span>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#1e293b' }}>Bill Of Material (BOM) Structure</h2>
+                    <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.8rem', marginTop: 2 }}>{bmTreeMeta.code} — {bmTreeMeta.name || 'Unnamed mapping'}</p>
+                  </div>
+                </div>
+                <button type="button" className="btn btn-sm" onClick={() => setBmTreeOpen(false)}>
+                  <span className="material-symbols-rounded">close</span>
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: 24, padding: '10px 14px', background: '#f1f5f9', borderRadius: 8, marginBottom: 16, fontSize: '0.78rem', color: '#64748b' }}>
+                <span><strong style={{ color: '#3b82f6' }}>{bmTreeRoots.length}</strong> FG</span>
+                <span><strong style={{ color: '#3b82f6' }}>{new Set(bmTreeRoots.flatMap((f) => f.children.map((c) => c.id))).size}</strong> Semi-FG</span>
+                <span><strong style={{ color: '#f59e0b' }}>{new Set(bmTreeRoots.flatMap((f) => f.children.flatMap((c) => c.children.map((g) => g.id)))).size}</strong> Raw Material</span>
+              </div>
+              <div style={{ flex: 1, overflow: 'auto' }}>
+                {bmTreeLoading ? (
+                  <div style={{ padding: '40px 0', textAlign: 'center', color: '#94a3b8' }}>Loading tree...</div>
+                ) : bmTreeRoots.length === 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 60, color: '#94a3b8' }}>
+                    <span className="material-symbols-rounded" style={{ fontSize: '3rem', marginBottom: 8 }}>account_tree</span> No tree data.
+                  </div>
+                ) : (
+                  <div style={{ maxWidth: 680, margin: '0 auto' }}>
+                    {bmTreeRoots.map((n) => (
+                      <TreeRow key={n.id} node={n} expanded={expandedNodes} toggle={toggleNode} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         )}
       </>
     );

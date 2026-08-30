@@ -11,6 +11,8 @@ export interface Tab {
   pin?: boolean;
   component: React.ComponentType<any>;
   props?: any;
+  reopen?: boolean;
+  stamp?: number;
 }
 
 interface TabsContextType {
@@ -126,9 +128,14 @@ export function TabsProvider({ children }: { children: ReactNode }) {
 
   const openTab = useCallback((newTab: Tab) => {
     setTabs(prev => {
-      const exists = prev.find(t => t.id === newTab.id);
-      if (exists) return prev;
-      return [...prev, newTab];
+      const idx = prev.findIndex(t => t.id === newTab.id);
+      if (idx === -1) return [...prev, newTab];
+      if (newTab.reopen) {
+        const copy = [...prev];
+        copy[idx] = { ...newTab, stamp: (prev[idx].stamp ?? 0) + 1 };
+        return copy;
+      }
+      return prev;
     });
     setActiveTabId(newTab.id);
   }, []);

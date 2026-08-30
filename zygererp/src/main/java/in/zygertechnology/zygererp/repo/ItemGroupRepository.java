@@ -8,4 +8,5 @@ public interface ItemGroupRepository extends JpaRepository<ItemGroup, Long> {
     Optional<ItemGroup> findByCode(String code);
     boolean existsByCode(String code);
     List<ItemGroup> findByActiveTrue();
+    long countByParentId(Long parentId);
 }

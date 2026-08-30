@@ -328,7 +328,7 @@ export default function PurchasableItemScreen() {
   const [accessoriesRows, setAccessoriesRows] = useState<Array<any>>([]);
   const [uomRows, setUomRows] = useState<Array<any>>([]);
   const [altItemRows, setAltItemRows] = useState<Array<any>>([]);
-  const [itemGroupRows, setItemGroupRows] = useState<Array<{id:number;code:string;name:string}>>([]);
+  const [itemGroupRows, setItemGroupRows] = useState<Array<{id:number;code:string;name:string;itemType?:string}>>([]);
   const [uomOptions, setUomOptions] = useState<Array<{id:number;code:string;name:string;symbol?:string}>>([]);
 
   // Section Collapse States (all open by default)
@@ -345,7 +345,11 @@ export default function PurchasableItemScreen() {
     try {
       const { data } = await apiClient.get('/master/items?size=500');
       const content = data?.content ?? data ?? [];
-      setRows(content);
+      const purchased = content.filter((i: any) => {
+        const t = (i.itemType || '').toUpperCase().replace(' ', '_');
+        return t === 'RAW_MATERIAL' || t === 'PURCHASABLE';
+      });
+      setRows(purchased);
     } catch (e) {
       toast(getApiErrorMessage(e, 'Failed to load purchase items.'), 'error');
     }
@@ -375,7 +379,7 @@ export default function PurchasableItemScreen() {
 
     setBusy(true);
     try {
-      const payload = { ...form, itemType: 'RAW_MATERIAL' };
+      const payload = { ...form };
       if (editId) {
         await apiClient.put(`/master/items/${editId}`, payload);
         toast('Purchasable item updated successfully.');
@@ -472,6 +476,7 @@ export default function PurchasableItemScreen() {
                 <tr>
                   <th>Item Code</th>
                   <th>Item Name</th>
+                  <th>Item Group</th>
                   <th>UOM</th>
                   <th>Purchase Rate</th>
                   <th>Selling Rate</th>
@@ -481,14 +486,15 @@ export default function PurchasableItemScreen() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={7} className="empty">Loading Purchase Items...</td></tr>
+                  <tr><td colSpan={8} className="empty">Loading Purchase Items...</td></tr>
                 ) : filteredRows.length === 0 ? (
-                  <tr><td colSpan={7} className="empty">No Purchase Items found.</td></tr>
+                  <tr><td colSpan={8} className="empty">No Purchase Items found.</td></tr>
                 ) : (
                   filteredRows.map(r => (
                     <tr key={r.id}>
                       <td className="cell-b">{r.code}</td>
                       <td><b>{r.description}</b></td>
+                      <td>{(itemGroupRows.find(g => g.code === r.itemGroup)?.name ?? r.itemGroup) || '—'}</td>
                       <td>{r.uom}</td>
                       <td className="num">₹{r.purchaseRate || 0}</td>
                       <td className="num">₹{r.sellingRate || 0}</td>

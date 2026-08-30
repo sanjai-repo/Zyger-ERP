@@ -338,7 +338,7 @@ export default function CustomerSuppliedItemScreen() {
   const [accessoriesRows, setAccessoriesRows] = useState<Array<any>>([]);
   const [uomRows, setUomRows] = useState<Array<any>>([]);
   const [altItemRows, setAltItemRows] = useState<Array<any>>([]);
-  const [itemGroupRows, setItemGroupRows] = useState<Array<{id:number;code:string;name:string}>>([]);
+  const [itemGroupRows, setItemGroupRows] = useState<Array<{id:number;code:string;name:string;itemType?:string}>>([]);
   const [uomOptions, setUomOptions] = useState<Array<{id:number;code:string;name:string;symbol?:string}>>([]);
 
   const [openSec, setOpenSec] = useState<Record<string, boolean>>({
@@ -354,7 +354,10 @@ export default function CustomerSuppliedItemScreen() {
     try {
       const { data } = await apiClient.get('/master/items?size=500');
       const content = data?.content ?? data ?? [];
-      const csmItems = content.filter((i: any) => i.itemType === 'CUSTOMER_SUPPLIED' || i.customerOwned || i.code?.startsWith('CSI'));
+      const csmItems = content.filter((i: any) => {
+        const t = (i.itemType || '').toUpperCase().replace(' ', '_');
+        return t === 'CUSTOMER_SUPPLIED' || i.customerOwned;
+      });
       setRows(csmItems);
     } catch (e) {
       toast(getApiErrorMessage(e, 'Failed to load customer supplied items.'), 'error');
@@ -385,7 +388,7 @@ export default function CustomerSuppliedItemScreen() {
 
     setBusy(true);
     try {
-      const payload = { ...form, itemType: 'CUSTOMER_SUPPLIED', customerOwned: true };
+      const payload = { ...form, customerOwned: true };
       if (editId) {
         await apiClient.put(`/master/items/${editId}`, payload);
         toast('Customer Supplied item updated successfully.');
@@ -481,6 +484,7 @@ export default function CustomerSuppliedItemScreen() {
                 <tr>
                   <th>Item Code</th>
                   <th>Item Name</th>
+                  <th>Item Group</th>
                   <th>Classification</th>
                   <th>UOM</th>
                   <th>Customer</th>
@@ -490,14 +494,15 @@ export default function CustomerSuppliedItemScreen() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={7} className="empty">Loading Customer Supplied Items...</td></tr>
+                  <tr><td colSpan={8} className="empty">Loading Customer Supplied Items...</td></tr>
                 ) : filteredRows.length === 0 ? (
-                  <tr><td colSpan={7} className="empty">No Customer Supplied Items found.</td></tr>
+                  <tr><td colSpan={8} className="empty">No Customer Supplied Items found.</td></tr>
                 ) : (
                   filteredRows.map(r => (
                     <tr key={r.id}>
                       <td className="cell-b">{r.code}</td>
                       <td><b>{r.description}</b></td>
+                      <td>{(itemGroupRows.find(g => g.code === r.itemGroup)?.name ?? r.itemGroup) || '—'}</td>
                       <td>{r.classification || 'Customer Supplied'}</td>
                       <td>{r.uom}</td>
                       <td>{r.customerCode || '—'}</td>

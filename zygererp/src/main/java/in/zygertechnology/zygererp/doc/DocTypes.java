@@ -68,7 +68,7 @@ public final class DocTypes {
         reg("subcontractor",           "SUB", Effect.NONE,  "SUBCONTRACTOR",          null, false);
         reg("uom",                     "UOM", Effect.NONE,  "UOM",                    null, false);
         reg("item-group",              "IG",  Effect.NONE,  "ITEM_GROUP",             null, false);
-        reg("process",                 "PRC", Effect.NONE,  "PROCESS",                null, false);
+reg("process",                 "PRC", Effect.NONE,  "PROCESS",                null, false);
         reg("store",                   "STR", Effect.NONE,  "STORE",                  null, false);
         reg("rack",                    "RCK", Effect.NONE,  "RACK",                   null, false);
         reg("bin",                     "BIN", Effect.NONE,  "BIN",                    null, false);
@@ -79,7 +79,7 @@ public final class DocTypes {
         reg("work-center",             "WC",  Effect.NONE,  "WORK_CENTER",            null, false);
         reg("operation",               "OP",  Effect.NONE,  "OPERATION",              null, false);
         reg("location",                "LOC", Effect.NONE,  "LOCATION",               null, false);
-        reg("item-purchasable",        "ITM", Effect.NONE,  "ITEM_PURCHASABLE",       null, false);
+        reg("item-purchasable",        "PIT", Effect.NONE,  "ITEM_PURCHASABLE",       null, false);
         reg("item-customer",           "CSM", Effect.NONE,  "ITEM_CUSTOMER",          null, false);
         reg("item-manufacturing",      "MFG", Effect.NONE,  "ITEM_MANUFACTURING",     null, false);
         reg("csm",                     "CSM", Effect.NONE,  "CUSTOMER_SUPPLIED",      null, false);

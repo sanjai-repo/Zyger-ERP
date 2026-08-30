@@ -3,9 +3,11 @@ package in.zygertechnology.zygererp.controller;
 import in.zygertechnology.zygererp.service.DocNumberService;
 import in.zygertechnology.zygererp.entity.*;
 import in.zygertechnology.zygererp.repo.*;
+import jakarta.persistence.EntityManager;
 import in.zygertechnology.zygererp.repository.ResourceMasterRepository;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
 import in.zygertechnology.zygererp.security.RequirePermission;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -15,9 +17,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import java.security.Principal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.cache.annotation.Cacheable;
 
 import java.security.Principal;
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @RestController @RequiredArgsConstructor
@@ -35,6 +39,13 @@ public class MasterController {
     private final ItemBomComponentRepository bomRepo;
     private final ItemSupplierRepository itemSupplierRepo;
     private final jakarta.persistence.EntityManager em;
+    private final BomMappingRepository bomMappings;
+    private final SemiFgMappingRepository semiFgMappings;
+    private final SemiFgMappingRmRepository semiFgMappingRms;
+    private final FgMappingRepository fgMappings;
+    private final FgMappingLineRepository fgMappingLines;
+    private final MultiLevelBomRepository multiLevelBoms;
+    private final MultiLevelBomLineRepository multiLevelBomLines;
 
 
     private String principalName(Principal p) { return p != null ? p.getName() : "system"; }
@@ -115,9 +126,12 @@ public class MasterController {
                                        @RequestParam(required=false) String search,
                                        @RequestParam(required=false) String category,
                                        @RequestParam(required=false) String itemType,
-                                       @RequestParam(required=false) String active) {
+                                       @RequestParam(required=false) String groupType,
+                                       @RequestParam(required=false) String bomCategory,
+                                       @RequestParam(required=false) String active,
+                                       @RequestParam(required=false) String includeInactive) {
         List<ItemMaster> all = new ArrayList<>(items.findAll());
-        all.removeIf(i -> !i.isActive());
+        if (!"true".equalsIgnoreCase(includeInactive)) all.removeIf(i -> !i.isActive());
         if (search != null && !search.isEmpty()) {
             String s = search.toLowerCase();
             all.removeIf(i -> {
@@ -130,6 +144,10 @@ public class MasterController {
             all.removeIf(i -> !category.equals(i.getCategory()));
         if (itemType != null && !itemType.isEmpty())
             all.removeIf(i -> !itemType.equals(i.getItemType()));
+        if (groupType != null && !groupType.isEmpty())
+            all.removeIf(i -> i.getItemGroup() == null || !groupType.equals(groupToItemType(i.getItemGroup())));
+        if (bomCategory != null && !bomCategory.isEmpty())
+            all.removeIf(i -> !bomCategory.equals(bomBucket(i)));
         if (active != null && !active.isEmpty())
             all.removeIf(i -> !String.valueOf(i.isActive()).equals(active));
         all.sort(Comparator.comparing(ItemMaster::getCode));
@@ -145,7 +163,8 @@ public class MasterController {
     @PostMapping("/api/master/items") @Transactional ItemMaster create(@RequestBody Map<String,Object> body){
         ItemMaster i = new ItemMaster();
         applyItemFields(i, body);
-        i.setCode(docNumbers.allocate(itemDocType(body)));
+        deriveItemTypeFromGroup(i, body);
+        i.setCode(docNumbers.allocate(itemDocType(i, body)));
         i.setId(null);
         return items.save(i);
     }
@@ -155,6 +174,7 @@ public class MasterController {
     @PutMapping("/api/master/items/{id}") @Transactional ItemMaster update(@PathVariable Long id, @RequestBody Map<String,Object> body){
         ItemMaster e = items.findById(id).orElseThrow(() -> new RuntimeException("Item not found"));
         applyItemFields(e, body);
+        deriveItemTypeFromGroup(e, body);
         e.setId(id); e.setCode(e.getCode());
         return items.save(e);
     }
@@ -174,12 +194,18 @@ public class MasterController {
         "customerCode","version","createdBy","createdAt","updatedBy","updatedAt","extraData","reorderLevel"
     );
 
-    private String itemDocType(Map<String,Object> b) {
-        String itemType = b.get("itemType") == null ? "" : String.valueOf(b.get("itemType")).toUpperCase();
-        return switch (itemType) {
+    private String itemDocType(ItemMaster i, Map<String,Object> b) {
+        String t = i.getItemType() == null ? "" : i.getItemType().trim().toUpperCase();
+        return switch (t) {
+            case "SEMI_FG", "FG", "SFG", "MANUFACTURING" -> "item-manufacturing";
             case "CUSTOMER_SUPPLIED" -> "item-customer";
-            case "MANUFACTURING" -> "item-manufacturing";
-            default -> "item-purchasable";
+            case "RAW_MATERIAL", "PURCHASABLE" -> "item-purchasable";
+            default -> {
+                String g = b.get("groupType") == null ? "" : String.valueOf(b.get("groupType")).toUpperCase();
+                if (g.contains("MANUFACTUR")) yield "item-manufacturing";
+                if (g.contains("CUSTOMER")) yield "item-customer";
+                yield "item-purchasable";
+            }
         };
     }
 
@@ -272,6 +298,53 @@ public class MasterController {
         }
     }
 
+    /** The Item Group is the source of truth: its type drives the item's type. */
+    private String groupToItemType(ItemGroup g) {
+        if (g == null || g.getItemType() == null) return null;
+        String t = g.getItemType().trim().toUpperCase().replace("-", "_").replace(" ", "_");
+        return switch (t) {
+            case "SEMI_FG", "SFG" -> "SEMI_FG";
+            case "RM", "RAW_MATERIAL" -> "RAW_MATERIAL";
+            case "FG", "MANUFACTURING", "MANUFACTURING_ITEM" -> "FG";
+            case "PURCHASABLE", "PURCHASABLE_ITEM" -> "PURCHASABLE";
+            case "CUSTOMER_SUPPLIED", "CUSTOMER_SUPPLIED_ITEM" -> "CUSTOMER_SUPPLIED";
+            default -> t;
+        };
+    }
+
+    /** BOM Mapping routes an item by its Item Group first; no-group items fall back to their item type. */
+    private String bomBucket(ItemMaster i) {
+        String g = groupToItemType(i.getItemGroup());
+        if (g != null) return g;
+        if (i.getItemType() == null) return "";
+        return i.getItemType().trim().toUpperCase().replace("-", "_").replace(" ", "_");
+    }
+
+    /** The screen decides the category; the group only refines the type within that category. No screen signal => group is the source of truth. */
+    private void deriveItemTypeFromGroup(ItemMaster i, Map<String,Object> b) {
+        if (Boolean.TRUE.equals(i.getCustomerOwned())) {
+            i.setItemType("CUSTOMER_SUPPLIED");
+            return;
+        }
+        String screen = b.get("groupType") == null ? "" : String.valueOf(b.get("groupType")).toUpperCase();
+        if (screen.contains("CUSTOMER")) {
+            i.setItemType("CUSTOMER_SUPPLIED");
+            return;
+        }
+        String t = groupToItemType(i.getItemGroup());
+        if (screen.contains("MANUFACTUR")) {
+            boolean valid = t != null && ("FG".equals(t) || "SEMI_FG".equals(t) || "SFG".equals(t) || "MANUFACTURING".equals(t));
+            i.setItemType(valid ? t : "FG");
+            return;
+        }
+        if (!screen.isBlank()) {
+            boolean valid = t != null && ("RAW_MATERIAL".equals(t) || "PURCHASABLE".equals(t));
+            i.setItemType(valid ? t : "RAW_MATERIAL");
+            return;
+        }
+        if (t != null) i.setItemType(t);
+    }
+
     private Map<String,Object> itemToMap(ItemMaster i) {
         Map<String,Object> m = new LinkedHashMap<>();
         m.put("id", i.getId()); m.put("code", i.getCode()); m.put("description", i.getDescription());
@@ -326,8 +399,8 @@ public class MasterController {
     }
 
 
-    @GetMapping("/api/master/suppliers") List<Party> sup(){ return parties.findByKind("SUPPLIER").stream().filter(Party::isActive).toList(); }
-    @GetMapping("/api/master/customers") List<Party> cus(){ return parties.findByKind("CUSTOMER").stream().filter(Party::isActive).toList(); }
+    @Cacheable("masterRefs") @GetMapping("/api/master/suppliers") List<Party> sup(){ return parties.findByKind("SUPPLIER").stream().filter(Party::isActive).toList(); }
+    @Cacheable("masterRefs") @GetMapping("/api/master/customers") List<Party> cus(){ return parties.findByKind("CUSTOMER").stream().filter(Party::isActive).toList(); }
 
     // ---- Party CRUD (suppliers & customers) ----
     @GetMapping("/api/master/parties/{id}")
@@ -420,7 +493,7 @@ public class MasterController {
     @GetMapping("/api/labour-orders") List<RefDoc> lo(){ return refs.findByKind("LO"); }
 
     // ---- Work Centers ----
-    @GetMapping("/api/master/work-centers") List<WorkCenter> workCenters(){ return workCenters.findAll().stream().filter(WorkCenter::isActive).toList(); }
+    @Cacheable("masterRefs") @GetMapping("/api/master/work-centers") List<WorkCenter> workCenters(){ return workCenters.findAll().stream().filter(WorkCenter::isActive).toList(); }
     @PostMapping("/api/master/work-centers") WorkCenter createWC(@RequestBody WorkCenter wc){ wc.setId(null); wc.setCode(docNumbers.allocate("work-center")); return workCenters.save(wc); }
     @PutMapping("/api/master/work-centers/{id}") @Transactional WorkCenter updateWC(@PathVariable Long id, @RequestBody ObjectNode body){
         WorkCenter e = workCenters.findById(id).orElseThrow(() -> new RuntimeException("Work Center not found"));
@@ -430,7 +503,7 @@ public class MasterController {
     @DeleteMapping("/api/master/work-centers/{id}") void delWC(@PathVariable Long id){ workCenters.findById(id).ifPresent(w -> { w.setActive(false); workCenters.save(w); }); }
 
     // ---- Machines ----
-    @GetMapping("/api/master/machines") List<MachineMaster> machines(){ return machines.findAll().stream().filter(MachineMaster::isActive).toList(); }
+    @Cacheable("masterRefs") @GetMapping("/api/master/machines") List<MachineMaster> machines(){ return machines.findAll().stream().filter(MachineMaster::isActive).toList(); }
     @GetMapping("/api/master/machines/{id}") MachineMaster getMachine(@PathVariable Long id){ return machines.findById(id).orElseThrow(); }
     @PostMapping("/api/master/machines") MachineMaster createMachine(@RequestBody MachineMaster m){ m.setId(null); m.setCode(docNumbers.allocate("machine")); return machines.save(m); }
     @PutMapping("/api/master/machines/{id}") @Transactional MachineMaster updateMachine(@PathVariable Long id, @RequestBody ObjectNode body){
@@ -441,7 +514,7 @@ public class MasterController {
     @DeleteMapping("/api/master/machines/{id}") void delMachine(@PathVariable Long id){ machines.findById(id).ifPresent(m -> { m.setActive(false); machines.save(m); }); }
 
     // ---- Operations ----
-    @GetMapping("/api/master/operations") List<OperationMaster> operations(){ return operations.findAll().stream().filter(OperationMaster::isActive).toList(); }
+    @Cacheable("masterRefs") @GetMapping("/api/master/operations") List<OperationMaster> operations(){ return operations.findAll().stream().filter(OperationMaster::isActive).toList(); }
     @PostMapping("/api/master/operations") OperationMaster createOp(@RequestBody OperationMaster o){ o.setId(null); o.setCode(docNumbers.allocate("operation")); return operations.save(o); }
     @PutMapping("/api/master/operations/{id}") @Transactional OperationMaster updateOp(@PathVariable Long id, @RequestBody ObjectNode body){
         OperationMaster e = operations.findById(id).orElseThrow(() -> new RuntimeException("Operation not found"));
@@ -451,7 +524,7 @@ public class MasterController {
     @DeleteMapping("/api/master/operations/{id}") void delOp(@PathVariable Long id){ operations.findById(id).ifPresent(o -> { o.setActive(false); operations.save(o); }); }
 
     // ---- Shift Calendar ----
-    @GetMapping("/api/master/shifts") List<ShiftCalendar> shifts(){ return shifts.findAll().stream().filter(ShiftCalendar::isActive).toList(); }
+    @Cacheable("masterRefs") @GetMapping("/api/master/shifts") List<ShiftCalendar> shifts(){ return shifts.findAll().stream().filter(ShiftCalendar::isActive).toList(); }
     @PostMapping("/api/master/shifts") ShiftCalendar createShift(@RequestBody ShiftCalendar s){ s.setId(null); return shifts.save(s); }
     @PutMapping("/api/master/shifts/{id}") @Transactional ShiftCalendar updateShift(@PathVariable Long id, @RequestBody ObjectNode body){
         ShiftCalendar e = shifts.findById(id).orElseThrow(() -> new RuntimeException("Shift not found"));
@@ -474,6 +547,7 @@ public class MasterController {
     private final MasterAuditLogRepository auditLogs;
 
     // ---- UOM Master ----
+    @Cacheable("masterRefs")
     @GetMapping("/api/master/uoms")
     List<Map<String,Object>> uomList() {
         return uoms.findAll().stream().filter(UOMMaster::isActive).map(u -> {
@@ -498,26 +572,45 @@ public class MasterController {
 
     // ---- Item Group ----
     @GetMapping("/api/master/item-groups") @Transactional(readOnly = true)
-    List<Map<String,Object>> itemGroupList() {
-        return itemGroups.findAll().stream().filter(ItemGroup::isActive).map(g -> {
+    List<Map<String,Object>> itemGroupList(@RequestParam(defaultValue = "true") boolean activeOnly) {
+        return itemGroups.findAll().stream().filter(g -> !activeOnly || g.isActive()).map(g -> {
             Map<String,Object> m = new LinkedHashMap<>();
             m.put("id", g.getId()); m.put("code", g.getCode()); m.put("name", g.getName());
             m.put("itemType", g.getItemType()); m.put("description", g.getDescription()); m.put("active", g.isActive());
             m.put("parentId", g.getParent() != null ? g.getParent().getId() : null);
             m.put("parentCode", g.getParent() != null ? g.getParent().getCode() : null);
+            m.put("createdAt", g.getCreatedAt()); m.put("updatedAt", g.getUpdatedAt());
             return m;
         }).toList();
     }
     @GetMapping("/api/master/item-groups/{id}") ItemGroup getItemGroup(@PathVariable Long id){
         return itemGroups.findById(id).orElseThrow(() -> new RuntimeException("Item Group not found"));
     }
-    @PostMapping("/api/master/item-groups") ItemGroup createItemGroup(@RequestBody ItemGroup g){
-        g.setId(null); g.setCode(docNumbers.allocate("item-group")); return itemGroups.save(g);
+    /** When no item type is supplied, assign one from the group's name, else default to PURCHASABLE. */
+    private String resolveGroupItemType(ItemGroup g) {
+        String t = g.getItemType();
+        if (t != null && !t.isBlank()) return groupToItemType(g);
+        String n = (g.getName() == null ? "" : g.getName()).trim().toUpperCase().replace("-", "_").replace(" ", "_");
+        if (n.equals("SEMI_FG") || n.equals("SFG")) return "SEMI_FG";
+        if (n.equals("RM") || n.equals("RAW_MATERIAL")) return "RAW_MATERIAL";
+        if (n.equals("FG")) return "FG";
+        if (n.equals("CUSTOMER_SUPPLIED")) return "CUSTOMER_SUPPLIED";
+        return "PURCHASABLE";
     }
-    @PutMapping("/api/master/item-groups/{id}") @Transactional ItemGroup updateItemGroup(@PathVariable Long id, @RequestBody ObjectNode body){
+
+    @PostMapping("/api/master/item-groups") ItemGroup createItemGroup(@RequestBody ItemGroup g, Principal principal){
+        g.setId(null); g.setCode(docNumbers.allocate("item-group"));
+        g.setItemType(resolveGroupItemType(g));
+        if (g.getCreatedBy() == null) g.setCreatedBy(principalName(principal));
+        g.setCreatedAt(java.time.Instant.now()); g.setUpdatedAt(java.time.Instant.now());
+        return itemGroups.save(g);
+    }
+    @PutMapping("/api/master/item-groups/{id}") @Transactional ItemGroup updateItemGroup(@PathVariable Long id, @RequestBody ObjectNode body, Principal principal){
         ItemGroup e = itemGroups.findById(id).orElseThrow(() -> new RuntimeException("Item Group not found"));
         ItemGroup merged = mergePatch(e, body);
-        merged.setId(id); merged.setVersion(e.getVersion());
+        merged.setItemType(resolveGroupItemType(merged));
+        merged.setId(id); merged.setVersion(e.getVersion()); merged.setCreatedBy(e.getCreatedBy()); merged.setCreatedAt(e.getCreatedAt());
+        merged.setUpdatedAt(java.time.Instant.now()); merged.setUpdatedBy(principalName(principal));
         if (body.has("parentId") && !body.get("parentId").isNull()) {
             merged.setParent(itemGroups.findById(body.get("parentId").asLong()).orElse(null));
         } else if (body.has("parentId") && body.get("parentId").isNull()) {
@@ -525,7 +618,293 @@ public class MasterController {
         }
         return itemGroups.save(merged);
     }
-    @DeleteMapping("/api/master/item-groups/{id}") void delItemGroup(@PathVariable Long id){ itemGroups.findById(id).ifPresent(g -> { g.setActive(false); itemGroups.save(g); }); }
+    @DeleteMapping("/api/master/item-groups/{id}") @Transactional Map<String,Object> delItemGroup(@PathVariable Long id){
+        ItemGroup g = itemGroups.findById(id).orElseThrow(() -> new RuntimeException("Item Group not found"));
+        Map<String,Object> out = new LinkedHashMap<>();
+        long refs = items.countByItemGroupId(id) + itemGroups.countByParentId(id);
+        if (refs > 0L) {
+            g.setActive(false);
+            g.setUpdatedAt(java.time.Instant.now());
+            itemGroups.save(g);
+            out.put("deleted", false); out.put("deactivated", true);
+            out.put("message", "Item Group is in use (" + refs + " reference(s)) and cannot be deleted. It has been deactivated instead.");
+            return out;
+        }
+        itemGroups.delete(g);
+        out.put("deleted", true); out.put("deactivated", false); out.put("message", "Item Group deleted.");
+        return out;
+    }
+
+    // ---- BOM Mapping (fresh CRUD: BMP / SFM / FGM / MBM) ----
+
+    @GetMapping("/api/master/bom-mappings") @Transactional(readOnly = true)
+    List<Map<String,Object>> bomMappingList(@RequestParam(defaultValue = "true") boolean activeOnly) {
+        return bomMappings.findAllByOrderByAutoCode().stream()
+            .filter(b -> !activeOnly || b.isActive())
+            .map(b -> {
+                List<FgMapping> fgms = fgMappings.findByBomMappingIdOrderByAutoCodeAsc(b.getId());
+                List<SemiFgMapping> semis = semiFgMappings.findByBomMappingIdOrderByAutoCodeAsc(b.getId());
+                List<Long> semiIds = semis.stream().map(SemiFgMapping::getId).toList();
+                long rmCount = semiIds.isEmpty() ? 0L
+                    : semiFgMappingRms.findBySemiFgMappingIdIn(semiIds).stream().count();
+                List<MultiLevelBom> mbms = multiLevelBoms.findByBomMappingIdOrderByAutoCodeAsc(b.getId());
+                Map<String,Object> m = new LinkedHashMap<>();
+                m.put("id", b.getId());
+                m.put("bmId", b.getId());
+                m.put("code", b.getAutoCode());
+                m.put("name", b.getName());
+                m.put("fgCount", (long) fgms.size());
+                m.put("semiFgCount", (long) semis.size());
+                m.put("rmCount", rmCount);
+                m.put("multiLevelCount", (long) mbms.size());
+                m.put("active", b.isActive());
+                return m;
+            })
+            .toList();
+    }
+
+    @GetMapping("/api/master/bom-mappings/next-codes") @Transactional(readOnly = true)
+    Map<String,String> bomMappingNextCodes() {
+        int y = java.time.Year.now().getValue();
+        Map<String,String> out = new LinkedHashMap<>();
+        out.put("bmp", bomMappingNextCode("BOM", y, bomMappings.findAll().stream().map(BomMapping::getAutoCode).toList()));
+        out.put("sfm", bomMappingNextCode("SFM", y, semiFgMappings.findAll().stream().map(SemiFgMapping::getAutoCode).toList()));
+        out.put("fgm", bomMappingNextCode("FGM", y, fgMappings.findAll().stream().map(FgMapping::getAutoCode).toList()));
+        out.put("mbm", bomMappingNextCode("MBM", y, multiLevelBoms.findAll().stream().map(MultiLevelBom::getAutoCode).toList()));
+        return out;
+    }
+
+    private String bomMappingNextCode(String prefix, int year, List<String> codes) {
+        int max = codes.stream()
+            .filter(c -> c != null && c.startsWith(prefix + "-"))
+            .mapToInt(c -> {
+                try { return Integer.parseInt(c.substring(c.lastIndexOf('-') + 1)); } catch (Exception e) { return 0; }
+            }).max().orElse(0);
+        return prefix + "-" + year + "-" + String.format("%04d", max + 1);
+    }
+
+    @GetMapping("/api/master/bom-mappings/editor/{id}") @Transactional(readOnly = true)
+    Map<String,Object> getBomMappingEditor(@PathVariable Long id) {
+        BomMapping b = bomMappings.findById(id).orElseThrow(() -> new IllegalArgumentException("BOM Mapping not found"));
+        return buildBomMappingEditorView(b);
+    }
+
+    @GetMapping("/api/master/bom-mappings/{id}") @Transactional(readOnly = true)
+    Map<String,Object> getBomMapping(@PathVariable Long id) {
+        BomMapping b = bomMappings.findById(id).orElseThrow(() -> new IllegalArgumentException("BOM Mapping not found"));
+        return buildBomMappingEditorView(b);
+    }
+
+    @PostMapping("/api/master/bom-mappings") @Transactional
+    Map<String,Object> createBomMapping(@RequestBody JsonNode body) {
+        String name = text(body.get("name"));
+        if (name == null || name.isBlank()) throw new IllegalArgumentException("BOM Mapping Name is required");
+        String autoCode = text(body.get("autoCode"));
+        if (autoCode == null || autoCode.isBlank()) {
+            autoCode = bomMappingNextCode("BOM", java.time.Year.now().getValue(), bomMappings.findAll().stream().map(BomMapping::getAutoCode).toList());
+        }
+        if (bomMappings.existsByAutoCode(autoCode.trim())) throw new IllegalStateException("Auto code already in use: " + autoCode.trim());
+        BomMapping b = bomMappings.save(BomMapping.builder()
+            .autoCode(autoCode.trim()).name(name.trim())
+            .active(!body.has("active") || body.get("active").asBoolean(true)).build());
+        populateSections(b.getId(), body);
+        return buildBomMappingEditorView(b);
+    }
+
+    @PutMapping("/api/master/bom-mappings/{id}") @Transactional
+    Map<String,Object> updateBomMapping(@PathVariable Long id, @RequestBody JsonNode body) {
+        BomMapping b = bomMappings.findById(id).orElseThrow(() -> new IllegalArgumentException("BOM Mapping not found"));
+        String name = text(body.get("name"));
+        if (name == null || name.isBlank()) throw new IllegalArgumentException("BOM Mapping Name is required");
+        String autoCode = text(body.get("autoCode"));
+        String newCode = (autoCode == null || autoCode.isBlank()) ? b.getAutoCode() : autoCode.trim();
+        bomMappings.findByAutoCode(newCode).filter(x -> !x.getId().equals(id))
+            .ifPresent(x -> { throw new IllegalStateException("Auto code already in use: " + newCode); });
+        deleteBomMappingChildren(id);
+        b.setAutoCode(newCode);
+        b.setName(name.trim());
+        b.setActive(body.get("active") == null || body.get("active").asBoolean(b.isActive()));
+        bomMappings.save(b);
+        populateSections(id, body);
+        return buildBomMappingEditorView(b);
+    }
+
+    @DeleteMapping("/api/master/bom-mappings/{id}") @Transactional
+    Map<String,Object> delBomMapping(@PathVariable Long id) {
+        deleteBomMappingChildren(id);
+        bomMappings.deleteById(id);
+        Map<String,Object> out = new LinkedHashMap<>();
+        out.put("deleted", true); out.put("id", id);
+        return out;
+    }
+
+    private void deleteBomMappingChildren(Long bomMappingId) {
+        List<FgMapping> fgms = fgMappings.findByBomMappingIdOrderByAutoCodeAsc(bomMappingId);
+        if (!fgms.isEmpty()) fgMappingLines.deleteByFgMappingIdIn(fgms.stream().map(FgMapping::getId).toList());
+        fgMappings.deleteByBomMappingId(bomMappingId);
+        List<MultiLevelBom> mbms = multiLevelBoms.findByBomMappingIdOrderByAutoCodeAsc(bomMappingId);
+        if (!mbms.isEmpty()) multiLevelBomLines.deleteByMultiLevelBomIdIn(mbms.stream().map(MultiLevelBom::getId).toList());
+        multiLevelBoms.deleteByBomMappingId(bomMappingId);
+        List<SemiFgMapping> sfms = semiFgMappings.findByBomMappingIdOrderByAutoCodeAsc(bomMappingId);
+        if (!sfms.isEmpty()) semiFgMappingRms.deleteBySemiFgMappingIdIn(sfms.stream().map(SemiFgMapping::getId).toList());
+        semiFgMappings.deleteByBomMappingId(bomMappingId);
+    }
+
+    private void populateSections(Long bomMappingId, JsonNode body) {
+        saveSemiFgs(bomMappingId, body.get("semiFgs"));
+        saveFgMappings(bomMappingId, body.get("fgMappings"));
+        saveMultiLevelBoms(bomMappingId, body.get("multiLevelBoms"));
+    }
+
+    private void saveSemiFgs(Long bomMappingId, JsonNode nodes) {
+        if (nodes == null || !nodes.isArray()) return;
+        int lineNo = 1;
+        for (JsonNode n : nodes) {
+            String code = text(n.get("semiFgItemCode"));
+            if (code == null || code.isBlank()) continue;
+            String autoCode = text(n.get("autoCode"));
+            if (autoCode == null || autoCode.isBlank()) {
+                autoCode = bomMappingNextCode("SFM", java.time.Year.now().getValue(), semiFgMappings.findAll().stream().map(SemiFgMapping::getAutoCode).toList());
+            }
+            SemiFgMapping s = semiFgMappings.save(SemiFgMapping.builder()
+                .bomMappingId(bomMappingId).lineNo(lineNo++).autoCode(autoCode.trim())
+                .name(text(n.get("name"))).semiFgItemCode(code.trim())
+                .semiFgItemName(text(n.get("semiFgItemName"))).build());
+            saveRms(s.getId(), n.get("rms"));
+        }
+    }
+
+    private void saveRms(Long semiFgMappingId, JsonNode nodes) {
+        if (nodes == null || !nodes.isArray()) return;
+        for (JsonNode r : nodes) {
+            String rc = text(r.get("code"));
+            if (rc == null || rc.isBlank()) continue;
+            semiFgMappingRms.save(SemiFgMappingRm.builder()
+                .semiFgMappingId(semiFgMappingId).code(rc.trim()).name(text(r.get("name"))).build());
+        }
+    }
+
+    private void saveFgMappings(Long bomMappingId, JsonNode nodes) {
+        if (nodes == null || !nodes.isArray()) return;
+        for (JsonNode n : nodes) {
+            String code = text(n.get("fgItemCode"));
+            if (code == null || code.isBlank()) continue;
+            String autoCode = text(n.get("autoCode"));
+            if (autoCode == null || autoCode.isBlank()) {
+                autoCode = bomMappingNextCode("FGM", java.time.Year.now().getValue(), fgMappings.findAll().stream().map(FgMapping::getAutoCode).toList());
+            }
+            FgMapping f = fgMappings.save(FgMapping.builder()
+                .bomMappingId(bomMappingId).autoCode(autoCode.trim()).name(text(n.get("name")))
+                .fgItemCode(code.trim()).fgItemName(text(n.get("fgItemName"))).build());
+            JsonNode semis = n.get("semis");
+            if (semis != null && semis.isArray()) {
+                for (JsonNode s : semis) {
+                    String sAuto = text(s);
+                    if (sAuto == null || sAuto.isBlank()) continue;
+                    semiFgMappings.findByAutoCode(sAuto.trim()).ifPresent(sfm ->
+                        fgMappingLines.save(FgMappingLine.builder().fgMappingId(f.getId()).semiFgMappingId(sfm.getId()).build()));
+                }
+            }
+        }
+    }
+
+    private void saveMultiLevelBoms(Long bomMappingId, JsonNode nodes) {
+        if (nodes == null || !nodes.isArray()) return;
+        for (JsonNode n : nodes) {
+            String autoCode = text(n.get("autoCode"));
+            if (autoCode == null || autoCode.isBlank()) {
+                autoCode = bomMappingNextCode("MBM", java.time.Year.now().getValue(), multiLevelBoms.findAll().stream().map(MultiLevelBom::getAutoCode).toList());
+            }
+            MultiLevelBom mb = multiLevelBoms.save(MultiLevelBom.builder()
+                .bomMappingId(bomMappingId).autoCode(autoCode.trim()).name(text(n.get("name"))).build());
+            JsonNode fgs = n.get("fgs");
+            if (fgs != null && fgs.isArray()) {
+                for (JsonNode f : fgs) {
+                    String fAuto = text(f);
+                    if (fAuto == null || fAuto.isBlank()) continue;
+                    fgMappings.findByAutoCode(fAuto.trim()).ifPresent(fgm ->
+                        multiLevelBomLines.save(MultiLevelBomLine.builder().multiLevelBomId(mb.getId()).fgMappingId(fgm.getId()).build()));
+                }
+            }
+        }
+    }
+
+    private Map<String,Object> buildBomMappingEditorView(BomMapping b) {
+        Map<String,Object> m = new LinkedHashMap<>();
+        m.put("id", b.getId());
+        m.put("autoCode", b.getAutoCode());
+        m.put("name", b.getName());
+        m.put("active", b.isActive());
+
+        List<SemiFgMapping> sfms = semiFgMappings.findByBomMappingIdOrderByAutoCodeAsc(b.getId());
+        Map<Long,List<SemiFgMappingRm>> rmsBySemi = sfms.isEmpty() ? Map.of()
+            : semiFgMappingRms.findBySemiFgMappingIdIn(sfms.stream().map(SemiFgMapping::getId).toList())
+                .stream().collect(Collectors.groupingBy(SemiFgMappingRm::getSemiFgMappingId));
+        m.put("semiFgs", sfms.stream().map(s -> {
+            Map<String,Object> sm = new LinkedHashMap<>();
+            sm.put("id", s.getId()); sm.put("autoCode", s.getAutoCode()); sm.put("name", s.getName());
+            sm.put("semiFgItemCode", s.getSemiFgItemCode()); sm.put("semiFgItemName", s.getSemiFgItemName());
+            sm.put("rmCount", rmsBySemi.getOrDefault(s.getId(), List.of()).size());
+            sm.put("rms", rmsBySemi.getOrDefault(s.getId(), List.of()).stream().map(r -> {
+                Map<String,Object> rm = new LinkedHashMap<>();
+                rm.put("id", r.getId()); rm.put("code", r.getCode()); rm.put("name", r.getName());
+                return rm;
+            }).toList());
+            return sm;
+        }).toList());
+
+        Map<Long,SemiFgMapping> sfmById = sfms.stream().collect(Collectors.toMap(SemiFgMapping::getId, s -> s));
+        List<FgMapping> fgms = fgMappings.findByBomMappingIdOrderByAutoCodeAsc(b.getId());
+        Map<Long,List<FgMappingLine>> linesByFgm = fgms.isEmpty() ? Map.of()
+            : fgMappingLines.findByFgMappingIdIn(fgms.stream().map(FgMapping::getId).toList())
+                .stream().collect(Collectors.groupingBy(FgMappingLine::getFgMappingId));
+        m.put("fgMappings", fgms.stream().map(f -> {
+            Map<String,Object> fm = new LinkedHashMap<>();
+            fm.put("id", f.getId()); fm.put("autoCode", f.getAutoCode()); fm.put("name", f.getName());
+            fm.put("fgItemCode", f.getFgItemCode()); fm.put("fgItemName", f.getFgItemName());
+            List<Map<String,Object>> semis = new ArrayList<>();
+            long rmCount = 0;
+            for (FgMappingLine l : linesByFgm.getOrDefault(f.getId(), List.of())) {
+                SemiFgMapping s = sfmById.get(l.getSemiFgMappingId());
+                if (s == null) continue;
+                Map<String,Object> so = new LinkedHashMap<>();
+                so.put("id", s.getId()); so.put("autoCode", s.getAutoCode()); so.put("name", s.getName());
+                semis.add(so);
+                rmCount += rmsBySemi.getOrDefault(s.getId(), List.of()).size();
+            }
+            fm.put("semis", semis);
+            fm.put("semiFgCount", semis.size());
+            fm.put("rmCount", rmCount);
+            return fm;
+        }).toList());
+
+        Map<Long,FgMapping> fgmById = fgms.stream().collect(Collectors.toMap(FgMapping::getId, f -> f));
+        List<MultiLevelBom> mbms = multiLevelBoms.findByBomMappingIdOrderByAutoCodeAsc(b.getId());
+        Map<Long,List<MultiLevelBomLine>> linesByMbm = mbms.isEmpty() ? Map.of()
+            : multiLevelBomLines.findByMultiLevelBomIdIn(mbms.stream().map(MultiLevelBom::getId).toList())
+                .stream().collect(Collectors.groupingBy(MultiLevelBomLine::getMultiLevelBomId));
+        m.put("multiLevelBoms", mbms.stream().map(mb -> {
+            Map<String,Object> mm = new LinkedHashMap<>();
+            mm.put("id", mb.getId()); mm.put("autoCode", mb.getAutoCode()); mm.put("name", mb.getName());
+            List<Map<String,Object>> fgs = new ArrayList<>();
+            for (MultiLevelBomLine l : linesByMbm.getOrDefault(mb.getId(), List.of())) {
+                FgMapping f = fgmById.get(l.getFgMappingId());
+                if (f == null) continue;
+                Map<String,Object> fo = new LinkedHashMap<>();
+                fo.put("id", f.getId()); fo.put("autoCode", f.getAutoCode()); fo.put("name", f.getName());
+                fo.put("fgItemCode", f.getFgItemCode());
+                fgs.add(fo);
+            }
+            mm.put("fgs", fgs);
+            mm.put("fgCount", fgs.size());
+            return mm;
+        }).toList());
+        return m;
+    }
+
+    private String text(JsonNode n) {
+        return n == null || n.isNull() || !n.isValueNode() ? null : n.asText();
+    }
 
     // ---- Rack Master ----
     private final RackMasterRepository rackMasters;
@@ -538,6 +917,7 @@ public class MasterController {
         return rackMasters.findById(id).orElseThrow(() -> new IllegalArgumentException("Rack not found"));
     }
 
+    @Cacheable(cacheNames = "masterRefsByStore", key = "#storeId == null ? 'all' : #storeId")
     @GetMapping("/api/master/racks") @Transactional(readOnly = true)
     List<Map<String,Object>> rackList(@RequestParam(required=false) Long storeId) {
         List<RackMaster> list = (storeId != null ? rackMasters.findByStoreId(storeId) : rackMasters.findAll())
@@ -590,6 +970,7 @@ public class MasterController {
         return binMasters.findById(id).orElseThrow(() -> new IllegalArgumentException("Bin not found"));
     }
 
+    @Cacheable(cacheNames = "masterRefsByStore", key = "T(java.util.Objects).toString(#storeId) + '|' + T(java.util.Objects).toString(#rackId)")
     @GetMapping("/api/master/bins") @Transactional(readOnly = true)
     List<Map<String,Object>> binList(@RequestParam(required=false) Long storeId, @RequestParam(required=false) Long rackId) {
         List<BinMaster> list;
@@ -644,6 +1025,7 @@ public class MasterController {
         return stores.findById(id).orElseThrow(() -> new IllegalArgumentException("Store not found"));
     }
 
+    @Cacheable("masterRefs")
     @GetMapping("/api/master/stores")
     List<Map<String,Object>> storeList() {
         return stores.findAll().stream().filter(StoreMaster::isActive).map(s -> {
@@ -719,6 +1101,7 @@ public class MasterController {
     @DeleteMapping("/api/master/process-groups/{id}") void delProcessGroup(@PathVariable Long id){ processGroups.findById(id).ifPresent(g -> { g.setActive(false); processGroups.save(g); }); }
 
     // ---- Process Master ----
+    @Cacheable("masterRefs")
     @GetMapping("/api/master/processes")
     List<Map<String,Object>> processList() {
         return processMasters.findAll().stream().filter(ProcessMaster::isActive).map(this::toProcessMap).toList();
@@ -821,6 +1204,7 @@ public class MasterController {
     }
 
     // ---- Instrument Master ----
+    @Cacheable("masterRefs")
     @GetMapping("/api/master/instruments")
     List<Map<String,Object>> instrumentList() {
         return instruments.findAll().stream().filter(InstrumentMaster::isActive).map(i -> {
@@ -849,6 +1233,7 @@ public class MasterController {
     @DeleteMapping("/api/master/instruments/{id}") void delInstrument(@PathVariable Long id){ instruments.findById(id).ifPresent(i -> { i.setActive(false); instruments.save(i); }); }
 
     // ---- Tool Master ----
+    @Cacheable("masterRefs")
     @GetMapping("/api/master/tools")
     List<Map<String,Object>> toolList() {
         return toolMasters.findAll().stream().filter(ToolMaster::isActive).map(t -> {

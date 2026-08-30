@@ -338,7 +338,7 @@ export default function ManufacturingItemScreen() {
   const [accessoriesRows, setAccessoriesRows] = useState<Array<any>>([]);
   const [uomRows, setUomRows] = useState<Array<any>>([]);
   const [altItemRows, setAltItemRows] = useState<Array<any>>([]);
-  const [itemGroupRows, setItemGroupRows] = useState<Array<{id:number;code:string;name:string}>>([]);
+  const [itemGroupRows, setItemGroupRows] = useState<Array<{id:number;code:string;name:string;itemType?:string}>>([]);
   const [uomOptions, setUomOptions] = useState<Array<{id:number;code:string;name:string;symbol?:string}>>([]);
 
   const [openSec, setOpenSec] = useState<Record<string, boolean>>({
@@ -354,7 +354,10 @@ export default function ManufacturingItemScreen() {
     try {
       const { data } = await apiClient.get('/master/items?size=500');
       const content = data?.content ?? data ?? [];
-      const mfgItems = content.filter((i: any) => i.itemType === 'FG' || i.itemType === 'SFG' || i.code?.startsWith('MFG'));
+      const mfgItems = content.filter((i: any) => {
+        const t = (i.itemType || '').toUpperCase().replace(' ', '_');
+        return t === 'FG' || t === 'SEMI_FG' || t === 'SFG' || t === 'MANUFACTURING';
+      });
       setRows(mfgItems);
     } catch (e) {
       toast(getApiErrorMessage(e, 'Failed to load manufacturing items.'), 'error');
@@ -385,7 +388,7 @@ export default function ManufacturingItemScreen() {
 
     setBusy(true);
     try {
-      const payload = { ...form, itemType: 'FG' };
+      const payload = { ...form };
       if (editId) {
         await apiClient.put(`/master/items/${editId}`, payload);
         toast('Manufacturing item updated successfully.');
@@ -481,6 +484,7 @@ export default function ManufacturingItemScreen() {
                 <tr>
                   <th>Item Code</th>
                   <th>Item Name</th>
+                  <th>Item Group</th>
                   <th>Drawing Number</th>
                   <th>UOM</th>
                   <th>Manufacturing Cost</th>
@@ -490,14 +494,15 @@ export default function ManufacturingItemScreen() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={7} className="empty">Loading Manufacturing Items...</td></tr>
+                  <tr><td colSpan={8} className="empty">Loading Manufacturing Items...</td></tr>
                 ) : filteredRows.length === 0 ? (
-                  <tr><td colSpan={7} className="empty">No Manufacturing Items found.</td></tr>
+                  <tr><td colSpan={8} className="empty">No Manufacturing Items found.</td></tr>
                 ) : (
                   filteredRows.map(r => (
                     <tr key={r.id}>
                       <td className="cell-b">{r.code}</td>
                       <td><b>{r.description}</b></td>
+                      <td>{(itemGroupRows.find(g => g.code === r.itemGroup)?.name ?? r.itemGroup) || '—'}</td>
                       <td>{r.drawingNumber || '—'}</td>
                       <td>{r.uom}</td>
                       <td className="num">₹{r.manufacturingCost || 0}</td>

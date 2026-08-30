@@ -11,6 +11,15 @@ spring:
     password: ${DB_PASSWORD:zyger123}
     hikari:
       initialization-fail-timeout: -1
+      pool-name: zygdb-pool
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:20}
+      minimum-idle: ${DB_POOL_MIN_IDLE:4}
+      connection-timeout: ${DB_CONN_TIMEOUT:30000}
+      idle-timeout: ${DB_IDLE_TIMEOUT:600000}
+      max-lifetime: ${DB_MAX_LIFETIME:1800000}
+      validation-timeout: 3000
+      leak-detection-threshold: 60000
+      auto-commit: true
   jackson:
     deserialization:
       fail-on-null-for-primitives: false
@@ -55,10 +64,20 @@ spring:
 server:
   port: ${SERVER_PORT:9090}
   shutdown: graceful
+  tomcat:
+    threads:
+      max: ${TOMCAT_MAX_THREADS:200}
+      min-spare: ${TOMCAT_MIN_SPARE:10}
+    accept-count: ${TOMCAT_ACCEPT_COUNT:100}
+    max-connections: ${TOMCAT_MAX_CONNECTIONS:10000}
+    connection-timeout: 20000
+    keep-alive-timeout: 60000
+    max-keep-alive-requests: 200
   compression:
     enabled: true
     mime-types: application/json,application/xml,text/html,text/css,text/javascript
     min-response-size: 1024
+    compression-level: 6
   error:
     include-message: never
     include-stacktrace: never

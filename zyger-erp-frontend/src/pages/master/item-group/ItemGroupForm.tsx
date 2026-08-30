@@ -38,7 +38,7 @@ export default function ItemGroupForm({ itemGroupId, viewOnly = false, onBack, o
       return;
     }
     setLoading(true);
-    const params = new URLSearchParams({ page: '0', size: '9999' });
+    const params = new URLSearchParams({ page: '0', size: '9999', activeOnly: 'false' });
     apiClient.get(`/master/item-groups?${params}`).then(({ data }) => {
       const list = data.content ?? data ?? [];
       const found = list.find((r: { id: number }) => r.id === itemGroupId);
@@ -90,7 +90,7 @@ export default function ItemGroupForm({ itemGroupId, viewOnly = false, onBack, o
       <div className="pg-head pg-head-flex" style={{ marginBottom: '20px' }}>
         <div className="pg-head-text" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <button type="button" className="btn btn-secondary" onClick={onBack} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-            <span className="material-symbols-rounded">arrow_back</span> Back
+            <span className="material-symbols-rounded">arrow_back</span> Cancel
           </button>
           <div>
             <h1>{editId ? 'Edit Item Group' : 'Create Item Group'}</h1>
@@ -121,20 +121,6 @@ export default function ItemGroupForm({ itemGroupId, viewOnly = false, onBack, o
                   value={String(form.code ?? '')}
                   style={{ backgroundColor: '#f8fafc', fontWeight: 600 }}
                 />
-              </label>
-
-              <label className="fld">
-                <span>ITEM TYPE *</span>
-                <select
-                  className="in"
-                  value={String(form.itemType ?? 'Purchasable Item')}
-                  onChange={(e) => updateForm('itemType', e.target.value)}
-                  disabled={viewOnly}
-                >
-                  <option value="Purchasable Item">Purchasable Item</option>
-                  <option value="Manufacturing Item">Manufacturing Item</option>
-                  <option value="Customer Supplied">Customer Supplied</option>
-                </select>
               </label>
 
               <label className="fld">
