@@ -53,6 +53,9 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
   const [mats, setMats] = useState<Array<Record<string, unknown>>>([]);
   const [initializedForId, setInitializedForId] = useState('');
 
+  // Multi-item Sales Order selection states (FRD-WO-001)
+  const [availableSoLines, setAvailableSoLines] = useState<Array<Record<string, unknown>>>([]);
+  const [selectedSoLineId, setSelectedSoLineId] = useState<string | number | null>(null);
 
   // Modal states for FRD-WO-001
   const [soModalOpen, setSoModalOpen] = useState(false);
@@ -215,7 +218,7 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
   const openForm = (id: string | null, view: boolean) => {
     setDocumentId(id); setInitializedForId(''); setIsViewOnly(view);
     setForm({ workOrderDate: new Date().toISOString().slice(0, 10), priority: 'MEDIUM', status: 'DRAFT' });
-    setOps([]); setMats([]); setMode('form');
+    setOps([]); setMats([]); setAvailableSoLines([]); setSelectedSoLineId(null); setMode('form');
   };
 
   const backToList = () => { setDocumentId(null); setInitializedForId(''); setIsViewOnly(false); setMode('list'); };
@@ -228,6 +231,8 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
     });
     setOps([]);
     setMats([]);
+    setAvailableSoLines([]);
+    setSelectedSoLineId(null);
   };
 
   const buildPayload = () => {
@@ -328,28 +333,24 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
     }
   };
 
-  /** FRD §5.0: On SO selection → auto-fetch item, pending qty, delivery date, customer. Then auto-link BOM + Route. */
-  const handleSoSelect = async (so: Record<string, unknown>, selectedLine?: Record<string, unknown>) => {
-    const soLines = (so.lines ?? []) as Array<Record<string, unknown>>;
-    const targetLine = selectedLine ?? (soLines.length > 0 ? soLines[0] : null);
-    const deliveryDate = so.customerRequiredDate ?? so.deliveryDate ?? null;
-    const pendingQty = targetLine ? Number(targetLine.pendingQty ?? 0) : Number(so.pendingQty ?? 0);
-    const orderQty = targetLine ? Number(targetLine.orderQty ?? targetLine.pendingQty ?? 0) : Number(so.orderQty ?? pendingQty);
+  /** Clean up text with duplicate pattern like "Product A (Product A)" */
+  const cleanText = (str: string) => {
+    if (!str) return '';
+    const m = str.match(/^(.+?)\s*\(\1\)$/i);
+    return m ? m[1] : str;
+  };
 
-    const cleanText = (str: string) => {
-      if (!str) return '';
-      const m = str.match(/^(.+?)\s*\(\1\)$/i);
-      return m ? m[1] : str;
-    };
+  /** Fetch BOM, Route Sheet, Material Requirements & Process Operations for a selected line item */
+  const handleLineItemSelect = async (so: Record<string, unknown>, line: Record<string, unknown>) => {
+    const deliveryDate = line.customerRequiredDate ?? line.deliveryDate ?? so.customerRequiredDate ?? so.deliveryDate ?? null;
+    const orderQty = Number(line.orderQty ?? line.pendingQty ?? 0);
+    const prodQty = form.productionQty !== undefined && form.productionQty !== '' ? Number(form.productionQty) : orderQty;
+    const pendingQty = Math.max(0, orderQty - prodQty);
 
-    const itemCode = targetLine
-      ? String(targetLine.itemCode || targetLine.internalPartNumber || targetLine.itemName || '')
-      : String(so.itemCode || so.itemName || '');
-    const rawDesc = targetLine
-      ? String(targetLine.description || targetLine.itemName || itemCode)
-      : String(so.description || so.itemName || itemCode);
+    const itemCode = String(line.itemCode || line.internalPartNumber || line.itemName || '');
+    const rawDesc = String(line.description || line.itemName || itemCode);
     const itemDesc = cleanText(rawDesc);
-    const uom = targetLine ? String(targetLine.uom ?? 'Nos') : 'Nos';
+    const uom = String(line.uom ?? 'Nos');
 
     const updates: Record<string, unknown> = {
       salesOrderId: so.id,
@@ -359,7 +360,7 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
       customer: so.customer ?? so.customerCode ?? '',
       orderQuantity: orderQty,
       pendingQty: pendingQty,
-      productionQty: pendingQty,
+      productionQty: prodQty,
       promisedDeliveryDate: deliveryDate,
       itemCode: itemCode,
       itemName: itemDesc,
@@ -369,6 +370,7 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
     };
 
     setForm((c) => ({ ...c, ...updates }));
+    setSelectedSoLineId(line.id ?? itemCode);
     setSoModalOpen(false);
 
     if (itemCode || so.id) {
@@ -448,10 +450,68 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
           }
         }
 
-        toast(`SO ${so.docNo} selected. BOM and Route linked automatically.`);
+        toast(`Item ${itemCode} selected. Active BOM & Route Sheet linked.`);
       } catch {
-        toast(`SO ${so.docNo} selected. Item: ${itemCode}`);
+        toast(`Item ${itemCode} selected.`);
       }
+    }
+  };
+
+  /** On SO selection → check line items. 1 item = auto-select. >1 items = dropdown. */
+  const handleSoSelect = async (so: Record<string, unknown>, selectedLine?: Record<string, unknown>) => {
+    const soLines = (so.lines ?? []) as Array<Record<string, unknown>>;
+    setAvailableSoLines(soLines);
+
+    const deliveryDate = so.customerRequiredDate ?? so.deliveryDate ?? null;
+    const headerUpdates: Record<string, unknown> = {
+      salesOrderId: so.id,
+      salesOrderNo: so.docNo ?? '',
+      soNumber: so.docNo ?? '',
+      customerCode: so.customerCode ?? '',
+      customer: so.customer ?? so.customerCode ?? '',
+      promisedDeliveryDate: deliveryDate,
+    };
+    setForm((c) => ({ ...c, ...headerUpdates }));
+
+    if (selectedLine) {
+      await handleLineItemSelect(so, selectedLine);
+      return;
+    }
+
+    if (soLines.length === 1) {
+      await handleLineItemSelect(so, soLines[0]);
+    } else if (soLines.length > 1) {
+      setSelectedSoLineId('');
+      setForm((c) => ({
+        ...c,
+        itemCode: '',
+        itemName: '',
+        itemDescription: '',
+        orderQuantity: '',
+        pendingQty: '',
+        productionQty: '',
+        bomCode: '',
+        bomId: null,
+        bomRevision: 'Rev 1',
+        routeCode: '',
+        routeSheet: '',
+        routeId: null,
+        routeRevision: 'Rev 1',
+      }));
+      setMats([]);
+      setOps([]);
+      setSoModalOpen(false);
+      toast(`Sales Order ${so.docNo} has ${soLines.length} items. Please select an Item from the dropdown.`);
+    } else {
+      const fallbackLine = {
+        itemCode: so.itemCode || so.docNo,
+        itemName: so.itemName || so.description || 'Finished Item',
+        description: so.description || so.itemName || 'Finished Item',
+        pendingQty: so.pendingQty || 0,
+        orderQty: so.orderQty || so.pendingQty || 0,
+        uom: 'Nos',
+      };
+      await handleLineItemSelect(so, fallbackLine);
     }
   };
 
@@ -604,10 +664,18 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
     setRouteModalOpen(true);
   };
 
-  /** Real-time recalculation of material required qty on production qty edit */
+  /** Real-time recalculation of Pending Quantity (Order Qty - Production Qty) & material balance */
   const handleProductionQtyChange = (val: string) => {
-    const numVal = toOptionalNumber(val);
-    setForm((c) => ({ ...c, productionQty: val }));
+    const numVal = toOptionalNumber(val) ?? 0;
+    const orderQty = Number(form.orderQuantity ?? 0);
+    const calcPending = Math.max(0, orderQty - numVal);
+
+    setForm((c) => ({
+      ...c,
+      productionQty: val,
+      pendingQty: calcPending,
+    }));
+
     if (numVal && numVal > 0 && mats.length > 0) {
       setMats((prevMats) => prevMats.map((m) => {
         const reqQty = Number(m.requiredQuantity ?? 0);
@@ -771,9 +839,31 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
               <label className="fld">
                 <span>Sales Order *</span>
                 <div style={{ display: 'flex', gap: '4px' }}>
-                  <input className="in" value={String(form.salesOrderNo ?? form.soNumber ?? '')} readOnly placeholder="Select Sales Order..." style={{ background: '#f9fafb' }} />
+                  {editable ? (
+                    <select
+                      className="in"
+                      value={String(form.salesOrderId ?? '')}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const selectedSo = soList.find((s) => String(s.id) === val || String(s.docNo) === val);
+                        if (selectedSo) {
+                          handleSoSelect(selectedSo);
+                        }
+                      }}
+                      style={{ fontWeight: 600 }}
+                    >
+                      <option value="">Select Sales Order No...</option>
+                      {soList.map((s) => (
+                        <option key={String(s.id)} value={String(s.id)}>
+                          {String(s.docNo)} — {String(s.customer ?? s.customerCode ?? 'Customer')}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input className="in" value={String(form.salesOrderNo ?? form.soNumber ?? '')} readOnly placeholder="Select Sales Order..." style={{ background: '#f9fafb' }} />
+                  )}
                   {editable && (
-                    <button type="button" className="btn btn-sm" onClick={() => { fetchPickers(); setSoModalOpen(true); }} title="Search Sales Order">
+                    <button type="button" className="btn btn-sm" onClick={() => { fetchPickers(); setSoModalOpen(true); }} title="Search Sales Order Modal">
                       <span className="material-symbols-rounded">search</span>
                     </button>
                   )}
@@ -787,17 +877,47 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
 
               <label className="fld">
                 <span>Item Code / Name *</span>
-                <input
-                  className="in"
-                  value={
-                    form.itemCode && form.itemName && form.itemCode !== form.itemName
-                      ? `${form.itemCode} - ${form.itemName}`
-                      : String(form.itemCode ?? form.itemName ?? '')
-                  }
-                  readOnly
-                  placeholder="Item Code / Name (auto-filled from Sales Order)"
-                  style={{ background: '#f9fafb', fontWeight: 600, color: '#0f172a' }}
-                />
+                {editable && availableSoLines.length > 1 ? (
+                  <select
+                    className="in"
+                    value={String(selectedSoLineId ?? form.itemCode ?? '')}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const lineItem = availableSoLines.find((l) => String(l.id) === val || String(l.itemCode) === val);
+                      if (lineItem) {
+                        const activeSo = soList.find((s) => String(s.id) === String(form.salesOrderId)) || { id: form.salesOrderId, docNo: form.salesOrderNo };
+                        handleLineItemSelect(activeSo, lineItem);
+                      }
+                    }}
+                    style={{ fontWeight: 600, color: '#0f172a', borderColor: '#2563eb', background: '#eff6ff' }}
+                  >
+                    <option value="">-- Select Item from Sales Order --</option>
+                    {availableSoLines.map((l, idx) => {
+                      const lineId = String(l.id ?? l.itemCode ?? idx);
+                      const code = String(l.itemCode || l.itemName || l.description || '');
+                      const desc = String(l.description || l.itemName || '');
+                      const pending = Number(l.pendingQty ?? 0);
+                      const uom = String(l.uom ?? 'Nos');
+                      return (
+                        <option key={lineId} value={lineId}>
+                          {code} {desc && desc !== code ? `- ${desc}` : ''} (Pending: {formatNumber(pending)} {uom})
+                        </option>
+                      );
+                    })}
+                  </select>
+                ) : (
+                  <input
+                    className="in"
+                    value={
+                      form.itemCode && form.itemName && form.itemCode !== form.itemName
+                        ? `${form.itemCode} - ${form.itemName}`
+                        : String(form.itemCode ?? form.itemName ?? '')
+                    }
+                    readOnly
+                    placeholder={availableSoLines.length > 1 ? "Select Item from Sales Order above..." : "Item Code / Name (auto-filled from Sales Order)"}
+                    style={{ background: '#f9fafb', fontWeight: 600, color: '#0f172a' }}
+                  />
+                )}
               </label>
 
               <label className="fld">
@@ -835,11 +955,6 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
               <label className="fld">
                 <span>Production Quantity *</span>
                 <input className="in" type="number" step="0.01" min="0.01" value={String(form.productionQty ?? '')} onChange={(e) => handleProductionQtyChange(e.target.value)} disabled={!editable} style={{ fontWeight: 600 }} />
-              </label>
-
-              <label className="fld">
-                <span>UOM</span>
-                <input className="in" value={String(form.uom ?? 'Nos')} readOnly style={{ background: '#f9fafb' }} />
               </label>
 
               <label className="fld">
@@ -897,11 +1012,6 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
               </label>
 
               <label className="fld">
-                <span>BOM Revision</span>
-                <input className="in" value={String(form.bomRevision ?? 'Rev 1')} readOnly style={{ background: '#f9fafb' }} />
-              </label>
-
-              <label className="fld">
                 <span>Route Sheet</span>
                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                   {editable ? (() => {
@@ -954,11 +1064,6 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
                   </button>
                 </div>
               </label>
-
-              <label className="fld">
-                <span>Route Revision</span>
-                <input className="in" value={String(form.routeRevision ?? 'Rev 1')} readOnly style={{ background: '#f9fafb' }} />
-              </label>
             </div>
 
             {/* COLUMN 3 */}
@@ -971,16 +1076,6 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
               <label className="fld">
                 <span>Planned End Date *</span>
                 <input className="in" type="date" value={String(form.plannedEndDate ?? '')} onChange={(e) => setForm((c) => ({ ...c, plannedEndDate: e.target.value }))} disabled={!editable} />
-              </label>
-
-              <label className="fld">
-                <span>Priority</span>
-                <select className="in" value={String(form.priority ?? 'MEDIUM')} onChange={(e) => setForm((c) => ({ ...c, priority: e.target.value }))} disabled={!editable}>
-                  <option value="LOW">Low</option>
-                  <option value="MEDIUM">Medium</option>
-                  <option value="HIGH">High</option>
-                  <option value="URGENT">Urgent</option>
-                </select>
               </label>
 
               <label className="fld">
@@ -1141,7 +1236,7 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
 
               {editable && !documentId && (
                 <button type="button" className="btn btn-sm btn-p" onClick={handleCreate} disabled={isBusy}>
-                  <span className="material-symbols-rounded">save</span> Save
+                  <span className="material-symbols-rounded">add_circle</span> Create Work Order
                 </button>
               )}
 
