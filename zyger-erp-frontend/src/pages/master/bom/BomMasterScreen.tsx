@@ -73,6 +73,12 @@ interface ItemOption {
   uom: string;
   itemType: string;
   itemGroup?: string;
+  itemGroupName?: string;
+  itemGroupType?: string;
+  groupItemType?: string;
+  bomCategory?: string;
+  groupType?: string;
+  category?: string;
   active: boolean;
 }
 
@@ -152,6 +158,7 @@ export default function BomMasterScreen() {
 
   // Lookup data
   const [items, setItems] = useState<ItemOption[]>([]);
+  const [itemGroups, setItemGroups] = useState<Array<{ id: number; code: string; name: string; itemType?: string }>>([]);
   const [salesOrders, setSalesOrders] = useState<SoOption[]>([]);
 
   // Copy BOM
@@ -205,16 +212,27 @@ export default function BomMasterScreen() {
 
   const loadItems = useCallback(async () => {
     try {
-      const { data } = await apiClient.get('/master/items', { params: { size: 500, page: 0 } });
-      const rawList = data.content ?? data ?? [];
+      const [itemsRes, groupRes] = await Promise.all([
+        apiClient.get('/master/items', { params: { size: 500, page: 0 } }),
+        apiClient.get('/master/item-groups').catch(() => ({ data: [] })),
+      ]);
+      const rawList = itemsRes.data.content ?? itemsRes.data ?? [];
       const list = rawList.map((i: Record<string, unknown>) => ({
         id: i.id as number, code: i.code as string, name: (i.name as string) || (i.description as string) || '',
         weight: (i.weight as number) || 0, uom: (i.uom as string) || 'PCS',
         itemType: (i.itemType as string) || (i.groupType as string) || '',
         itemGroup: (i.itemGroup as string) || (i.groupName as string) || '',
+        itemGroupName: (i.itemGroupName as string) || '',
+        itemGroupType: (i.itemGroupType as string) || '',
+        groupItemType: (i.groupItemType as string) || '',
+        bomCategory: (i.bomCategory as string) || '',
+        category: (i.category as string) || '',
+        groupType: (i.groupType as string) || '',
         active: i.active !== false,
       }));
       setItems(list);
+      const rawGroups = groupRes.data?.content ?? groupRes.data ?? [];
+      setItemGroups(rawGroups);
     } catch { /* silent */ }
   }, []);
 
@@ -255,15 +273,54 @@ export default function BomMasterScreen() {
 
   /* ── Derived ── */
 
+  const groupMap = useMemo(() => {
+    const map = new Map<string, any>();
+    itemGroups.forEach((g) => {
+      if (g.code) map.set(g.code.toUpperCase(), g);
+    });
+    return map;
+  }, [itemGroups]);
+
+  const matchesType = useCallback((i: ItemOption, targetType: string) => {
+    const t = (i.itemType || '').toUpperCase();
+    const gCode = (i.itemGroup || '').toUpperCase();
+    const igObj = gCode ? groupMap.get(gCode) : null;
+    const igName = (igObj?.name || i.itemGroupName || '').toUpperCase();
+    const igType = (igObj?.itemType || i.itemGroupType || i.groupItemType || '').toUpperCase();
+    const cat = (i.category || i.bomCategory || '').toUpperCase();
+    const gt = (i.groupType || '').toUpperCase();
+
+    const isSemiFg = (
+      t === 'SEMI_FG' || t === 'SFG' || t.includes('SEMI') ||
+      gCode === 'SEMI_FG' || gCode === 'SFG' || gCode.includes('SEMI') ||
+      igName.includes('SEMI') || igName.includes('SFG') ||
+      igType === 'SEMI_FG' || igType === 'SFG' || igType.includes('SEMI') ||
+      cat === 'SEMI_FG' || cat === 'SFG' || cat.includes('SEMI') ||
+      gt === 'SEMI_FG' || gt === 'SFG' || gt.includes('SEMI')
+    );
+
+    const isFg = !isSemiFg && (
+      t === 'FG' || t === 'FINISHED' || t === 'FINISHED_GOODS' || (t.includes('FINISHED') && !t.includes('SEMI')) ||
+      gCode === 'FG' || (gCode.includes('FINISHED') && !gCode.includes('SEMI')) ||
+      (igName.includes('FINISHED') && !igName.includes('SEMI')) ||
+      igType === 'FG' || (igType.includes('FINISHED') && !igType.includes('SEMI')) ||
+      cat === 'FG' || (cat.includes('FINISHED') && !cat.includes('SEMI')) ||
+      gt === 'FG' || (gt.includes('FINISHED') && !gt.includes('SEMI'))
+    );
+
+    if (targetType === 'FG') {
+      return isFg;
+    }
+    if (targetType === 'SEMI_FG') {
+      return isSemiFg;
+    }
+    return true;
+  }, [groupMap]);
+
   const filteredItems = useMemo(() => {
     if (!bom.itemType) return items;
-    return items.filter((i) => {
-      const t = (i.itemType || '').toUpperCase();
-      if (bom.itemType === 'FG') return t === 'FG';
-      if (bom.itemType === 'SEMI_FG') return t === 'SEMI_FG' || t === 'SFG';
-      return true;
-    });
-  }, [items, bom.itemType]);
+    return items.filter((i) => matchesType(i, bom.itemType));
+  }, [items, bom.itemType, matchesType]);
 
   const computedWeight = useMemo(() => {
     return bom.lines.filter((l) => !l.isActive || true).reduce((sum, l) => sum + (l.totalWeight || 0), 0);
@@ -902,13 +959,15 @@ export default function BomMasterScreen() {
                   const item = items.find((i) => i.code === code);
                   if (item) {
                     setField('baseUom', item.uom || 'PCS');
+                    const itemWt = item.weight || (item as any).netWeight || 0;
+                    if (itemWt > 0) setField('weight', itemWt);
                   }
                   // Always show BOM Item as first component row
                   if (code) {
                     const levelMap: Record<string, string> = { FG: 'FG', SEMI_FG: 'SEMI_FG', RAW_MATERIAL: 'RAW_MATERIAL' };
                     const bomLevel = levelMap[item?.itemType || ''] || 'FG';
                     const qty = bom.baseQuantity || 1;
-                    const wt = item?.weight || 0;
+                    const wt = item?.weight || (item as any)?.netWeight || 0;
                     setBom((p) => {
                       const existing = p.lines.filter((l) => l.componentItemCode);
                       const firstRow: BomLine = { ...emptyLine(1), bomLevel, componentItemCode: code, description: item?.name || '', quantityPer: qty, weightPerQty: wt, totalWeight: wt * qty, uom: item?.uom || 'PCS' };
@@ -917,8 +976,10 @@ export default function BomMasterScreen() {
                     });
                   }
                 }} disabled={!isEditable && !!editId} required>
-                  <option value="">\u2014 Select Item \u2014</option>
-                  {filteredItems.map((i) => <option key={i.id} value={i.code}>{i.code} - {i.name}{i.weight ? ` (${i.weight} kg)` : ''}</option>)}
+                  <option value="">— Select Item —</option>
+                  {filteredItems.map((i) => (
+                    <option key={i.id} value={i.code}>{i.code} - {i.name}</option>
+                  ))}
                 </select>
               </label>
 
@@ -926,12 +987,7 @@ export default function BomMasterScreen() {
                 <select className="in" value={bom.itemType} onChange={(e) => {
                   const newType = e.target.value;
                   // Clear itemCode if it doesn't match the new type
-                  const matchItems = items.filter((i) => {
-                    const t = (i.itemType || '').toUpperCase();
-                    if (newType === 'FG') return t === 'FG';
-                    if (newType === 'SEMI_FG') return t === 'SEMI_FG' || t === 'SFG';
-                    return true;
-                  });
+                  const matchItems = items.filter((i) => matchesType(i, newType));
                   const stillValid = matchItems.some((i) => i.code === bom.itemCode);
                   setField('itemType', newType);
                   if (!stillValid) setField('itemCode', '');
@@ -1275,119 +1331,267 @@ function renderTreeRows(node: TreeNode, expanded: Set<string>, toggle: (path: st
   const isLeaf = !node.children || node.children.length === 0;
   const path = node.levelPath || '1';
   const isExpanded = expanded.has(path);
-  const depth = path.split('.').length - 1;
 
   const code = node.itemCode || node.componentItemCode || '';
-  const desc = node.description || '';
-  const qty = node.quantityPer || 0;
-  const wt = node.weightPerQty && node.weightPerQty > 0 ? node.weightPerQty.toFixed(4) : '';
-  const totalWt = node.totalWeight && node.totalWeight > 0 ? node.totalWeight.toFixed(2) : '';
+  const desc = node.description || node.name || '';
+  const qtyVal = node.quantityPer != null && node.quantityPer > 0 ? node.quantityPer : 1;
+  const unitW = node.weightPerQty != null ? Number(node.weightPerQty) : 0;
+  const totalW = node.totalWeight != null && node.totalWeight > 0 ? Number(node.totalWeight) : unitW * qtyVal;
   const rmk = node.remarks || '';
 
-  const isFg = (code).toUpperCase().startsWith('FG');
-  const isSfg = (code).toUpperCase().startsWith('SFG') || (code).toUpperCase().startsWith('SMFG');
-  const typeLabel = isRoot ? 'ROOT' : isFg ? 'FG' : isSfg ? 'SFG' : 'RM';
-  const typeColor = isRoot ? '#6366f1' : isFg ? '#3b82f6' : isSfg ? '#10b981' : '#f59e0b';
-  const typeBg = isRoot ? '#eef2ff' : isFg ? '#eff6ff' : isSfg ? '#ecfdf5' : '#fffbeb';
+  // Type classification matching FG vs SEMI FG vs RM
+  const typeUpper = (node.type || '').toUpperCase();
+  const codeUpper = code.toUpperCase();
+  const isSemiFg = (typeUpper.includes('SEMI') || typeUpper === 'SFG' || typeUpper === 'SEMI_FG' || codeUpper.startsWith('SFG') || codeUpper.startsWith('SMFG') || codeUpper.startsWith('CSM'));
+  const isFg = !isSemiFg && (typeUpper.includes('FG') || typeUpper.includes('FINISHED') || codeUpper.startsWith('FG') || codeUpper.startsWith('MFG') || isRoot);
+
+  const badgeText = isFg ? 'FG' : isSemiFg ? 'SEMI FG' : 'RM';
 
   rows.push(
-    <div key={path} style={{ marginLeft: isRoot ? 0 : depth * 32, position: 'relative', marginTop: isRoot ? 0 : 2 }}>
-      {/* Connector line for non-root */}
-      {!isRoot && depth > 0 && (
-        <div style={{
-          position: 'absolute', left: -20, top: 0, bottom: 0, width: 1,
-          background: '#d1d5db',
-        }} />
-      )}
-      {!isRoot && (
-        <div style={{
-          position: 'absolute', left: -20, top: '50%', width: 16, height: 1,
-          background: '#d1d5db',
-        }} />
-      )}
-
-      {/* Card */}
+    <div key={path} style={{ marginBottom: '10px' }}>
+      {/* Node Card Row */}
       <div
         onClick={() => !isLeaf && toggle(path)}
         style={{
-          display: 'flex', alignItems: 'center', gap: 16,
-          padding: isRoot ? '14px 20px' : '10px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justify: 'space-between',
+          background: isRoot ? '#ffffff' : '#ffffff',
+          border: isRoot ? '1.5px solid #93c5fd' : '1px solid #e2e8f0',
+          borderRadius: '12px',
+          padding: '10px 16px',
+          boxShadow: isRoot ? '0 2px 8px rgba(37,99,235,0.06)' : '0 1px 3px rgba(0,0,0,0.02)',
+          gap: '12px',
+          flexWrap: 'wrap',
           cursor: isLeaf ? 'default' : 'pointer',
-          borderRadius: isRoot ? 10 : 8,
-          border: isRoot ? '1.5px solid #c7d2fe' : '1px solid #e5e7eb',
-          background: isRoot ? '#f5f3ff' : '#fff',
-          boxShadow: isRoot ? '0 2px 8px rgba(99,102,241,0.08)' : '0 1px 3px rgba(0,0,0,0.04)',
-          transition: 'all 0.12s ease',
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.boxShadow = isRoot ? '0 4px 14px rgba(99,102,241,0.14)' : '0 2px 8px rgba(0,0,0,0.08)'; e.currentTarget.style.borderColor = isRoot ? '#a5b4fc' : '#c7d2fe'; }}
-        onMouseLeave={(e) => { e.currentTarget.style.boxShadow = isRoot ? '0 2px 8px rgba(99,102,241,0.08)' : '0 1px 3px rgba(0,0,0,0.04)'; e.currentTarget.style.borderColor = isRoot ? '#c7d2fe' : '#e5e7eb'; }}
       >
-        {/* Expand/Collapse */}
-        <span style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        {/* Left Metadata */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           {!isLeaf ? (
-            <span className="material-symbols-rounded" style={{ fontSize: '1.1rem', color: '#6366f1', transition: 'transform 0.2s', transform: isExpanded ? 'rotate(0)' : 'rotate(0)' }}>
-              {isExpanded ? 'expand_more' : 'chevron_right'}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); toggle(path); }}
+              style={{
+                width: 26,
+                height: 26,
+                borderRadius: '6px',
+                border: '1px solid #cbd5e1',
+                background: '#f8fafc',
+                color: '#2563eb',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                padding: 0,
+              }}
+            >
+              <span className="material-symbols-rounded" style={{ fontSize: 18 }}>
+                {isExpanded ? 'expand_more' : 'chevron_right'}
+              </span>
+            </button>
+          ) : (
+            <div style={{ width: 26, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#94a3b8', display: 'inline-block' }} />
+            </div>
+          )}
+
+          {/* Level Badge */}
+          <span
+            style={{
+              background: '#f1f5f9',
+              border: '1px solid #cbd5e1',
+              borderRadius: '6px',
+              padding: '2px 10px',
+              fontWeight: 700,
+              fontSize: '0.82rem',
+              color: '#475569',
+              fontFamily: 'monospace',
+              letterSpacing: '0.5px',
+            }}
+          >
+            {path}
+          </span>
+
+          {/* Color-Coded Item Type Badge */}
+          {badgeText === 'FG' ? (
+            <span
+              style={{
+                background: '#dbeafe',
+                border: '1px solid #93c5fd',
+                borderRadius: '6px',
+                padding: '2px 10px',
+                fontWeight: 800,
+                fontSize: '0.75rem',
+                color: '#1d4ed8',
+                letterSpacing: '0.5px',
+              }}
+            >
+              FG
+            </span>
+          ) : badgeText === 'SEMI FG' ? (
+            <span
+              style={{
+                background: '#dcfce7',
+                border: '1px solid #86efac',
+                borderRadius: '6px',
+                padding: '2px 10px',
+                fontWeight: 800,
+                fontSize: '0.75rem',
+                color: '#15803d',
+                letterSpacing: '0.5px',
+              }}
+            >
+              SEMI FG
             </span>
           ) : (
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#d1d5db', flexShrink: 0 }} />
+            <span
+              style={{
+                background: '#fef3c7',
+                border: '1px solid #fde047',
+                borderRadius: '6px',
+                padding: '2px 10px',
+                fontWeight: 800,
+                fontSize: '0.75rem',
+                color: '#b45309',
+                letterSpacing: '0.5px',
+              }}
+            >
+              RM
+            </span>
           )}
-        </span>
 
-        {/* Level path */}
-        <span style={{ width: 44, flexShrink: 0, fontWeight: 600, color: '#64748b', fontSize: '0.72rem', fontFamily: 'monospace', textAlign: 'center', background: '#f1f5f9', borderRadius: 4, padding: '2px 4px' }}>
-          {path}
-        </span>
+          {/* Item Code & Description */}
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+            <span style={{ fontWeight: 800, fontSize: '0.92rem', color: '#0f172a' }}>
+              {code}
+            </span>
+            {desc && (
+              <span style={{ fontWeight: 500, fontSize: '0.85rem', color: '#64748b' }}>
+                {desc}
+              </span>
+            )}
+          </div>
+        </div>
 
-        {/* Type badge */}
-        <span style={{
-          display: 'inline-flex', padding: '2px 8px', borderRadius: 5, fontSize: '0.62rem', fontWeight: 700,
-          background: typeBg, color: typeColor, border: `1px solid ${typeColor}25`,
-          letterSpacing: '0.04em', flexShrink: 0, textTransform: 'uppercase',
-        }}>{typeLabel}</span>
+        {/* Right Metrics */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          {/* Qty Pill */}
+          <div
+            style={{
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '6px',
+              padding: '3px 10px',
+              fontSize: '0.8rem',
+              color: '#64748b',
+            }}
+          >
+            Qty: <strong style={{ color: '#0f172a', fontWeight: 700 }}>{qtyVal}</strong>
+          </div>
 
-        {/* Item code */}
-        <span style={{ fontWeight: 700, color: '#1e293b', fontSize: isRoot ? '0.92rem' : '0.85rem', flexShrink: 0 }}>
-          {code}
-        </span>
+          {/* W/Unit Pill */}
+          <div
+            style={{
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '6px',
+              padding: '3px 10px',
+              fontSize: '0.8rem',
+              color: '#64748b',
+            }}
+          >
+            W/Unit: <strong style={{ color: '#0f172a', fontWeight: 700 }}>{unitW > 0 ? `${unitW.toFixed(3).replace(/\.?0+$/, '')} kg` : '0 kg'}</strong>
+          </div>
 
-        {/* Name / Description */}
-        {desc && (
-          <span style={{ color: '#6b7280', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
-            {desc}
-          </span>
-        )}
+          {/* Total Wt Pill */}
+          <div
+            style={{
+              background: '#e0f2fe',
+              border: '1px solid #bae6fd',
+              borderRadius: '6px',
+              padding: '3px 12px',
+              fontSize: '0.8rem',
+              color: '#0284c7',
+              fontWeight: 600,
+            }}
+          >
+            Total Wt: <strong style={{ color: '#0369a1', fontWeight: 800 }}>{totalW > 0 ? `${totalW.toFixed(3).replace(/\.?0+$/, '')} kg` : '0 kg'}</strong>
+          </div>
 
-        {/* Spacer */}
-        <span style={{ flex: '0 0 auto', width: 12 }} />
-
-        {/* Qty */}
-        <span style={{ textAlign: 'right', minWidth: 50, flexShrink: 0, color: '#1e293b', fontWeight: 600, fontSize: '0.82rem' }}>
-          {qty}
-        </span>
-
-        {/* Wt/Unit */}
-        <span style={{ textAlign: 'right', minWidth: 70, flexShrink: 0, color: '#64748b', fontSize: '0.78rem' }}>
-          {wt ? `${wt} kg` : '—'}
-        </span>
-
-        {/* Total Wt */}
-        <span style={{ textAlign: 'right', minWidth: 80, flexShrink: 0, fontWeight: 600, color: totalWt ? '#1e293b' : '#94a3b8', fontSize: '0.82rem' }}>
-          {totalWt ? `${totalWt} kg` : '—'}
-        </span>
-
-        {/* Remarks */}
-        {rmk && (
-          <span style={{ color: '#94a3b8', fontSize: '0.75rem', fontStyle: 'italic', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>
-            {rmk}
-          </span>
-        )}
+          {/* Remarks Tag */}
+          {rmk ? (
+            <div
+              style={{
+                background: '#fdf2f8',
+                border: '1px solid #fbcfe8',
+                borderRadius: '12px',
+                padding: '3px 14px',
+                fontSize: '0.78rem',
+                color: '#db2777',
+                fontWeight: 600,
+              }}
+            >
+              {rmk}
+            </div>
+          ) : (
+            <div
+              style={{
+                background: '#fdf2f8',
+                border: '1px solid #fbcfe8',
+                borderRadius: '12px',
+                padding: '3px 14px',
+                fontSize: '0.78rem',
+                color: '#db2777',
+                fontWeight: 600,
+                opacity: 0.7,
+              }}
+            >
+              note
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Children */}
-      {isExpanded && node.children && (
-        <div style={{ position: 'relative' }}>
+      {/* Children Sub-Tree Branch */}
+      {isExpanded && node.children && node.children.length > 0 && (
+        <div
+          style={{
+            position: 'relative',
+            marginTop: '10px',
+            paddingLeft: '36px',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          {/* Vertical spine connector line */}
+          <div
+            style={{
+              position: 'absolute',
+              left: '16px',
+              top: '0px',
+              bottom: '26px',
+              width: '2px',
+              background: '#cbd5e1',
+            }}
+          />
           {node.children.map((child) => (
-            <React.Fragment key={child.levelPath}>{renderTreeRows(child, expanded, toggle, false)}</React.Fragment>
+            <div key={child.levelPath || child.itemCode} style={{ position: 'relative' }}>
+              {/* Horizontal elbow connector line */}
+              <div
+                style={{
+                  position: 'absolute',
+                  left: '-20px',
+                  top: '20px',
+                  width: '18px',
+                  height: '14px',
+                  borderLeft: '2px solid #cbd5e1',
+                  borderBottom: '2px solid #cbd5e1',
+                  borderBottomLeftRadius: '6px',
+                }}
+              />
+              {renderTreeRows(child, expanded, toggle, false)}
+            </div>
           ))}
         </div>
       )}

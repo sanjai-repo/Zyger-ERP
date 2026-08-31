@@ -828,14 +828,16 @@ public class PrintService {
             PdfPTable details = new PdfPTable(4);
             details.setWidthPercentage(100);
             details.setWidths(new float[]{18, 32, 18, 32});
-            field(details, "BOM No", str(doc.get("bomNumber")));
-            field(details, "Item Code", str(doc.get("itemCode")));
+            field(details, "BOM Code", str(doc.get("bomNumber")));
+            field(details, "BOM Item", str(doc.get("itemCode")));
             field(details, "Item Type", str(doc.get("itemType")));
             field(details, "Base Qty", num(doc.get("baseQuantity")));
-            field(details, "Version", str(doc.get("bomVersion")));
-            field(details, "Weight", num(doc.get("weight")));
+            field(details, "Revision", str(doc.get("revisionLabel")));
+            field(details, "Total Weight", num(doc.get("weight")));
             field(details, "Status", str(doc.get("status")));
+            field(details, "Sales Order", str(doc.get("salesOrderId")));
             field(details, "Specifications", str(doc.get("specifications")));
+            field(details, "Remarks", str(doc.get("remarks")));
             pdf.add(details);
             pdf.add(spacer(6));
 

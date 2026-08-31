@@ -79,5 +79,23 @@ public class WorkOrder extends BaseDoc implements DocEntity {
     @SuppressWarnings("unchecked")
     @Override public List<WorkOrderOperation> getLines() { return (List<WorkOrderOperation>)(List<? extends LineEntity>) operations; }
 
+    @com.fasterxml.jackson.annotation.JsonProperty("materialLines")
     public List<WorkOrderMaterial> getMaterialLines() { return materials; }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("materialLines")
+    public void setMaterialLines(List<WorkOrderMaterial> materialLines) {
+        this.materials = materialLines != null ? materialLines : new ArrayList<>();
+    }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("routeCode")
+    public String getRouteCode() { return routeSheetCode; }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("routeCode")
+    public void setRouteCode(String routeCode) { if (routeCode != null && !routeCode.isBlank()) this.routeSheetCode = routeCode; }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("routeSheet")
+    public String getRouteSheet() { return routeSheetCode; }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("routeSheet")
+    public void setRouteSheet(String routeSheet) { if (routeSheet != null && !routeSheet.isBlank()) this.routeSheetCode = routeSheet; }
 }

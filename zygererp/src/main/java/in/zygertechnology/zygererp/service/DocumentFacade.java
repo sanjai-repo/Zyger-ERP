@@ -67,7 +67,7 @@ public class DocumentFacade {
 
     public DocEntity get(String key, Long id) {
         DocEntity d = em.find(cls(key), id);
-        if (d == null) throw new IllegalArgumentException("Document not found");
+        if (d == null || Boolean.TRUE.equals(d.getDeleted())) throw new IllegalArgumentException("Document not found");
         return d;
     }
 
@@ -85,14 +85,14 @@ public class DocumentFacade {
     @Transactional(readOnly = true)
     public List<DocEntity> findAll(String key) {
         String en = cls(key).getSimpleName();
-        return em.createQuery("select d from " + en + " d order by d.docDate desc", DocEntity.class)
+        return em.createQuery("select d from " + en + " d where (d.deleted is null or d.deleted = false) order by d.docDate desc, d.id desc", DocEntity.class)
                 .getResultList();
     }
 
     @Transactional(readOnly = true)
     public long count(String key) {
         String en = cls(key).getSimpleName();
-        return em.createQuery("select count(d) from " + en + " d", Long.class).getSingleResult();
+        return em.createQuery("select count(d) from " + en + " d where (d.deleted is null or d.deleted = false)", Long.class).getSingleResult();
     }
 
     @Transactional(readOnly = true)
@@ -666,6 +666,18 @@ public class DocumentFacade {
             }
         }
 
+        if (old instanceof WorkOrder woOld && incoming instanceof WorkOrder woInc) {
+            if (woInc.getMaterialLines() != null) {
+                if (woOld.getMaterialLines() == null) woOld.setMaterialLines(new ArrayList<>());
+                else woOld.getMaterialLines().clear();
+                for (WorkOrderMaterial m : woInc.getMaterialLines()) {
+                    m.setId(null);
+                    m.setDoc(woOld);
+                    woOld.getMaterialLines().add(m);
+                }
+            }
+        }
+
         if (old instanceof SupplierEnquiry se) {
             if (se.getSupplier() != null && !se.getSupplier().isBlank()) {
                 if (se.getSuppliers() == null) se.setSuppliers(new ArrayList<>());
@@ -711,8 +723,11 @@ public class DocumentFacade {
     @Transactional
     public void remove(String key, Long id, String user) {
         DocEntity e = get(key, id);
-        if (!List.of("DRAFT", "REJECTED").contains(e.getStatus()))
+        if ("production-bom".equals(key)) {
+            // For production-bom, deletion validation (e.g. Work Order check) is handled by validateBomCanBeDeleted(id)
+        } else if (e.getStatus() != null && !List.of("DRAFT", "REJECTED").contains(e.getStatus().toUpperCase())) {
             throw new IllegalStateException("Only DRAFT/REJECTED documents can be deleted");
+        }
         e.setDeleted(true);
         e.setDeletedAt(Instant.now());
         e.setDeletedBy(user);
@@ -1051,6 +1066,11 @@ public class DocumentFacade {
 
     @SuppressWarnings("unchecked")
     private void attach(DocEntity e) {
+        if (e instanceof WorkOrder wo && wo.getMaterialLines() != null) {
+            for (WorkOrderMaterial m : wo.getMaterialLines()) {
+                m.setDoc(wo);
+            }
+        }
         if (e.getLines() == null) return;
         for (LineEntity l : e.getLines()) {
             Class<?> clazz = l.getClass();

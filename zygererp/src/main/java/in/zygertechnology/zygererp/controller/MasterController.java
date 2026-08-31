@@ -355,6 +355,10 @@ public class MasterController {
         m.put("inspectionRequired", i.getInspectionRequired()); m.put("reorderPoint", i.getReorderPoint());
         m.put("minOrderQty", i.getMinOrderQty()); m.put("safetyStock", i.getSafetyStock());
         m.put("itemGroup", i.getItemGroup() != null ? i.getItemGroup().getCode() : null);
+        m.put("itemGroupName", i.getItemGroup() != null ? i.getItemGroup().getName() : null);
+        m.put("itemGroupType", i.getItemGroup() != null ? i.getItemGroup().getItemType() : null);
+        m.put("groupItemType", groupToItemType(i.getItemGroup()));
+        m.put("bomCategory", bomBucket(i));
         if (i.getExtraData() != null && !i.getExtraData().isBlank()) {
             try {
                 ObjectMapper om = new ObjectMapper();

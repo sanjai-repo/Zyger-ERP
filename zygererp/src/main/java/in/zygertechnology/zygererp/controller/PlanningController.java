@@ -152,6 +152,26 @@ public class PlanningController {
         return svc.toRow(wo);
     }
 
+    @GetMapping("/production-bom/{id}/print")
+    ResponseEntity<byte[]> printProductionBom(@PathVariable Long id) {
+        Map<String, Object> doc = svc.getRow("production-bom", id);
+        byte[] pdf = printService.bom(doc);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=BOM-" + doc.getOrDefault("bomNumber", id) + ".pdf")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdf);
+    }
+
+    @GetMapping("/production-bom/{id}/pdf")
+    ResponseEntity<byte[]> exportProductionBomPdf(@PathVariable Long id) {
+        Map<String, Object> doc = svc.getRow("production-bom", id);
+        byte[] pdf = printService.bom(doc);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=BOM-" + doc.getOrDefault("bomNumber", id) + ".pdf")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdf);
+    }
+
     // ── FRS §18: Work Order Print/PDF ──
 
     @GetMapping("/work-order/{id}/print")
@@ -160,18 +180,6 @@ public class PlanningController {
         byte[] pdf = printService.workOrder(doc);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=WO-" + String.valueOf(doc.get("woNumber")) + ".pdf")
-                .contentType(MediaType.APPLICATION_PDF)
-                .body(pdf);
-    }
-
-    // ── FRS §5.4 FR-23/FR-24: BOM Print/PDF ──
-
-    @GetMapping("/production-bom/{id}/print")
-    ResponseEntity<byte[]> printBom(@PathVariable Long id) {
-        Map<String, Object> doc = svc.getRow("production-bom", id);
-        byte[] pdf = printService.bom(doc);
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=BOM-" + String.valueOf(doc.get("bomNumber")) + ".pdf")
                 .contentType(MediaType.APPLICATION_PDF)
                 .body(pdf);
     }
@@ -253,10 +261,22 @@ public class PlanningController {
         return planning.getActiveSOsForWO();
     }
 
-    /** FRD §6.1: Active BOM + Route Sheet for an item */
+    /** FRD §6.1: Active BOM + Route Sheet for an item and optional Sales Order */
     @GetMapping("/work-order/active-bom-route")
-    Map<String, Object> activeBomRoute(@RequestParam String itemCode) {
-        return planning.getActiveBomAndRoute(itemCode);
+    Map<String, Object> activeBomRoute(@RequestParam String itemCode, @RequestParam(required = false) Long salesOrderId) {
+        return planning.getActiveBomAndRoute(itemCode, salesOrderId);
+    }
+
+    /** All available Production BOMs for WO dropdown pickers */
+    @GetMapping("/work-order/boms-list")
+    List<Map<String, Object>> bomsListForWO() {
+        return planning.getAllAvailableBoms();
+    }
+
+    /** All available Route Sheets for WO dropdown pickers */
+    @GetMapping("/work-order/routes-list")
+    List<Map<String, Object>> routesListForWO() {
+        return planning.getAllAvailableRoutes();
     }
 
     // ── FRS §7: Route Sheet Reports ──

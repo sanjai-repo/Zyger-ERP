@@ -81,18 +81,6 @@ export const PRODUCTION_BOM_FRESH_CONFIG: DocScreenConfig = {
   statusOptions: ['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'CANCELLED'],
   fields: [
     {
-      key: 'copyBomCode',
-      label: 'BOM Mapping Code',
-      lookup: {
-        api: '/master/bom-mappings',
-        valueKey: 'id',
-        labelKeys: ['code', 'name'],
-        separator: ' — ',
-        ephemeral: true,
-        addOnly: true,
-      },
-    },
-    {
       key: 'salesOrderId',
       label: 'Sales Order',
       type: 'number',
@@ -101,6 +89,18 @@ export const PRODUCTION_BOM_FRESH_CONFIG: DocScreenConfig = {
         valueKey: 'id',
         labelKeys: ['docNo', 'customer'],
         separator: ' — ',
+      },
+    },
+    {
+      key: 'copyBomCode',
+      label: 'Copy BOM Item',
+      lookup: {
+        api: '/master/bom-mappings',
+        valueKey: 'id',
+        labelKeys: ['code', 'name'],
+        separator: ' — ',
+        ephemeral: true,
+        addOnly: true,
       },
     },
     {

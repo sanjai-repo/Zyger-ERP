@@ -50,4 +50,12 @@ public class ProductionBOM extends BaseDoc implements DocEntity {
     }
 
     @Override public List<ProductionBOMLine> getLines() { return lines; }
+
+    /** bom_number is unique: derive it from the generated doc_no when not supplied. */
+    @PrePersist @PreUpdate
+    private void syncBomNumber() {
+        if (bomNumber == null || bomNumber.isBlank()) {
+            bomNumber = docNo;
+        }
+    }
 }

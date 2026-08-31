@@ -165,6 +165,7 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
   const [processes, setProcesses] = useState<Array<Record<string, unknown>>>([]);
   const [resources, setResources] = useState<Array<Record<string, unknown>>>([]);
   const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
+  const [itemGroups, setItemGroups] = useState<Array<Record<string, unknown>>>([]);
   const [lookupOptions, setLookupOptions] = useState<Record<string, Array<Record<string, unknown>>>>({});
   const [conflictState, setConflictState] = useState<{ serverData: Record<string, unknown> | null; localData: Record<string, unknown> | null }>({ serverData: null, localData: null });
 
@@ -179,20 +180,25 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
   useEffect(() => { setPage(0); }, [search, status, type]);
 
   useEffect(() => {
+    apiClient.get('/master/item-groups').then((r) => {
+      const data = r.data as { content?: unknown[] } | unknown[];
+      const list = Array.isArray(data) ? data : (data?.content ?? []);
+      setItemGroups(list as Array<Record<string, unknown>>);
+    }).catch(() => { });
     apiClient.get('/master/processes').then((r) => {
       const data = r.data as { content?: unknown[] } | unknown[];
       const list = Array.isArray(data) ? data : (data?.content ?? []);
       setProcesses(list as Array<Record<string, unknown>>);
-    }).catch(() => {});
+    }).catch(() => { });
     apiClient.get('/master/resources').then((r) => {
       const d = r.data as unknown;
       setResources(Array.isArray(d) ? (d as Array<Record<string, unknown>>) : []);
-    }).catch(() => {});
+    }).catch(() => { });
     apiClient.get('/master/items', { params: { size: 1000 } }).then((r) => {
       const d = r.data as { content?: unknown[] } | unknown[];
       const list = Array.isArray(d) ? d : (d?.content ?? []);
       setItems(list as Array<Record<string, unknown>>);
-    }).catch(() => {});
+    }).catch(() => { });
   }, []);
 
   useEffect(() => {
@@ -202,7 +208,7 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
         const d = r.data as { content?: unknown[] } | unknown[] | Record<string, unknown>;
         const list = Array.isArray(d) ? d : (Array.isArray((d as { content?: unknown[] })?.content) ? (d as { content?: unknown[] }).content as unknown[] : []);
         setLookupOptions((c) => ({ ...c, [api]: list as Array<Record<string, unknown>> }));
-      }).catch(() => {});
+      }).catch(() => { });
     }
   }, [lookupApis]);
 
@@ -648,7 +654,7 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
         </div>
       </div>
     );
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listQuery.data, listQuery.isPending, listQuery.isError, searchInput, status, type, page, totalElements, totalPages, rows]);
 
   if (mode === 'list') {
@@ -720,15 +726,40 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
               const bomItemOptions = isProductionBomItem ? (() => {
                 const selectedType = String(form.itemType ?? '').toUpperCase();
                 if (!selectedType) return items;
+                const groupMap = new Map<string, Record<string, unknown>>();
+                itemGroups.forEach((g) => {
+                  if (g.code) groupMap.set(String(g.code).toUpperCase(), g);
+                });
                 const filtered = items.filter((it) => {
                   if (String(it.code ?? '') === String(form.itemCode ?? '')) return true;
-                  const t = String(it.itemType ?? it.category ?? it.type ?? '').toUpperCase();
+                  const t = String(it.itemType ?? it.type ?? '').toUpperCase();
                   const grp = String(it.itemGroup ?? '').toUpperCase();
+                  const igObj = grp ? groupMap.get(grp) : null;
+                  const igName = String(igObj?.name ?? it.itemGroupName ?? '').toUpperCase();
+                  const igType = String(igObj?.itemType ?? it.itemGroupType ?? it.groupItemType ?? '').toUpperCase();
+                  const cat = String(it.category ?? it.bomCategory ?? '').toUpperCase();
+                  const gt = String(it.groupType ?? '').toUpperCase();
+                  const isFg = (
+                    t === 'FG' || t.includes('FINISHED') || t.includes('FG') ||
+                    grp === 'FG' || grp.includes('FINISHED') || grp.includes('FG') ||
+                    igName.includes('FINISHED') || igName.includes('FG') ||
+                    igType === 'FG' || igType.includes('FINISHED') || igType.includes('FG') ||
+                    cat === 'FG' || cat.includes('FINISHED') || cat.includes('FG') ||
+                    gt === 'FG' || gt.includes('FINISHED') || gt.includes('FG')
+                  );
+                  const isSemiFg = (
+                    t === 'SEMI_FG' || t === 'SFG' || t.includes('SEMI') ||
+                    grp === 'SEMI_FG' || grp === 'SFG' || grp.includes('SEMI') ||
+                    igName.includes('SEMI') || igName.includes('SFG') ||
+                    igType === 'SEMI_FG' || igType === 'SFG' || igType.includes('SEMI') ||
+                    cat === 'SEMI_FG' || cat === 'SFG' || cat.includes('SEMI') ||
+                    gt === 'SEMI_FG' || gt === 'SFG' || gt.includes('SEMI')
+                  );
                   if (selectedType === 'FG' || selectedType.includes('FINISHED')) {
-                    return t.includes('FG') || t.includes('FINISHED') || grp.includes('FG');
+                    return isFg || isSemiFg;
                   }
                   if (selectedType === 'SEMI_FG' || selectedType === 'SFG' || selectedType.includes('SEMI')) {
-                    return t.includes('SEMI') || t.includes('SFG') || t.includes('SUB') || grp.includes('SEMI') || grp.includes('SFG');
+                    return isSemiFg;
                   }
                   return true;
                 });
@@ -736,92 +767,92 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
               })() : items;
               if (isAddOnlyHidden) return null;
               return (
-              <label key={field.key} className={`fld ${field.span2 ? 'span2' : ''} ${isFieldError(field.key) ? 'invalid' : ''}`}>
-                <span>{field.label}</span>
-                {isRouteSheet && field.key === 'itemCode' ? (
-                  <select className="in" disabled={!editable} value={String(form[field.key] ?? '')}
-                    onChange={(e) => {
-                      const code = e.target.value;
-                      const it = items.find((i) => String(i.code) === code);
-                      setForm((c) => ({ ...c, itemCode: code, itemType: it ? String(it.itemType ?? '') : c.itemType }));
-                    }}>
-                    <option value="">{'\u2014 Select Item \u2014'}</option>
-                    {items.map((it) => (
-                      <option key={String(it.id)} value={String(it.code ?? '')}>{String(it.code ?? '')} — {String(it.description ?? '')}</option>
-                    ))}
-                  </select>
-                ) : isProductionBomItem ? (
-                  <select className="in" disabled={!editable || gatedOff} value={String(form[field.key] ?? '')}
-                    onChange={(e) => {
-                      const code = e.target.value;
-                      const it = items.find((i) => String(i.code) === code);
-                      const unitWt = Number(it?.weight ?? it?.netWeight ?? 0);
-                      const qty = Number(form.baseQuantity ?? 1);
-                      const computedWt = unitWt > 0 ? (unitWt * (qty > 0 ? qty : 1)).toFixed(3) : form.weight;
-                      // FRS v4.0 Changelog #4: auto-derive itemType, weight, description from ItemMaster on BOM item select
-                      setForm((c) => ({
-                        ...c,
-                        itemCode: code,
-                        itemType: it ? String(it.itemType ?? '') : c.itemType,
-                        itemRevision: it && it.revision ? String(it.revision) : c.itemRevision,
-                        description: it && it.description ? String(it.description) : c.description,
-                        ...(unitWt > 0 ? { weight: String(computedWt) } : {}),
-                      }));
-                    }}>
-                    <option value="">{'\u2014 Select Item \u2014'}</option>
-                    {bomItemOptions.map((it) => (
-                      <option key={String(it.id)} value={String(it.code ?? '')}>{String(it.code ?? '')} — {String(it.description ?? '')}</option>
-                    ))}
-                  </select>
-                ) : field.lookup ? (
-                  <select className="in" disabled={isFieldReadonly || !editable} value={String(form[field.key] ?? '')}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setForm((c) => ({ ...c, [field.key]: value }));
-                      if (field.lookup?.ephemeral) applyLookupCopy(field.key, value);
-                    }}>
-                    <option value="">{'\u2014 Select \u2014'}</option>
-                    {(lookupOptions[field.lookup.api] ?? []).map((opt) => {
-                      const label = (field.lookup?.labelKeys ?? [field.lookup!.valueKey])
-                        .map((k) => String(opt[k] ?? ''))
-                        .filter(Boolean)
-                        .join(field.lookup?.separator ?? ' — ');
-                      return <option key={String(opt[field.lookup!.valueKey])} value={String(opt[field.lookup!.valueKey] ?? '')}>{label}</option>;
-                    })}
-                  </select>
-                ) : field.type === 'textarea' ? (
-                  <textarea className="in" rows={2} readOnly={field.key === 'remarks' ? !remarksEditable : isFieldReadonly || !editable} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))} />
-                ) : field.type === 'select' ? (
-                  <select className="in" disabled={isFieldReadonly || !editable || gatedOff} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))}>
-                    <option value="">\u2014 Select \u2014</option>
-                    {(field.options ?? []).map((o) => <option key={o} value={o}>{field.optionLabels?.[o] ?? o}</option>)}
-                  </select>
-                ) : field.type === 'checkbox' ? (
-                  <input type="checkbox" className="checkbox" disabled={isFieldReadonly || !editable} checked={Boolean(form[field.key])} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.checked }))} />
-                ) : (
-                  <input className="in" type={field.type ?? 'text'} readOnly={isFieldReadonly || !editable} value={String(form[field.key] ?? '')}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (config.docType === 'production-bom' && field.key === 'baseQuantity') {
-                        setForm((c) => {
-                          const qty = Number(val ?? 0);
-                          const it = items.find((i) => String(i.code) === String(c.itemCode ?? ''));
-                          const unitWt = Number(it?.weight ?? it?.netWeight ?? 0);
-                          const computedWt = unitWt > 0 && qty > 0 ? (unitWt * qty).toFixed(3) : c.weight;
-                          return {
-                            ...c,
-                            baseQuantity: val,
-                            ...(unitWt > 0 && qty > 0 ? { weight: String(computedWt) } : {}),
-                          };
-                        });
-                      } else {
-                        setForm((c) => ({ ...c, [field.key]: val }));
-                      }
-                    }}
-                    style={isAutoDerived ? { background: '#f9fafb', fontStyle: 'italic' } : undefined} />
-                )}
-                {isAutoDerived && <span style={{ fontSize: '10px', color: '#9ca3af', marginTop: '2px' }}>Auto-derived</span>}
-              </label>
+                <label key={field.key} className={`fld ${field.span2 ? 'span2' : ''} ${isFieldError(field.key) ? 'invalid' : ''}`}>
+                  <span>{field.label}</span>
+                  {isRouteSheet && field.key === 'itemCode' ? (
+                    <select className="in" disabled={!editable} value={String(form[field.key] ?? '')}
+                      onChange={(e) => {
+                        const code = e.target.value;
+                        const it = items.find((i) => String(i.code) === code);
+                        setForm((c) => ({ ...c, itemCode: code, itemType: it ? String(it.itemType ?? '') : c.itemType }));
+                      }}>
+                      <option value="">{'\u2014 Select Item \u2014'}</option>
+                      {items.map((it) => (
+                        <option key={String(it.id)} value={String(it.code ?? '')}>{String(it.code ?? '')} — {String(it.description ?? '')}</option>
+                      ))}
+                    </select>
+                  ) : isProductionBomItem ? (
+                    <select className="in" disabled={!editable || gatedOff} value={String(form[field.key] ?? '')}
+                      onChange={(e) => {
+                        const code = e.target.value;
+                        const it = items.find((i) => String(i.code) === code);
+                        const unitWt = Number(it?.weight ?? it?.netWeight ?? 0);
+                        const qty = Number(form.baseQuantity ?? 1);
+                        const computedWt = unitWt > 0 ? (unitWt * (qty > 0 ? qty : 1)).toFixed(3) : form.weight;
+                        // FRS v4.0 Changelog #4: auto-derive itemType, weight, description from ItemMaster on BOM item select
+                        setForm((c) => ({
+                          ...c,
+                          itemCode: code,
+                          itemType: it ? String(it.itemType ?? '') : c.itemType,
+                          itemRevision: it && it.revision ? String(it.revision) : c.itemRevision,
+                          description: it && it.description ? String(it.description) : c.description,
+                          ...(unitWt > 0 ? { weight: String(computedWt) } : {}),
+                        }));
+                      }}>
+                      <option value="">{'\u2014 Select Item \u2014'}</option>
+                      {bomItemOptions.map((it) => (
+                        <option key={String(it.id)} value={String(it.code ?? '')}>{String(it.code ?? '')} — {String(it.description ?? '')}</option>
+                      ))}
+                    </select>
+                  ) : field.lookup ? (
+                    <select className="in" disabled={isFieldReadonly || !editable} value={String(form[field.key] ?? '')}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setForm((c) => ({ ...c, [field.key]: value }));
+                        if (field.lookup?.ephemeral) applyLookupCopy(field.key, value);
+                      }}>
+                      <option value="">{'\u2014 Select \u2014'}</option>
+                      {(lookupOptions[field.lookup.api] ?? []).map((opt) => {
+                        const label = (field.lookup?.labelKeys ?? [field.lookup!.valueKey])
+                          .map((k) => String(opt[k] ?? ''))
+                          .filter(Boolean)
+                          .join(field.lookup?.separator ?? ' — ');
+                        return <option key={String(opt[field.lookup!.valueKey])} value={String(opt[field.lookup!.valueKey] ?? '')}>{label}</option>;
+                      })}
+                    </select>
+                  ) : field.type === 'textarea' ? (
+                    <textarea className="in" rows={2} readOnly={field.key === 'remarks' ? !remarksEditable : isFieldReadonly || !editable} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))} />
+                  ) : field.type === 'select' ? (
+                    <select className="in" disabled={isFieldReadonly || !editable || gatedOff} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))}>
+                      <option value="">\u2014 Select \u2014</option>
+                      {(field.options ?? []).map((o) => <option key={o} value={o}>{field.optionLabels?.[o] ?? o}</option>)}
+                    </select>
+                  ) : field.type === 'checkbox' ? (
+                    <input type="checkbox" className="checkbox" disabled={isFieldReadonly || !editable} checked={Boolean(form[field.key])} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.checked }))} />
+                  ) : (
+                    <input className="in" type={field.type ?? 'text'} readOnly={isFieldReadonly || !editable} value={String(form[field.key] ?? '')}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (config.docType === 'production-bom' && field.key === 'baseQuantity') {
+                          setForm((c) => {
+                            const qty = Number(val ?? 0);
+                            const it = items.find((i) => String(i.code) === String(c.itemCode ?? ''));
+                            const unitWt = Number(it?.weight ?? it?.netWeight ?? 0);
+                            const computedWt = unitWt > 0 && qty > 0 ? (unitWt * qty).toFixed(3) : c.weight;
+                            return {
+                              ...c,
+                              baseQuantity: val,
+                              ...(unitWt > 0 && qty > 0 ? { weight: String(computedWt) } : {}),
+                            };
+                          });
+                        } else {
+                          setForm((c) => ({ ...c, [field.key]: val }));
+                        }
+                      }}
+                      style={isAutoDerived ? { background: '#f9fafb', fontStyle: 'italic' } : undefined} />
+                  )}
+                  {isAutoDerived && <span style={{ fontSize: '10px', color: '#9ca3af', marginTop: '2px' }}>Auto-derived</span>}
+                </label>
               );
             })}
           </div>
@@ -887,10 +918,10 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
                               value={
                                 config.docType === 'production-bom' && f.key === 'componentItemCode'
                                   ? (line.componentItemCode
-                                      ? (line.description && !String(line.componentItemCode).includes(String(line.description))
-                                          ? `${line.componentItemCode} — ${line.description}`
-                                          : String(line.componentItemCode))
-                                      : String(line.description ?? ''))
+                                    ? (line.description && !String(line.componentItemCode).includes(String(line.description))
+                                      ? `${line.componentItemCode} — ${line.description}`
+                                      : String(line.componentItemCode))
+                                    : String(line.description ?? ''))
                                   : String(line[f.key] ?? '')
                               }
                               onChange={(e) => {

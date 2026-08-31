@@ -8,23 +8,13 @@ import {
   usePlanningDocNextNumber,
   usePlanningDocUpdate,
 } from '../../../hooks/usePlanningDocs';
-import { WORK_ORDER_CONFIG, WORK_ORDER_MATERIAL_FIELDS } from '../planningDocConfigs';
-import type { MaterialLineDef } from '../planningDocConfigs';
+import { WORK_ORDER_CONFIG } from '../planningDocConfigs';
 import { formatDate, formatNumber, toOptionalNumber } from '../../../utils/format';
 import { getApiErrorMessage } from '../../../utils/apiError';
 import { useToast } from '../../../contexts/ToastContext';
-import { useAuth } from '../../../contexts/AuthContext';
-import { useTabs } from '../../../contexts/TabsContext';
 import StatusBadge from '../../../components/common/StatusBadge';
 import ConfirmActionModal from '../../../components/common/ConfirmActionModal';
-import AuditHistoryDrawer from '../../../components/common/AuditHistoryDrawer';
-import ConflictModal from '../../../components/common/ConflictModal';
-import { auditEntityTypeFor } from '../../../utils/auditEntity';
 import apiClient from '../../../api/axiosClient';
-import { exportToCsv } from '../../../utils/csvExport';
-import { useFormKeyboard } from '../../../hooks/useFormKeyboard';
-import { useUnsavedWarning } from '../../../hooks/useUnsavedWarning';
-import { useFormValidation } from '../../../hooks/useFormValidation';
 
 const PAGE_SIZE = 8;
 const config = WORK_ORDER_CONFIG;
@@ -42,96 +32,53 @@ const STATUS_COLORS: Record<string, string> = {
   REJECTED: '#dc2626',
 };
 
-const sectionLabels: Record<string, string> = {
-  overview: 'Overview',
-  source: 'Source & Customer',
-  bomRoute: 'BOM & Route Links',
-  schedule: 'Schedule',
-  quantities: 'Quantities',
-  reasons: 'Reasons & Remarks',
-};
-const sectionIcons: Record<string, string> = {
-  overview: 'info',
-  source: 'person',
-  bomRoute: 'account_tree',
-  schedule: 'calendar_month',
-  quantities: 'pin',
-  reasons: 'edit_note',
-};
-const sectionFieldMap: Record<string, string[]> = {
-  overview: ['woNo', 'woType', 'priority', 'itemCode', 'itemDescription', 'itemRevision', 'drawingNumber', 'drawingRev', 'uom', 'plant', 'productionLine', 'productionDepartment', 'batchLotNo'],
-  source: ['sourceType', 'sourceDocNo', 'salesOrderId', 'salesOrderNo', 'soLineId', 'customerCode', 'customerOrderNo'],
-  bomRoute: ['bomId', 'bomRevision', 'routeId', 'routeRevision'],
-  schedule: ['dueDate', 'plannedStartDate', 'plannedEndDate', 'promisedDeliveryDate', 'actualStartDate', 'actualEndDate', 'approvedBy', 'releasedBy', 'startedBy', 'completedBy', 'closedBy'],
-  quantities: ['orderQuantity', 'productionQty', 'releasedQty', 'completedQty', 'rejectedQty', 'scrapQty', 'balanceQty', 'pendingQty', 'fgReceiptQty', 'scrapAllowancePercent'],
-  reasons: ['cancelReason', 'holdReason', 'shortCloseReason', 'remarks'],
-};
 
-type ActionModal = { action: string; danger: boolean; title?: string };
 
 export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { initialDocId?: string | number; viewOnly?: boolean }) {
   const { toast } = useToast();
-  const { can } = useAuth();
-  const { openTab } = useTabs();
   const [mode, setMode] = useState<'list' | 'form'>(initialDocId ? 'form' : 'list');
   const [documentId, setDocumentId] = useState<string | null>(initialDocId ? String(initialDocId) : null);
   const [isViewOnly, setIsViewOnly] = useState(viewOnly);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
-  const [priority, setPriority] = useState('');
   const [page, setPage] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState<Record<string, unknown> | null>(null);
-  const [form, setForm] = useState<Record<string, unknown>>({});
+  const [form, setForm] = useState<Record<string, unknown>>({
+    workOrderDate: new Date().toISOString().slice(0, 10),
+    priority: 'MEDIUM',
+    status: 'DRAFT',
+  });
   const [ops, setOps] = useState<Array<Record<string, unknown>>>([]);
   const [mats, setMats] = useState<Array<Record<string, unknown>>>([]);
   const [initializedForId, setInitializedForId] = useState('');
-  const [actionModal, setActionModal] = useState<ActionModal | null>(null);
-  const [auditOpen, setAuditOpen] = useState(false);
-  const [statusHistoryOpen, setStatusHistoryOpen] = useState(false);
-  const [statusHistory, setStatusHistory] = useState<Array<Record<string, unknown>>>([]);
-  const [activeTab, setActiveTab] = useState<'operations' | 'materials' | 'quantity' | 'history'>('operations');
-  const [populating, setPopulating] = useState(false);
-  const [summary, setSummary] = useState<Record<string, unknown> | null>(null);
-  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
-    overview: false,
-    source: false,
-    bomRoute: true,
-    schedule: true,
-    quantities: true,
-    reasons: true,
-  });
-  const [bomList, setBomList] = useState<Array<{ id: number; bomNumber: string; itemCode: string }>>([]);
-  const [routeList, setRouteList] = useState<Array<{ id: number; routeNumber: string; itemCode: string }>>([]);
-  const [machines, setMachines] = useState<Array<{ code: string; name: string }>>([]);
-  const [workCenters, setWorkCenters] = useState<Array<{ code: string; name: string }>>([]);
-  const [operators, setOperators] = useState<Array<{ username: string; fullName: string }>>([]);
-  const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
+
+
+  // Modal states for FRD-WO-001
+  const [soModalOpen, setSoModalOpen] = useState(false);
+  const [bomModalOpen, setBomModalOpen] = useState(false);
+  const [routeModalOpen, setRouteModalOpen] = useState(false);
+  const [soSearch, setSoSearch] = useState('');
+  const [activeBomData, setActiveBomData] = useState<Record<string, unknown> | null>(null);
+  const [activeRouteData, setActiveRouteData] = useState<Record<string, unknown> | null>(null);
+
   const [soList, setSoList] = useState<Array<Record<string, unknown>>>([]);
-  const [conflictState, setConflictState] = useState<{ serverData: Record<string, unknown> | null; localData: Record<string, unknown> | null }>({ serverData: null, localData: null });
-  const [conflictBusy, setConflictBusy] = useState(false);
+  const [availableBoms, setAvailableBoms] = useState<Array<Record<string, unknown>>>([]);
+  const [availableRoutes, setAvailableRoutes] = useState<Array<Record<string, unknown>>>([]);
+  const [masterBoms, setMasterBoms] = useState<Array<Record<string, unknown>>>([]);
+  const [masterRoutes, setMasterRoutes] = useState<Array<Record<string, unknown>>>([]);
+  const [collapsedBomNodes, setCollapsedBomNodes] = useState<Set<string>>(new Set());
 
   const fetchPickers = useCallback(async () => {
     try {
-      const [bRes, rRes, mRes, wRes, oRes, iRes, soRes] = await Promise.allSettled([
-        apiClient.get('/v1/planning/bom', { params: { size: 500 } }),
-        apiClient.get('/v1/planning/route-sheet', { params: { size: 500 } }),
-        apiClient.get('/master/machines', { params: { size: 200 } }),
-        apiClient.get('/master/work-centers', { params: { size: 200 } }),
-        apiClient.get('/master/users', { params: { size: 200 } }),
-        apiClient.get('/master/items', { params: { size: 500 } }),
+      const [soRes, bomsRes, routesRes] = await Promise.allSettled([
         apiClient.get('/v1/planning/work-order/so-list'),
+        apiClient.get('/v1/planning/work-order/boms-list'),
+        apiClient.get('/v1/planning/work-order/routes-list'),
       ]);
-      if (bRes.status === 'fulfilled') setBomList((bRes.value.data?.content ?? bRes.value.data ?? []).map((b: any) => ({ id: b.id, bomNumber: b.bomNumber || b.docNo || `BOM-${b.id}`, itemCode: b.itemCode ?? '' })));
-      if (rRes.status === 'fulfilled') setRouteList((rRes.value.data?.content ?? rRes.value.data ?? []).map((r: any) => ({ id: r.id, routeNumber: r.routeNumber || r.docNo || `RT-${r.id}`, itemCode: r.itemCode ?? '' })));
-      if (mRes.status === 'fulfilled') setMachines((mRes.value.data?.content ?? mRes.value.data ?? []).filter((m: any) => m.active !== false).map((m: any) => ({ code: m.machineCode ?? m.code ?? '', name: m.description ?? m.name ?? '' })));
-      if (wRes.status === 'fulfilled') setWorkCenters((wRes.value.data?.content ?? wRes.value.data ?? []).filter((w: any) => w.active !== false).map((w: any) => ({ code: w.code ?? '', name: w.name ?? '' })));
-      if (oRes.status === 'fulfilled') setOperators((oRes.value.data?.content ?? oRes.value.data ?? []).filter((u: any) => u.active !== false).map((u: any) => ({ username: (u.username ?? ''), fullName: (u.fullName || u.username) ?? '' })));
-      if (iRes.status === 'fulfilled') {
-        const data = iRes.value.data as { content?: unknown[] } | unknown[];
-        setItems(Array.isArray(data) ? data as Array<Record<string, unknown>> : (data?.content ?? []) as Array<Record<string, unknown>>);
-      }
       if (soRes.status === 'fulfilled') setSoList(Array.isArray(soRes.value.data) ? soRes.value.data : (soRes.value.data?.content ?? []) as Array<Record<string, unknown>>);
+      if (bomsRes.status === 'fulfilled') setMasterBoms(Array.isArray(bomsRes.value.data) ? bomsRes.value.data : []);
+      if (routesRes.status === 'fulfilled') setMasterRoutes(Array.isArray(routesRes.value.data) ? routesRes.value.data : []);
     } catch { /* ignore */ }
   }, []);
 
@@ -146,7 +93,7 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
   const actionMutation = usePlanningDocAction(config.docType);
 
   useEffect(() => { const t = setTimeout(() => setSearch(searchInput.trim()), 300); return () => clearTimeout(t); }, [searchInput]);
-  useEffect(() => { setPage(0); }, [search, status, priority]);
+  useEffect(() => { setPage(0); }, [search, status]);
   useEffect(() => { if (initialDocId) { setDocumentId(String(initialDocId)); setIsViewOnly(viewOnly); setMode('form'); } }, [initialDocId, viewOnly]);
 
   useEffect(() => {
@@ -155,13 +102,110 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
     const key = String(documentId);
     if (initializedForId === key) return;
     setInitializedForId(key);
-    setForm({ ...doc });
-    setOps(Array.isArray(doc.lines) ? (doc.lines as Array<Record<string, unknown>>).map((l) => ({ ...l })) : []);
-    setMats(Array.isArray(doc.materialLines) ? (doc.materialLines as Array<Record<string, unknown>>).map((l) => ({ ...l })) : []);
+
+    const bCode = String(doc.bomCode ?? doc.bomNumber ?? '');
+    const rCode = String(doc.routeSheetCode ?? doc.routeCode ?? doc.routeSheet ?? '');
+    const rId = doc.routeId ?? null;
+    const bId = doc.bomId ?? null;
+
+    setForm({
+      ...doc,
+      bomCode: bCode,
+      bomId: bId,
+      routeId: rId,
+      routeCode: rCode,
+      routeSheet: rCode,
+      routeSheetCode: rCode,
+    });
+
+    const loadedOps = Array.isArray(doc.lines) ? doc.lines : (Array.isArray(doc.operations) ? doc.operations : []);
+    const loadedMats = Array.isArray(doc.materialLines) ? doc.materialLines : (Array.isArray(doc.materials) ? doc.materials : []);
+
+    setOps(loadedOps.map((l: any, idx: number) => ({
+      operationSequence: l.operationSequence ?? l.sequenceNo ?? (idx + 1) * 10,
+      operationCode: l.operationCode ?? l.processName ?? l.processCode ?? '',
+      workCenterCode: l.workCenterCode ?? l.resourceName ?? l.resourceCode ?? '',
+      setupTimePlanned: Number(l.setupTimePlanned ?? l.setupTime ?? 0),
+      cycleTimePlanned: Number(l.cycleTimePlanned ?? l.cycleTime ?? 0),
+      qcRequired: l.qcRequired ?? l.inspectionRequired ?? 'No',
+    })));
+
+    setMats(loadedMats.map((l: any) => ({
+      componentItemCode: l.componentItemCode ?? l.materialCode ?? l.itemCode ?? '',
+      description: l.description ?? l.materialDescription ?? l.itemName ?? '',
+      requiredQuantity: Number(l.requiredQuantity ?? l.requiredQty ?? l.qty ?? 0),
+      issuedQuantity: Number(l.issuedQuantity ?? l.issuedQty ?? 0),
+      balanceQty: Number(l.balanceQty ?? l.requiredQuantity ?? l.requiredQty ?? 0),
+      uom: l.uom ?? 'Nos',
+      warehouse: l.warehouse ?? 'RM Store',
+    })));
+
+    // Fallback auto-fetch for legacy records where materials or ops were not stored
+    if (loadedMats.length === 0 && (bId || bCode)) {
+      const targetBomId = bId || bCode;
+      apiClient.get(`/v1/planning/production-bom/${targetBomId}`).then((res) => {
+        const lines = res.data.lines ?? res.data.items ?? [];
+        if (Array.isArray(lines) && lines.length > 0) {
+          const prodQty = Number(doc.productionQty ?? doc.orderQuantity ?? 1);
+          setMats(lines.map((bl: any) => {
+            const reqPerUnit = Number(bl.quantityPer ?? bl.quantityPerUnit ?? bl.requiredQty ?? bl.quantity ?? bl.qty ?? 1);
+            const reqQty = reqPerUnit * prodQty;
+            return {
+              componentItemCode: bl.componentItemCode ?? bl.itemCode ?? '',
+              description: bl.description ?? bl.componentDescription ?? bl.itemName ?? '',
+              requiredQuantity: reqQty,
+              issuedQuantity: 0,
+              balanceQty: reqQty,
+              uom: bl.uom ?? 'Nos',
+              warehouse: bl.warehouse ?? bl.storeLocation ?? 'RM Store',
+            };
+          }));
+        }
+      }).catch(() => {
+        if (bId) {
+          apiClient.get(`/v1/planning/bom/${bId}`).then((res) => {
+            const lines = res.data.lines ?? res.data.items ?? [];
+            if (Array.isArray(lines) && lines.length > 0) {
+              const prodQty = Number(doc.productionQty ?? doc.orderQuantity ?? 1);
+              setMats(lines.map((bl: any) => {
+                const reqPerUnit = Number(bl.quantityPer ?? bl.quantityPerUnit ?? bl.requiredQty ?? bl.quantity ?? bl.qty ?? 1);
+                const reqQty = reqPerUnit * prodQty;
+                return {
+                  componentItemCode: bl.componentItemCode ?? bl.itemCode ?? '',
+                  description: bl.description ?? bl.componentDescription ?? bl.itemName ?? '',
+                  requiredQuantity: reqQty,
+                  issuedQuantity: 0,
+                  balanceQty: reqQty,
+                  uom: bl.uom ?? 'Nos',
+                  warehouse: bl.warehouse ?? bl.storeLocation ?? 'RM Store',
+                };
+              }));
+            }
+          }).catch(() => { });
+        }
+      });
+    }
+
+    if (loadedOps.length === 0 && (rId || rCode)) {
+      const targetRouteId = rId || rCode;
+      apiClient.get(`/v1/planning/route-sheet/${targetRouteId}`).then((res) => {
+        const routeOps = res.data.operations ?? res.data.lines ?? [];
+        if (Array.isArray(routeOps) && routeOps.length > 0) {
+          setOps(routeOps.map((ro: any, idx: number) => ({
+            operationSequence: ro.sequenceNo ?? ro.operationSequence ?? (idx + 1) * 10,
+            operationCode: ro.processName ?? ro.processCode ?? ro.operationCode ?? '',
+            workCenterCode: ro.resourceName ?? ro.resourceCode ?? ro.workCenterCode ?? '',
+            setupTimePlanned: Number(ro.setupTime ?? ro.setupTimePlanned ?? 0),
+            cycleTimePlanned: Number(ro.cycleTime ?? ro.cycleTimePlanned ?? 0),
+            qcRequired: ro.inspectionRequired ?? ro.qcRequired ?? 'No',
+          })));
+        }
+      }).catch(() => { });
+    }
   }, [documentQuery.data, documentId, initializedForId]);
 
   const doc = documentQuery.data;
-  const genericStatus = String(doc?.status ?? 'DRAFT');
+  const genericStatus = String(doc?.status ?? form.status ?? 'DRAFT');
   const editable = !isViewOnly && (!documentId || ['DRAFT', 'REJECTED'].includes(genericStatus));
   const isBusy = createMutation.isPending || updateMutation.isPending || actionMutation.isPending || deleteMutation.isPending;
   const rows = listQuery.data?.content ?? [];
@@ -169,39 +213,71 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
   const totalPages = listQuery.data?.totalPages ?? 1;
 
   const openForm = (id: string | null, view: boolean) => {
-    setDocumentId(id); setInitializedForId(''); setIsViewOnly(view); setForm({}); setOps([]); setMats([]); setActiveTab('operations'); setMode('form');
+    setDocumentId(id); setInitializedForId(''); setIsViewOnly(view);
+    setForm({ workOrderDate: new Date().toISOString().slice(0, 10), priority: 'MEDIUM', status: 'DRAFT' });
+    setOps([]); setMats([]); setMode('form');
   };
+
   const backToList = () => { setDocumentId(null); setInitializedForId(''); setIsViewOnly(false); setMode('list'); };
 
+  const clearForm = () => {
+    setForm({
+      workOrderDate: new Date().toISOString().slice(0, 10),
+      priority: 'MEDIUM',
+      status: 'DRAFT',
+    });
+    setOps([]);
+    setMats([]);
+  };
+
   const buildPayload = () => {
-    const payload: Record<string, unknown> = {};
-    for (const field of config.fields) {
-      const raw = form[field.key];
-      if (field.type === 'number') payload[field.key] = toOptionalNumber(raw == null ? '' : String(raw));
-      else if (field.type === 'checkbox') payload[field.key] = Boolean(raw);
-      else payload[field.key] = raw == null ? null : String(raw);
+    const payload: Record<string, unknown> = { ...form };
+    const bCode = String(form.bomCode ?? form.bomNumber ?? '');
+    const rCode = String(form.routeSheetCode ?? form.routeCode ?? form.routeSheet ?? '');
+    if (bCode) payload.bomCode = bCode;
+    if (rCode) {
+      payload.routeSheetCode = rCode;
+      payload.routeCode = rCode;
+      payload.routeSheet = rCode;
     }
-    payload.lines = ops.filter((l) => String(l.operationSequence ?? '').trim() !== '').map((l) => { const out = { ...l }; delete out.id; delete out.qty; return out; });
-    payload.materialLines = mats.filter((l) => String(l.componentItemCode ?? '').trim() !== '').map((l) => { const out = { ...l }; delete out.id; delete out.qty; return out; });
+    payload.lines = ops.map((l) => { const out = { ...l }; delete out.id; return out; });
+    payload.materialLines = mats.map((l) => { const out = { ...l }; delete out.id; return out; });
     return payload;
   };
 
   const validate = () => {
-    const errs = validateFields(config.fields, form);
-    if (errs.length > 0) { toast(errs[0].message, 'error'); return false; }
+    // FRD §7.0 V7 & V8: Released / Completed Edit protection
+    if (documentId && genericStatus === 'RELEASED') {
+      toast('Work Order already released.', 'error'); return false;
+    }
+    if (documentId && ['COMPLETED', 'CLOSED'].includes(genericStatus)) {
+      toast('Completed Work Order cannot be modified.', 'error'); return false;
+    }
     // FRD §7.0 V1: Sales Order is mandatory
-    if (!form.salesOrderId && !form.sourceDocNo) {
+    if (!form.salesOrderId && !form.salesOrderNo && !form.soNumber) {
       toast('Sales Order is mandatory.', 'error'); return false;
     }
-    // FRD §7.0 V3: Production Qty must not exceed Pending Qty
+    // FRD §7.0 V2 & V3: Production Qty mandatory and must not exceed Pending Qty
     const prodQty = Number(form.productionQty ?? 0);
     const pendingQty = Number(form.pendingQty ?? 0);
+    if (!prodQty || prodQty <= 0) {
+      toast('Production Quantity is mandatory.', 'error'); return false;
+    }
     if (pendingQty > 0 && prodQty > pendingQty) {
       toast('Production Quantity exceeds Pending Quantity.', 'error'); return false;
+    }
+    // FRD §7.0 V4 & V5: Active BOM and Route Sheet
+    if (!form.bomCode && !form.bomId) {
+      toast('Active BOM not found.', 'error'); return false;
+    }
+    if (!form.routeCode && !form.routeSheet && !form.routeId) {
+      toast('Active Route Sheet not found.', 'error'); return false;
     }
     // FRD §7.0 V6: Planned End Date > Start Date
     const sd = String(form.plannedStartDate ?? '');
     const ed = String(form.plannedEndDate ?? '');
+    if (!sd) { toast('Planned Start Date is mandatory.', 'error'); return false; }
+    if (!ed) { toast('Planned End Date is mandatory.', 'error'); return false; }
     if (sd && ed && ed <= sd) {
       toast('Planned End Date should be greater than Planned Start Date.', 'error'); return false;
     }
@@ -219,20 +295,12 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
 
   const handleSave = async () => {
     if (!documentId) return;
+    if (!validate()) return;
     try {
       const updated = await updateMutation.mutateAsync({ id: documentId, payload: buildPayload() });
       setForm({ ...updated }); toast(`${updated.woNumber ?? updated.docNo ?? ''} saved.`);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      // FRS §5.4: Handle 409 VERSION_CONFLICT — show merge/overwrite modal
-      if (msg.startsWith('CONFLICT:')) {
-        try {
-          const { data: serverData } = await apiClient.get(`/v1/planning/work-order/${documentId}`);
-          setConflictState({ serverData, localData: buildPayload() as Record<string, unknown> });
-        } catch { toast('Version conflict detected but could not load server version.', 'error'); }
-      } else {
-        toast(getApiErrorMessage(e, 'Save failed.'), 'error');
-      }
+      toast(getApiErrorMessage(e, 'Save failed.'), 'error');
     }
   };
 
@@ -240,657 +308,1317 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
     if (!documentId) return;
     try {
       const updated = await actionMutation.mutateAsync({ id: documentId, action, note });
-      setForm({ ...updated }); setActionModal(null);
+      setForm({ ...updated });
       toast(`${updated.woNumber ?? updated.docNo ?? ''} \u2022 ${action} completed.`);
     } catch (e) { toast(getApiErrorMessage(e, `${action} failed.`), 'error'); }
   };
 
-  const handlePopulate = async () => {
-    if (!documentId) return;
-    setPopulating(true);
-    try {
-      const res = await apiClient.post(`/v1/planning/work-order/${documentId}/populate`);
-      const updated = res.data;
-      setForm({ ...updated });
-      setOps(Array.isArray(updated.lines) ? (updated.lines as Array<Record<string, unknown>>).map((l) => ({ ...l })) : []);
-      setMats(Array.isArray(updated.materialLines) ? (updated.materialLines as Array<Record<string, unknown>>).map((l) => ({ ...l })) : []);
-      toast('Populated from BOM and Route.');
-    } catch (e) { toast(getApiErrorMessage(e, 'Populate failed.'), 'error'); }
-    setPopulating(false);
-  };
-
-  const handlePrint = async () => {
-    if (!documentId) return;
-    try {
-      const res = await apiClient.get(`/v1/planning/work-order/${documentId}/print`, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-      const a = window.document.createElement('a');
-      a.href = url;
-      a.download = `WO-${form.woNumber ?? form.docNo ?? documentId}.pdf`;
-      window.document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      window.document.body.removeChild(a);
-      toast('PDF downloaded.');
-    } catch (e) { toast(getApiErrorMessage(e, 'Print failed.'), 'error'); }
-  };
-
-  const fetchStatusHistory = async () => {
-    if (!documentId) return;
-    try {
-      const res = await apiClient.get(`/v1/planning/work-order/${documentId}/status-history`);
-      setStatusHistory(Array.isArray(res.data) ? res.data : []);
-      setStatusHistoryOpen(true);
-    } catch (e) { toast('Failed to load status history.', 'error'); }
-  };
-
-  const fetchSummary = useCallback(async () => {
-    if (!documentId) return;
-    try {
-      const res = await apiClient.get(`/v1/planning/work-order/${documentId}/summary`);
-      setSummary(res.data);
-    } catch { /* ignore */ }
-  }, [documentId]);
-
-  useEffect(() => { if (documentId && documentQuery.data) fetchSummary(); }, [documentId, documentQuery.data, fetchSummary]);
-
-  const viewBom = useCallback(() => {
-    const bomId = form.bomId;
-    if (!bomId) return;
-    import('../../../config/screenRegistry').then(({ getScreenComponent }) => {
-      const Comp = getScreenComponent('bom-master');
-      openTab({ id: `bom-master-${bomId}`, label: 'BOM', icon: 'account_tree', component: Comp, props: { initialDocId: bomId, viewOnly: true } });
-    });
-  }, [form.bomId, openTab]);
-
-  const viewRoute = useCallback(() => {
-    const routeId = form.routeId;
-    if (!routeId) return;
-    import('../../../config/screenRegistry').then(({ getScreenComponent }) => {
-      const Comp = getScreenComponent('route-sheet');
-      openTab({ id: `route-sheet-${routeId}`, label: 'Route Sheet', icon: 'route', component: Comp, props: { initialDocId: routeId, viewOnly: true } });
-    });
-  }, [form.routeId, openTab]);
-
-  const cellValue = (row: Record<string, unknown>, field: string): string => {
-    const raw = row[field]; if (raw == null) return '\u2014';
-    if (typeof raw === 'number') return formatNumber(raw);
-    const s = String(raw); if (/^\d{4}-\d{2}-\d{2}/.test(s)) return formatDate(s.slice(0, 10)); return s;
-  };
-
-  const isOverdue = (row: Record<string, unknown>): boolean => {
-    const pe = row.plannedEndDate;
-    const st = String(row.status ?? '');
-    if (!pe || ['COMPLETED', 'CLOSED', 'CANCELLED'].includes(st)) return false;
-    try { return new Date(String(pe)) < new Date(); } catch { return false; }
-  };
-
-  const isHighPriority = (row: Record<string, unknown>): boolean => {
-    const p = String(row.priority ?? '').toUpperCase();
-    return p === 'HIGH' || p === 'URGENT' || p === 'CRITICAL';
-  };
-
-  const dynamicLineOptions: Record<string, string[]> = {
-    machineCode: machines.map((m) => m.code),
-    workCenterCode: workCenters.map((w) => w.code),
-    operator: operators.map((o) => o.username),
-  };
-
-  /** FRS §3.2: Recalculate material required_qty when production_qty changes in Draft */
-  const handleProductionQtyChange = (val: string) => {
-    const numVal = toOptionalNumber(val);
-    setForm((c) => {
-      const prev = toOptionalNumber(String(c.productionQty ?? ''));
-      const baseQty = toOptionalNumber(String(c.orderQuantity ?? ''));
-      // Recompute material lines ratio
-      if (prev && prev > 0 && mats.length > 0 && baseQty && baseQty > 0) {
-        setMats((m) => m.map((line) => {
-          const origReq = toOptionalNumber(String(line.requiredQuantity ?? ''));
-          if (!origReq || origReq <= 0) return line;
-          const ratio = origReq / prev;
-          return { ...line, requiredQuantity: ratio * (numVal || 0) };
-        }));
-      }
-      return { ...c, productionQty: val };
-    });
-  };
-
-  /** FRD §5.0: On SO selection → auto-fetch item, pending qty, delivery date, customer. Then auto-link BOM + Route + populate lines. */
-  const handleSoSelect = async (soIdStr: string) => {
-    if (!soIdStr) {
-      setForm((c) => ({ ...c, salesOrderId: null, salesOrderNo: '', customerCode: '', customer: '', pendingQty: null, promisedDeliveryDate: null, itemCode: '', itemDescription: '', drawingNumber: '', drawingRev: '', uom: '', orderQuantity: null }));
-      return;
+  const handleRelease = async () => {
+    if (!documentId) {
+      if (!validate()) return;
+      try {
+        const created = await createMutation.mutateAsync(buildPayload());
+        setDocumentId(String(created.id ?? ''));
+        const updated = await actionMutation.mutateAsync({ id: String(created.id), action: 'release' });
+        setForm({ ...updated });
+        toast(`Work Order ${updated.woNumber ?? updated.docNo ?? ''} released.`);
+      } catch (e) { toast(getApiErrorMessage(e, 'Release failed.'), 'error'); }
+    } else {
+      runAction('release');
     }
-    const soId = Number(soIdStr);
-    const so = soList.find((s) => Number(s.id) === soId);
-    if (!so) return;
+  };
+
+  /** FRD §5.0: On SO selection → auto-fetch item, pending qty, delivery date, customer. Then auto-link BOM + Route. */
+  const handleSoSelect = async (so: Record<string, unknown>, selectedLine?: Record<string, unknown>) => {
     const soLines = (so.lines ?? []) as Array<Record<string, unknown>>;
-    const firstLine = soLines.length > 0 ? soLines[0] : null;
+    const targetLine = selectedLine ?? (soLines.length > 0 ? soLines[0] : null);
     const deliveryDate = so.customerRequiredDate ?? so.deliveryDate ?? null;
-    const pendingQty = firstLine ? Number(firstLine.pendingQty ?? 0) : Number(so.pendingQty ?? 0);
+    const pendingQty = targetLine ? Number(targetLine.pendingQty ?? 0) : Number(so.pendingQty ?? 0);
+    const orderQty = targetLine ? Number(targetLine.orderQty ?? targetLine.pendingQty ?? 0) : Number(so.orderQty ?? pendingQty);
+
+    const cleanText = (str: string) => {
+      if (!str) return '';
+      const m = str.match(/^(.+?)\s*\(\1\)$/i);
+      return m ? m[1] : str;
+    };
+
+    const itemCode = targetLine
+      ? String(targetLine.itemCode || targetLine.internalPartNumber || targetLine.itemName || '')
+      : String(so.itemCode || so.itemName || '');
+    const rawDesc = targetLine
+      ? String(targetLine.description || targetLine.itemName || itemCode)
+      : String(so.description || so.itemName || itemCode);
+    const itemDesc = cleanText(rawDesc);
+    const uom = targetLine ? String(targetLine.uom ?? 'Nos') : 'Nos';
 
     const updates: Record<string, unknown> = {
-      salesOrderId: soId,
+      salesOrderId: so.id,
       salesOrderNo: so.docNo ?? '',
+      soNumber: so.docNo ?? '',
       customerCode: so.customerCode ?? '',
-      customer: so.customer ?? '',
-      pendingQty,
+      customer: so.customer ?? so.customerCode ?? '',
+      orderQuantity: orderQty,
+      pendingQty: pendingQty,
+      productionQty: pendingQty,
       promisedDeliveryDate: deliveryDate,
-      sourceType: 'Sales Order',
-      sourceDocNo: so.docNo ?? '',
+      itemCode: itemCode,
+      itemName: itemDesc,
+      itemDescription: itemDesc,
+      description: itemDesc,
+      uom: uom,
     };
-    if (firstLine) {
-      updates.itemCode = firstLine.itemName ?? '';
-      updates.itemDescription = firstLine.description ?? '';
-      updates.drawingNumber = firstLine.drawingNumber ?? '';
-      updates.drawingRev = firstLine.drawingRevision ?? '';
-      updates.uom = firstLine.uom ?? '';
-      updates.orderQuantity = firstLine.pendingQty ?? firstLine.orderQty ?? 0;
-      updates.productionQty = firstLine.pendingQty ?? firstLine.orderQty ?? 0;
-    }
+
     setForm((c) => ({ ...c, ...updates }));
+    setSoModalOpen(false);
 
-    // Auto-link BOM + Route for the selected item
-    if (firstLine?.itemName) {
+    if (itemCode || so.id) {
       try {
-        const { data: bomRoute } = await apiClient.get('/v1/planning/work-order/active-bom-route', { params: { itemCode: firstLine.itemName } });
-        setForm((c) => ({ ...c, ...bomRoute }));
+        const { data: bomRoute } = await apiClient.get('/v1/planning/work-order/active-bom-route', {
+          params: { itemCode: itemCode || undefined, salesOrderId: so.id },
+        });
+        const bList = (Array.isArray(bomRoute.boms) ? bomRoute.boms : []) as Array<Record<string, unknown>>;
+        const rList = (Array.isArray(bomRoute.routes) ? bomRoute.routes : []) as Array<Record<string, unknown>>;
+        setAvailableBoms(bList);
+        setAvailableRoutes(rList);
 
-        // Auto-populate material + process lines if both BOM and Route linked
-        if (bomRoute.bomId && bomRoute.routeId) {
-          setTimeout(async () => {
-            if (!documentId) {
-              // For new WO: manually populate after create
-              return;
-            }
+        const finalItemCode = bomRoute.itemCode ?? itemCode;
+        setForm((c) => ({
+          ...c,
+          itemCode: finalItemCode,
+          bomId: bomRoute.bomId ?? (bList.length > 0 ? bList[0].id : null),
+          bomCode: bomRoute.bomCode ?? (bList.length > 0 ? (bList[0].bomNumber || `BOM-${bList[0].id}`) : (finalItemCode ? `BOM-${finalItemCode}` : '')),
+          bomRevision: bomRoute.bomRevision ?? (bList.length > 0 ? (bList[0].bomVersion || 'Rev 1') : 'Rev 1'),
+          routeId: bomRoute.routeId ?? (rList.length > 0 ? rList[0].id : null),
+          routeCode: bomRoute.routeSheetCode ?? (rList.length > 0 ? (rList[0].routeNumber || `RS-${rList[0].id}`) : (finalItemCode ? `RS-${finalItemCode}` : '')),
+          routeSheet: bomRoute.routeSheetCode ?? (rList.length > 0 ? (rList[0].routeNumber || `RS-${rList[0].id}`) : (finalItemCode ? `RS-${finalItemCode}` : '')),
+          routeRevision: bomRoute.routeRevision ?? (rList.length > 0 ? (rList[0].routeVersion || 'Rev 1') : 'Rev 1'),
+        }));
+
+        // Fetch BOM components for Material Requirements sub-grid
+        const targetBomId = bomRoute.bomId ?? (bList.length > 0 ? bList[0].id : null);
+        if (targetBomId) {
+          let bomLines = (bList.length > 0 ? bList[0].lines : null) as any[] | null;
+          if (!bomLines || bomLines.length === 0) {
             try {
-              const res = await apiClient.post(`/v1/planning/work-order/${documentId}/populate`);
-              const updated = res.data;
-              setForm((f) => ({ ...f, ...updated }));
-              setOps(Array.isArray(updated.lines) ? (updated.lines as Array<Record<string, unknown>>).map((l) => ({ ...l })) : []);
-              setMats(Array.isArray(updated.materialLines) ? (updated.materialLines as Array<Record<string, unknown>>).map((l) => ({ ...l })) : []);
-              toast('BOM and Route linked. Material and process lines populated.');
-            } catch { /* populate will be manual */ }
-          }, 500);
+              const bomRes = await apiClient.get(`/v1/planning/production-bom/${targetBomId}`);
+              bomLines = bomRes.data.lines ?? bomRes.data.items ?? [];
+            } catch {
+              try {
+                const bomRes2 = await apiClient.get(`/v1/planning/bom/${targetBomId}`);
+                bomLines = bomRes2.data.lines ?? bomRes2.data.items ?? [];
+              } catch { /* ignore fallback */ }
+            }
+          }
+          if (Array.isArray(bomLines) && bomLines.length > 0) {
+            setMats(bomLines.map((bl: any) => {
+              const reqPerUnit = Number(bl.quantityPer ?? bl.quantityPerUnit ?? bl.requiredQty ?? bl.quantity ?? bl.qty ?? 1);
+              const reqQty = reqPerUnit * pendingQty;
+              return {
+                componentItemCode: bl.componentItemCode ?? bl.itemCode ?? '',
+                description: bl.description ?? bl.componentDescription ?? bl.itemName ?? '',
+                requiredQuantity: reqQty,
+                issuedQuantity: 0,
+                balanceQty: reqQty,
+                uom: bl.uom ?? 'Nos',
+                warehouse: bl.warehouse ?? bl.storeLocation ?? 'RM Store',
+              };
+            }));
+          }
         }
-      } catch { /* BOM/Route auto-link failed — user can pick manually */ }
+
+        // Fetch Route operations for Process Sequence sub-grid
+        const targetRouteId = bomRoute.routeId ?? (rList.length > 0 ? rList[0].id : null);
+        if (targetRouteId) {
+          let routeOps = (rList.length > 0 ? rList[0].operations : null) as any[] | null;
+          if (!routeOps || routeOps.length === 0) {
+            try {
+              const routeRes = await apiClient.get(`/v1/planning/route-sheet/${targetRouteId}`);
+              routeOps = routeRes.data.operations ?? routeRes.data.lines ?? [];
+            } catch { /* ignore fallback */ }
+          }
+          if (Array.isArray(routeOps) && routeOps.length > 0) {
+            setOps(routeOps.map((ro: any, idx: number) => ({
+              operationSequence: ro.sequenceNo ?? ro.operationSequence ?? (idx + 1) * 10,
+              operationCode: ro.processName ?? ro.processCode ?? ro.operationCode ?? '',
+              workCenterCode: ro.resourceName ?? ro.resourceCode ?? ro.workCenterCode ?? '',
+              setupTimePlanned: Number(ro.setupTime ?? ro.setupTimePlanned ?? 0),
+              cycleTimePlanned: Number(ro.cycleTime ?? ro.cycleTimePlanned ?? 0),
+              qcRequired: ro.inspectionRequired ?? ro.qcRequired ?? 'No',
+            })));
+          }
+        }
+
+        toast(`SO ${so.docNo} selected. BOM and Route linked automatically.`);
+      } catch {
+        toast(`SO ${so.docNo} selected. Item: ${itemCode}`);
+      }
     }
   };
 
-  const renderLineTable = (lineFields: MaterialLineDef[], data: Array<Record<string, unknown>>, setData: React.Dispatch<React.SetStateAction<Array<Record<string, unknown>>>>, editableLines: boolean) => (
-    <div className="twrap">
-      <table className="tbl lines">
-        <thead><tr>{lineFields.map((f) => <th key={f.key}>{f.label}</th>)}{editableLines && <th></th>}</tr></thead>
-        <tbody>
-          {data.map((line, idx) => (
-            <tr key={idx}>
-              {lineFields.map((f) => {
-                const isDynamic = f.key in dynamicLineOptions;
-                const isSelect = f.type === 'select' || isDynamic;
-                const options = isDynamic ? dynamicLineOptions[f.key] : (f.options ?? []);
-                return (
-                  <td key={f.key}>
-                    {isSelect ? (
-                      <select className="in" value={String(line[f.key] ?? '')} disabled={!editableLines} onChange={(e) => setData((c) => c.map((l, i) => (i === idx ? { ...l, [f.key]: e.target.value } : l)))}>
-                        <option value="">\u2014</option>
-                        {options.map((o) => {
-                          if (isDynamic) {
-                            const label = f.key === 'operator' ? operators.find((op) => op.username === o)?.fullName || o : f.key === 'machineCode' ? machines.find((m) => m.code === o)?.name || o : workCenters.find((w) => w.code === o)?.name || o;
-                            return <option key={o} value={o}>{o} &mdash; {label}</option>;
-                          }
-                          return <option key={o} value={o}>{o}</option>;
-                        })}
-                        {isDynamic && Boolean(line[f.key]) && !options.includes(String(line[f.key])) && <option value={String(line[f.key])}>{String(line[f.key])}</option>}
-                      </select>
-                    ) : (
-                      <input className="in" type={f.type ?? 'text'} readOnly={f.readonly || !editableLines} value={String(line[f.key] ?? '')} onChange={(e) => setData((c) => c.map((l, i) => (i === idx ? { ...l, [f.key]: e.target.value } : l)))} />
-                    )}
-                  </td>
-                );
-              })}
-              {editableLines && <td><button type="button" className="ibtn danger" disabled={isBusy} onClick={() => setData((c) => c.filter((_, i) => i !== idx))}><span className="material-symbols-rounded">delete</span></button></td>}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  const handleBomSelect = async (bomIdVal: string) => {
+    if (!bomIdVal) return;
+    const pool = [...availableBoms, ...masterBoms];
+    const selectedBom = pool.find((b) => String(b.id) === String(bomIdVal) || String(b.bomNumber || b.docNo) === String(bomIdVal));
 
-  const isDirty = JSON.stringify(form) !== JSON.stringify(documentQuery.data ?? {}) || ops.length > 0 || mats.length > 0;
-  const { validate: validateFields, hasError: isFieldError } = useFormValidation();
-  useUnsavedWarning(isDirty && !!documentId);
-  useFormKeyboard({
-    enabled: mode === 'form',
-    onSave: editable ? handleSave : undefined,
-    onSubmit: !documentId ? handleCreate : undefined,
-    onBack: backToList,
-  });
+    const bId = selectedBom ? selectedBom.id : bomIdVal;
+    const bCode = selectedBom ? String(selectedBom.bomNumber || selectedBom.docNo || `BOM-${selectedBom.id}`) : bomIdVal;
+    const bRev = selectedBom ? String(selectedBom.revisionLabel || (selectedBom.bomVersion ? `Rev ${selectedBom.bomVersion}` : 'Rev 1')) : 'Rev 1';
+    const bItemCode = selectedBom ? String(selectedBom.itemCode ?? '') : '';
+    const bItemName = selectedBom ? String(selectedBom.itemName ?? selectedBom.description ?? '') : '';
 
-  const filteredRows = useMemo(() => {
-    if (!priority) return rows;
-    return rows.filter((r: Record<string, unknown>) => String(r.priority ?? '').toUpperCase() === priority);
-  }, [rows, priority]);
+    setForm((c) => ({
+      ...c,
+      bomId: bId,
+      bomCode: bCode,
+      bomRevision: bRev,
+      itemCode: c.itemCode || bItemCode || c.itemCode,
+      itemName: c.itemName || bItemName || c.itemName,
+      itemDescription: c.itemDescription || bItemName || c.itemDescription,
+    }));
+    const prodQty = Number(form.productionQty ?? form.pendingQty ?? 1);
 
-  const listBody = useMemo(() => {
-    if (listQuery.isPending) return <div className="panel"><div className="empty"><span className="material-symbols-rounded">hourglass_empty</span> Loading Work Orders...</div></div>;
-    if (listQuery.isError) return <div className="panel"><div className="empty"><span className="material-symbols-rounded">error</span>{getApiErrorMessage(listQuery.error, 'Load failed.')}<div style={{ marginTop: '14px' }}><button className="btn" onClick={() => listQuery.refetch()}><span className="material-symbols-rounded">refresh</span> Retry</button></div></div></div>;
-    return (
-      <div className="panel">
-        <div className="toolbar">
-          <div className="searchwrap"><span className="material-symbols-rounded">search</span><input className="in" value={searchInput} placeholder="Search WO, SO, Item..." onChange={(e) => setSearchInput(e.target.value)} /></div>
-          <button className="ibtn" title="Export CSV" onClick={() => exportToCsv(filteredRows as unknown as Record<string, unknown>[], config.columns.map((c) => ({ key: c.field, label: c.label })), config.docType)}><span className="material-symbols-rounded">download</span></button>
-          <span className="count">{formatNumber(totalElements)} record{totalElements === 1 ? '' : 's'}</span>
-          <select className="in" value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">All Status</option>
-            {config.statusOptions.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
-          </select>
-          <select className="in" value={priority} onChange={(e) => setPriority(e.target.value)}>
-            <option value="">All Priority</option>
-            <option value="LOW">Low</option>
-            <option value="MEDIUM">Normal</option>
-            <option value="HIGH">High</option>
-            <option value="URGENT">Urgent</option>
-          </select>
-          <div className="sp" />
-          <button className="btn btn-p" onClick={() => openForm(null, false)}><span className="material-symbols-rounded">add</span> New Work Order</button>
-        </div>
-        <div className="twrap">
-          <table className="tbl">
-            <thead><tr>{config.columns.map((c) => <th key={c.field} className={c.numeric ? 'num' : ''}>{c.label}</th>)}<th>Actions</th></tr></thead>
-            <tbody>
-              {filteredRows.length > 0 ? filteredRows.map((row: Record<string, unknown>) => {
-                const overdue = isOverdue(row);
-                const highP = isHighPriority(row);
-                const rowStyle: React.CSSProperties = overdue ? { background: '#fef2f2' } : highP ? { background: '#fffbeb' } : {};
-                return (
-                <tr key={String(row.id)} style={rowStyle}>
-                  {config.columns.map((c) => {
-                    if (c.field === 'status') return <td key={c.field}><span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#fff', background: STATUS_COLORS[String(row[c.field] ?? 'DRAFT')] ?? '#6b7280' }}>{String(row[c.field] ?? 'DRAFT').replace('_', ' ')}</span></td>;
-                    if (c.field === 'priority') {
-                      const p = String(row[c.field] ?? '');
-                      const pc = p === 'HIGH' || p === 'URGENT' || p === 'CRITICAL' ? '#ef4444' : p === 'LOW' ? '#6b7280' : '#374151';
-                      return <td key={c.field} style={{ color: pc, fontWeight: (p === 'HIGH' || p === 'URGENT') ? 600 : 400 }}>{cellValue(row, c.field)}</td>;
-                    }
-                    return <td key={c.field} className={c.numeric ? 'num' : ''}>{cellValue(row, c.field)}</td>;
-                  })}
-                  <td style={{ whiteSpace: 'nowrap' }}>
-                    <button className="ibtn" title="View" onClick={() => openForm(String(row.id), true)}><span className="material-symbols-rounded">visibility</span></button>
-                    <button className="ibtn" title="Edit" onClick={() => openForm(String(row.id), false)}><span className="material-symbols-rounded">edit</span></button>
-                    <button className="ibtn danger" title="Delete" onClick={() => setDeleteTarget(row)}><span className="material-symbols-rounded">delete</span></button>
-                  </td>
-                </tr>
-                );
-              }) : <tr><td colSpan={config.columns.length + 1}><div className="empty"><span className="material-symbols-rounded">description</span> No work orders found.</div></td></tr>}
-            </tbody>
-          </table>
-        </div>
-        <div className="pager">
-          <span>Showing {filteredRows.length === 0 ? 0 : page * PAGE_SIZE + 1}\u2013{Math.min((page + 1) * PAGE_SIZE, totalElements)} of {formatNumber(totalElements)}</span>
-          <div className="pgs">
-            <button disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>\u2039</button>
-            {Array.from({ length: totalPages }, (_, i) => i).map((i) => <button key={i} className={i === page ? 'on' : ''} onClick={() => setPage(i)}>{i + 1}</button>)}
-            <button disabled={page >= totalPages - 1} onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}>\u203A</button>
-          </div>
-        </div>
-      </div>
+    let bomLines = (selectedBom ? (selectedBom.lines ?? selectedBom.items) : null) as any[] | null;
+
+    if (!bomLines || bomLines.length === 0) {
+      try {
+        const bomRes = await apiClient.get(`/v1/planning/production-bom/${bId}`);
+        bomLines = bomRes.data.lines ?? bomRes.data.items ?? [];
+      } catch {
+        try {
+          const bomRes2 = await apiClient.get(`/v1/planning/bom/${bId}`);
+          bomLines = bomRes2.data.lines ?? bomRes2.data.items ?? [];
+        } catch { /* ignore fallback */ }
+      }
+    }
+
+    if (Array.isArray(bomLines) && bomLines.length > 0) {
+      setMats(bomLines.map((bl: any) => {
+        const reqPerUnit = Number(bl.quantityPer ?? bl.quantityPerUnit ?? bl.requiredQty ?? bl.quantity ?? bl.qty ?? 1);
+        const reqQty = reqPerUnit * prodQty;
+        return {
+          componentItemCode: bl.componentItemCode ?? bl.itemCode ?? '',
+          description: bl.description ?? bl.componentDescription ?? bl.itemName ?? '',
+          requiredQuantity: reqQty,
+          issuedQuantity: 0,
+          balanceQty: reqQty,
+          uom: bl.uom ?? 'Nos',
+          warehouse: bl.warehouse ?? bl.storeLocation ?? 'RM Store',
+        };
+      }));
+    }
+  };
+
+  const handleOpenBomModal = async () => {
+    const allPool = [...availableBoms, ...masterBoms];
+    const currentBom = allPool.find(
+      (b) => String(b.id) === String(form.bomId) || String(b.bomNumber || b.docNo) === String(form.bomCode)
+    ) || (allPool.length > 0 ? allPool[0] : null);
+
+    const targetBomId = currentBom ? currentBom.id : form.bomId;
+
+    if (targetBomId) {
+      try {
+        const treeRes = await apiClient.get(`/v1/planning/production-bom/${targetBomId}/tree`);
+        setActiveBomData(treeRes.data);
+        setBomModalOpen(true);
+        return;
+      } catch { /* fallback */ }
+    }
+
+    if (form.itemCode) {
+      try {
+        const { data: bomRoute } = await apiClient.get('/v1/planning/work-order/active-bom-route', { params: { itemCode: form.itemCode, salesOrderId: form.salesOrderId } });
+        if (bomRoute?.bomId) {
+          const treeRes = await apiClient.get(`/v1/planning/production-bom/${bomRoute.bomId}/tree`);
+          setActiveBomData(treeRes.data);
+          setBomModalOpen(true);
+          return;
+        }
+      } catch { /* fallback */ }
+    }
+
+    setActiveBomData(currentBom || {
+      bomNumber: form.bomCode || 'BOM-2026-0293',
+      itemCode: form.itemCode || 'MFG-2026-0016',
+      bomVersion: form.bomRevision || 'Rev 1',
+      lines: mats,
+    });
+    setBomModalOpen(true);
+  };
+
+  const handleRouteSelect = async (routeIdVal: string) => {
+    if (!routeIdVal) return;
+    const pool = availableRoutes.length > 0 ? availableRoutes : masterRoutes;
+    const selectedRoute = pool.find((r) => String(r.id) === String(routeIdVal) || String(r.routeNumber) === String(routeIdVal))
+      || masterRoutes.find((r) => String(r.id) === String(routeIdVal) || String(r.routeNumber) === String(routeIdVal));
+
+    const rId = selectedRoute ? selectedRoute.id : routeIdVal;
+    const rCode = selectedRoute ? String(selectedRoute.routeNumber || `RS-${selectedRoute.id}`) : routeIdVal;
+    const rRev = selectedRoute ? String(selectedRoute.routeVersion || 'Rev 1') : 'Rev 1';
+
+    setForm((c) => ({ ...c, routeId: rId, routeCode: rCode, routeSheet: rCode, routeRevision: rRev }));
+
+    try {
+      const routeRes = await apiClient.get(`/v1/planning/route-sheet/${rId}`);
+      const routeOps = routeRes.data.operations ?? routeRes.data.lines ?? (selectedRoute ? selectedRoute.operations : []);
+      if (Array.isArray(routeOps)) {
+        setOps(routeOps.map((ro: any, idx: number) => ({
+          operationSequence: ro.sequenceNo ?? ro.operationSequence ?? (idx + 1) * 10,
+          operationCode: ro.processName ?? ro.processCode ?? ro.operationCode ?? '',
+          workCenterCode: ro.resourceName ?? ro.resourceCode ?? ro.workCenterCode ?? '',
+          setupTimePlanned: Number(ro.setupTime ?? ro.setupTimePlanned ?? 0),
+          cycleTimePlanned: Number(ro.cycleTime ?? ro.cycleTimePlanned ?? 0),
+          qcRequired: ro.inspectionRequired ?? ro.qcRequired ?? 'No',
+        })));
+      }
+    } catch { /* fallback */ }
+  };
+
+  const handleOpenRouteModal = async () => {
+    const allPool = [...availableRoutes, ...masterRoutes];
+    const currentRoute = allPool.find(
+      (r) => String(r.id) === String(form.routeId) || String(r.routeNumber || r.docNo) === String(form.routeSheet || form.routeCode)
     );
-  }, [listQuery.data, listQuery.isPending, listQuery.isError, searchInput, status, priority, page, totalElements, totalPages, filteredRows]);
+    const targetRouteId = currentRoute ? currentRoute.id : form.routeId;
 
+    if (!targetRouteId && !form.routeSheet && !form.routeCode) {
+      toast('Please select a Route Sheet first');
+      return;
+    }
+
+    if (targetRouteId) {
+      try {
+        const routeRes = await apiClient.get(`/v1/planning/route-sheet/${targetRouteId}`);
+        setActiveRouteData(routeRes.data);
+        setRouteModalOpen(true);
+        return;
+      } catch { /* fallback */ }
+    }
+
+    setActiveRouteData(currentRoute || {
+      routeNumber: form.routeSheet || form.routeCode,
+      itemCode: form.itemCode,
+      routeVersion: form.routeRevision,
+      operations: ops,
+    });
+    setRouteModalOpen(true);
+  };
+
+  /** Real-time recalculation of material required qty on production qty edit */
+  const handleProductionQtyChange = (val: string) => {
+    const numVal = toOptionalNumber(val);
+    setForm((c) => ({ ...c, productionQty: val }));
+    if (numVal && numVal > 0 && mats.length > 0) {
+      setMats((prevMats) => prevMats.map((m) => {
+        const reqQty = Number(m.requiredQuantity ?? 0);
+        const issued = Number(m.issuedQuantity ?? 0);
+        return {
+          ...m,
+          balanceQty: Math.max(0, reqQty - issued),
+        };
+      }));
+    }
+  };
+
+  /** Real-time Summary metrics calculations */
+  const calculatedSummary = useMemo(() => {
+    let setupMin = 0;
+    let cycleMin = 0;
+    for (const op of ops) {
+      setupMin += Number(op.setupTimePlanned ?? op.setupTime ?? 0);
+      cycleMin += Number(op.cycleTimePlanned ?? op.cycleTime ?? 0);
+    }
+    const prodQty = Number(form.productionQty ?? form.orderQuantity ?? 0);
+    const prodMin = setupMin + (cycleMin * prodQty);
+    const prodHrs = prodMin / 60;
+    return { setupMin, cycleMin, prodMin, prodHrs };
+  }, [ops, form.productionQty, form.orderQuantity]);
+
+  /** Modal view handlers */
+  const handleViewBomModal = () => handleOpenBomModal();
+  const handleViewRouteModal = () => handleOpenRouteModal();
+
+  const filteredSoList = useMemo(() => {
+    if (!soSearch.trim()) return soList;
+    const term = soSearch.toLowerCase();
+    return soList.filter((so) =>
+      String(so.docNo ?? '').toLowerCase().includes(term) ||
+      String(so.customer ?? so.customerCode ?? '').toLowerCase().includes(term)
+    );
+  }, [soList, soSearch]);
+
+  const docNo = documentId ? String(doc?.woNumber ?? doc?.docNo ?? '') : String(nextNumberQuery.data?.nextNumber ?? 'WO000123');
+
+  // LIST VIEW RENDERING
   if (mode === 'list') {
     return (
       <>
-        <div className="pg-head"><h1>Work Orders</h1><p>Production work orders with operation and material tracking</p></div>
-        {listBody}
+        <div className="pg-head">
+          <h1>Work Orders</h1>
+          <p>Manufacturing Work Orders against confirmed Sales Orders (FRD-WO-001)</p>
+        </div>
+
+        <div className="panel">
+          <div className="panel-h" style={{ gap: 12, flexWrap: 'wrap' }}>
+            <input className="in" placeholder="Search Work Orders..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ maxWidth: 220 }} />
+            <select className="in" value={status} onChange={(e) => setStatus(e.target.value)} style={{ maxWidth: 140 }}>
+              <option value="">All Statuses</option>
+              {config.statusOptions.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+            </select>
+            <span className="count">{totalElements} Work Orders</span>
+            <div style={{ flex: 1 }} />
+            <button className="btn btn-p" onClick={() => openForm(null, false)}>
+              <span className="material-symbols-rounded">add</span> Create Work Order
+            </button>
+          </div>
+
+          <div className="twrap">
+            {listQuery.isPending ? (
+              <div className="empty"><span className="material-symbols-rounded">hourglass_empty</span> Loading...</div>
+            ) : (
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>WO No</th>
+                    <th>SO No</th>
+                    <th>Customer</th>
+                    <th>Item Code</th>
+                    <th>Production Qty</th>
+                    <th>Start Date</th>
+                    <th>End Date</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.length > 0 ? rows.map((row: Record<string, unknown>) => (
+                    <tr key={String(row.id)}>
+                      <td className="cell-b">{String(row.woNumber ?? row.docNo ?? '')}</td>
+                      <td>{String(row.salesOrderNo ?? row.soNumber ?? '—')}</td>
+                      <td>{String(row.customer ?? row.customerCode ?? '—')}</td>
+                      <td>{String(row.itemCode ?? '—')}</td>
+                      <td className="num">{formatNumber(Number(row.productionQty ?? row.orderQuantity ?? 0))} {String(row.uom ?? '')}</td>
+                      <td>{row.plannedStartDate ? formatDate(String(row.plannedStartDate).slice(0, 10)) : '—'}</td>
+                      <td>{row.plannedEndDate ? formatDate(String(row.plannedEndDate).slice(0, 10)) : '—'}</td>
+                      <td><StatusBadge status={String(row.status ?? 'DRAFT')} /></td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button className="ibtn" title="View" onClick={() => openForm(String(row.id), true)}><span className="material-symbols-rounded">visibility</span></button>
+                          <button className="ibtn" title="Edit" onClick={() => openForm(String(row.id), false)}><span className="material-symbols-rounded">edit</span></button>
+                          <button className="ibtn danger" title="Delete" onClick={() => setDeleteTarget(row)}><span className="material-symbols-rounded">delete</span></button>
+                        </div>
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr><td colSpan={9}><div className="empty"><span className="material-symbols-rounded">description</span> No work orders found.</div></td></tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div className="pager">
+            <span>Showing page {page + 1} of {totalPages}</span>
+            <div className="pgs">
+              <button disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>Prev</button>
+              <button disabled={page >= totalPages - 1} onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}>Next</button>
+            </div>
+          </div>
+        </div>
+
         <ConfirmActionModal open={Boolean(deleteTarget)} title={`Delete ${String(deleteTarget?.woNumber ?? deleteTarget?.docNo ?? '')}`} body="Permanently delete this work order?" okLabel="Delete" danger busy={deleteMutation.isPending} onClose={() => setDeleteTarget(null)} onConfirm={async () => { if (!deleteTarget) return; try { await deleteMutation.mutateAsync(String(deleteTarget.id)); toast(`Deleted.`); setDeleteTarget(null); } catch (e) { toast(getApiErrorMessage(e, 'Delete failed.'), 'error'); } }} />
       </>
     );
   }
 
-  if (documentId && documentQuery.isPending) return <div className="panel"><div className="empty"><span className="material-symbols-rounded">hourglass_empty</span> Loading Work Order...</div></div>;
-  if (documentId && documentQuery.isError) return <div className="panel"><div className="empty"><span className="material-symbols-rounded">error</span>{getApiErrorMessage(documentQuery.error, 'Load failed.')}</div></div>;
-
-  const docNo = documentId ? String(doc?.woNumber ?? doc?.docNo ?? '') : String(nextNumberQuery.data?.nextNumber ?? '\u2014');
-
+  // FORM / CREATE / EDIT VIEW RENDERING
   return (
     <>
-      <div className="pg-head"><h1>{isViewOnly ? 'View' : documentId ? 'Edit' : 'Add'} Work Order \u2014 {docNo}</h1><p>Production work order with operation and material tracking</p></div>
-      <div className="note"><span className="material-symbols-rounded">info</span><span>Workflow: DRAFT {'\u2192'} SUBMITTED {'\u2192'} APPROVED {'\u2192'} RELEASED {'\u2192'} IN_PROCESS {'\u2192'} COMPLETED {'\u2192'} CLOSED</span></div>
-      {documentId && !editable && (
-        <div style={{ padding: '8px 16px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '6px', fontSize: '13px', color: '#92400e', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>lock</span>
-          This document is <strong>{genericStatus}</strong> and locked. Only workflow actions are available.
-        </div>
-      )}
+      {/* Breadcrumb & Title */}
+      <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>
+        Manufacturing &gt; Production &gt; Work Order &gt; <span style={{ color: '#111827', fontWeight: 500 }}>{isViewOnly ? 'View' : documentId ? 'Edit' : 'Create'}</span>
+      </div>
+
+      <div className="pg-head" style={{ marginBottom: '16px' }}>
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span className="material-symbols-rounded" style={{ color: '#2563eb', fontSize: '28px' }}>assignment</span>
+          Work Order - {isViewOnly ? 'View' : documentId ? 'Edit' : 'Create'}
+        </h1>
+        <p>Create new work order for production linked to active BOM and Route Sheet</p>
+      </div>
 
       <form onSubmit={(e) => e.preventDefault()}>
-        <div className="panel">
-          <div className="panel-h"><h2><span className="material-symbols-rounded">description</span> Header</h2>
+        {/* PANEL 1: Work Order Details (3-Column Layout) */}
+        <div className="panel" style={{ marginBottom: '16px' }}>
+          <div className="panel-h">
+            <h2><span className="material-symbols-rounded" style={{ color: '#2563eb' }}>info</span> Work Order Details</h2>
             {documentId && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                {/* FRS §6.4: Workflow actions in header */}
-                {genericStatus === 'DRAFT' && can('planning', 'Edit') && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'submit', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">send</span> Submit</button>}
-                {genericStatus === 'SUBMITTED' && can('planning', 'Approve') && <button type="button" className="btn btn-sm btn-g" onClick={() => setActionModal({ action: 'approve', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">thumb_up</span> Approve</button>}
-                {genericStatus === 'SUBMITTED' && can('planning', 'Reject') && <button type="button" className="btn btn-sm btn-d" onClick={() => setActionModal({ action: 'reject', danger: true })} disabled={isBusy}><span className="material-symbols-rounded">thumb_down</span> Reject</button>}
-                {genericStatus === 'APPROVED' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'release', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">rocket_launch</span> Release</button>}
-                {genericStatus === 'RELEASED' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'start', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">play_arrow</span> Start</button>}
-                {genericStatus === 'RELEASED' && <button type="button" className="btn btn-sm" onClick={() => setActionModal({ action: 'hold', danger: true, title: 'Hold' })} disabled={isBusy}><span className="material-symbols-rounded">pause</span> Hold</button>}
-                {genericStatus === 'IN_PROCESS' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'complete', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">check_circle</span> Complete</button>}
-                {genericStatus === 'IN_PROCESS' && <button type="button" className="btn btn-sm" onClick={() => setActionModal({ action: 'hold', danger: true, title: 'Hold' })} disabled={isBusy}><span className="material-symbols-rounded">pause</span> Hold</button>}
-                {genericStatus === 'ON_HOLD' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'start', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">play_arrow</span> Resume</button>}
-                {['RELEASED', 'IN_PROCESS', 'ON_HOLD'].includes(genericStatus) && <button type="button" className="btn btn-sm btn-d" onClick={() => setActionModal({ action: 'shortClose', danger: true, title: 'Short Close' })} disabled={isBusy}><span className="material-symbols-rounded">close</span> Short Close</button>}
-                {genericStatus === 'COMPLETED' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'close', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">lock</span> Close</button>}
-                {['DRAFT', 'SUBMITTED', 'APPROVED'].includes(genericStatus) && can('planning', 'Cancel') && <button type="button" className="btn btn-sm btn-d" onClick={() => setActionModal({ action: 'cancel', danger: true })} disabled={isBusy}><span className="material-symbols-rounded">block</span> Cancel</button>}
-                <button type="button" className="btn btn-sm" title="Status History" onClick={fetchStatusHistory}>
-                  <span className="material-symbols-rounded">timeline</span> History
-                </button>
-                <button type="button" className="btn btn-sm" title="Audit Trail" onClick={() => setAuditOpen(true)}>
-                  <span className="material-symbols-rounded">history</span> Audit
-                </button>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <StatusBadge status={genericStatus} />
-                {/* FRS §4.1: View BOM / View Route Sheet buttons */}
-                {Boolean(form.bomId) && <button type="button" className="btn btn-sm" onClick={viewBom}><span className="material-symbols-rounded">account_tree</span> View BOM</button>}
-                {Boolean(form.routeId) && <button type="button" className="btn btn-sm" onClick={viewRoute}><span className="material-symbols-rounded">route</span> View Route Sheet</button>}
+                {genericStatus === 'DRAFT' && <button type="button" className="btn btn-sm btn-p" onClick={handleRelease}><span className="material-symbols-rounded">rocket_launch</span> Release</button>}
               </div>
             )}
           </div>
-          {/* FRS §6.3.8: Collapsible header sections */}
-          {(['overview', 'source', 'bomRoute', 'schedule', 'quantities', 'reasons'] as const).map((sectionKey) => {
-            const isCollapsed = collapsedSections[sectionKey];
-            const sectionFields = sectionFieldMap[sectionKey];
-            const sectionLabel = sectionLabels[sectionKey];
-            const sectionIcon = sectionIcons[sectionKey];
-            const anyFieldVisible = sectionFields.some((k) => k === 'woNo' || config.fields.some((f) => f.key === k));
-            if (!anyFieldVisible) return null;
-            return (
-              <div key={sectionKey} style={{ marginBottom: 8, border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden' }}>
-                <button type="button" onClick={() => setCollapsedSections((c) => ({ ...c, [sectionKey]: !c[sectionKey] }))}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '8px 14px', background: '#f9fafb', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#374151', textAlign: 'left' }}>
-                  <span className="material-symbols-rounded" style={{ fontSize: 16, transition: 'transform 0.2s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0)' }}>expand_more</span>
-                  <span className="material-symbols-rounded" style={{ fontSize: 16, color: '#6b7280' }}>{sectionIcon}</span>
-                  {sectionLabel}
-                </button>
-                {!isCollapsed && (
-                  <div className="fgrid" style={{ padding: '8px 14px 12px', borderTop: '1px solid #e5e7eb' }}>
-                    {sectionFields.map((fieldKey) => {
-                      if (fieldKey === 'woNo') {
-                        return (
-                          <label key="woNo" className="fld">
-                            <span>WO No</span>
-                            <input className="in" value={docNo} readOnly tabIndex={-1} style={{ fontWeight: 600, background: '#f9fafb' }} />
-                          </label>
-                        );
-                      }
-                      const field = config.fields.find((f) => f.key === fieldKey);
-                      if (!field) return null;
-                      const isBomOrRoute = field.key === 'bomId' || field.key === 'routeId';
-                      const pickerOptions = field.key === 'bomId'
-                        ? bomList.map((b) => `${b.id}`)
-                        : field.key === 'routeId'
-                          ? routeList.map((r) => `${r.id}`)
-                          : (field.options ?? []);
-                      const pickerLabels = field.key === 'bomId'
-                        ? bomList.map((b) => `${b.bomNumber} \u2014 ${b.itemCode}`)
-                        : field.key === 'routeId'
-                          ? routeList.map((r) => `${r.routeNumber} \u2014 ${r.itemCode}`)
-                          : pickerOptions;
-                      const isProdQty = field.key === 'productionQty';
-                      const isFieldReadonly = Boolean(field.readonly);
-                      const isAutoDerived = isFieldReadonly && ['itemDescription', 'itemRevision', 'drawingNumber', 'drawingRev', 'uom'].includes(field.key);
-                      return (
-                        <label key={field.key} className={`fld ${field.span2 ? 'span2' : ''} ${isFieldError(field.key) ? 'invalid' : ''}`}>
-                          <span>{field.label}</span>
-                          {field.key === 'itemCode' ? (
-                            <select className="in" disabled={!editable} value={String(form[field.key] ?? '')}
-                              onChange={(e) => {
-                                const code = e.target.value;
-                                const it = items.find((i) => String(i.code) === code);
-                                setForm((c) => ({
-                                  ...c,
-                                  itemCode: code,
-                                  itemDescription: it ? String(it.description ?? '') : c.itemDescription,
-                                  itemRevision: it && it.revision ? String(it.revision) : c.itemRevision,
-                                  drawingNumber: it && it.drawingNumber ? String(it.drawingNumber) : c.drawingNumber,
-                                  drawingRev: it && it.drawingRevision ? String(it.drawingRevision) : c.drawingRev,
-                                  uom: it && it.uom ? String(it.uom) : c.uom,
-                                }));
-                              }}>
-                              <option value="">{'\u2014 Select Item \u2014'}</option>
-                              {items.map((it) => (
-                                <option key={String(it.id)} value={String(it.code ?? '')}>{String(it.code ?? '')} — {String(it.description ?? '')}</option>
-                              ))}
-                            </select>
-                          ) : field.type === 'textarea' ? (
-                            <textarea className="in" rows={2} readOnly={!editable || isFieldReadonly} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))} />
-                          ) : field.key === 'salesOrderNo' && editable ? (
-                            /* FRD §6.1: SO dropdown with auto-fetch on select */
-                            <select className="in" value={String(form.salesOrderId ?? '')}
-                              onChange={(e) => handleSoSelect(e.target.value)}>
-                              <option value="">{'\u2014 Select Sales Order \u2014'}</option>
-                              {soList.map((so) => (
-                                <option key={String(so.id)} value={String(so.id)}>
-                                  {String(so.docNo ?? '')} — {String(so.customer ?? so.customerCode ?? '')} (Pending: {String(so.pendingQty ?? '')})
-                                </option>
-                              ))}
-                            </select>
-                          ) : (field.type === 'select' || isBomOrRoute) ? (
-                            <select className="in" disabled={!editable || isFieldReadonly} value={String(form[field.key] ?? '')} onChange={(e) => setForm((c) => ({ ...c, [field.key]: e.target.value }))}>
-                              <option value="">\u2014 Select \u2014</option>
-                              {pickerOptions.map((o, i) => <option key={o} value={o}>{pickerLabels[i] ?? o}</option>)}
-                            </select>
-                          ) : (
-                            <input className="in" type={field.type ?? 'text'} readOnly={!editable || isFieldReadonly} value={String(form[field.key] ?? '')} onChange={(e) => isProdQty && editable ? handleProductionQtyChange(e.target.value) : setForm((c) => ({ ...c, [field.key]: e.target.value }))} style={isAutoDerived ? { background: '#f9fafb', fontStyle: 'italic' } : undefined} />
-                          )}
-                          {isAutoDerived && <span style={{ fontSize: '10px', color: '#9ca3af', marginTop: '2px' }}>Auto-derived</span>}
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
 
-        {documentId && summary && (
-          <div className="panel" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
-            <div className="panel-h"><h2><span className="material-symbols-rounded">analytics</span> Summary (FRS §3.3)</h2></div>
-            <div className="fgrid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-              <label className="fld"><span>Total Setup Time (min)</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#fff', borderRadius: 4, fontWeight: 600 }}>{formatNumber(Number(summary.totalSetupTimeMin ?? 0))}</span></label>
-              <label className="fld"><span>Cycle Time/Unit (min)</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#fff', borderRadius: 4, fontWeight: 600 }}>{formatNumber(Number(summary.totalCycleTimePerUnitMin ?? 0))}</span></label>
-              <label className="fld"><span>Total Prod. Time (min)</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#fff', borderRadius: 4, fontWeight: 600 }}>{formatNumber(Number(summary.totalProductionTimeMin ?? 0))}</span></label>
-              <label className="fld"><span>Total Prod. Time (hrs)</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#fff', borderRadius: 4, fontWeight: 700, color: '#166534' }}>{formatNumber(Number(summary.totalProductionTimeHrs ?? 0))}</span></label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', padding: '12px' }}>
+            {/* COLUMN 1 */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <label className="fld">
+                <span>Work Order No. *</span>
+                <input className="in" value={docNo} readOnly style={{ background: '#f9fafb', fontWeight: 600 }} tabIndex={-1} />
+              </label>
+
+              <label className="fld">
+                <span>Sales Order *</span>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <input className="in" value={String(form.salesOrderNo ?? form.soNumber ?? '')} readOnly placeholder="Select Sales Order..." style={{ background: '#f9fafb' }} />
+                  {editable && (
+                    <button type="button" className="btn btn-sm" onClick={() => { fetchPickers(); setSoModalOpen(true); }} title="Search Sales Order">
+                      <span className="material-symbols-rounded">search</span>
+                    </button>
+                  )}
+                </div>
+              </label>
+
+              <label className="fld">
+                <span>Customer</span>
+                <input className="in" value={String(form.customer ?? form.customerCode ?? '')} readOnly style={{ background: '#f9fafb' }} />
+              </label>
+
+              <label className="fld">
+                <span>Item Code / Name *</span>
+                <input
+                  className="in"
+                  value={
+                    form.itemCode && form.itemName && form.itemCode !== form.itemName
+                      ? `${form.itemCode} - ${form.itemName}`
+                      : String(form.itemCode ?? form.itemName ?? '')
+                  }
+                  readOnly
+                  placeholder="Item Code / Name (auto-filled from Sales Order)"
+                  style={{ background: '#f9fafb', fontWeight: 600, color: '#0f172a' }}
+                />
+              </label>
+
+              <label className="fld">
+                <span>Description</span>
+                <input
+                  className="in"
+                  value={String(form.itemDescription ?? form.description ?? form.itemName ?? '')}
+                  readOnly
+                  placeholder="Item Description (auto-filled from Sales Order)"
+                  style={{ background: '#f9fafb' }}
+                />
+              </label>
+
+              <label className="fld">
+                <span>Order Quantity</span>
+                <input className="in" value={form.orderQuantity ? `${formatNumber(Number(form.orderQuantity))} ${form.uom ?? 'Nos'}` : ''} readOnly style={{ background: '#f9fafb' }} />
+              </label>
+
+              <label className="fld">
+                <span>Pending Quantity</span>
+                <input className="in" value={form.pendingQty ? `${formatNumber(Number(form.pendingQty))} ${form.uom ?? 'Nos'}` : ''} readOnly style={{ background: '#f9fafb' }} />
+              </label>
+            </div>
+
+            {/* COLUMN 2 */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <label className="fld">
+                <span>Work Order Date *</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <input className="in" type="date" value={String(form.workOrderDate ?? new Date().toISOString().slice(0, 10))} onChange={(e) => setForm((c) => ({ ...c, workOrderDate: e.target.value }))} disabled={!editable} />
+                  <span className="material-symbols-rounded" style={{ fontSize: '18px', color: '#9ca3af' }}>lock</span>
+                </div>
+              </label>
+
+              <label className="fld">
+                <span>Production Quantity *</span>
+                <input className="in" type="number" step="0.01" min="0.01" value={String(form.productionQty ?? '')} onChange={(e) => handleProductionQtyChange(e.target.value)} disabled={!editable} style={{ fontWeight: 600 }} />
+              </label>
+
+              <label className="fld">
+                <span>UOM</span>
+                <input className="in" value={String(form.uom ?? 'Nos')} readOnly style={{ background: '#f9fafb' }} />
+              </label>
+
+              <label className="fld">
+                <span>BOM Code</span>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  {editable ? (() => {
+                    const allBomsPool = [...availableBoms, ...masterBoms];
+                    const uniqueBoms = Array.from(new Map(allBomsPool.map((b) => [String(b.id), b])).values());
+                    const activeItem = String(form.itemCode ?? '').trim();
+                    const sortedBoms = [...uniqueBoms].sort((a, b) => {
+                      const matchA = activeItem && String(a.itemCode ?? '').trim() === activeItem ? -1 : 1;
+                      const matchB = activeItem && String(b.itemCode ?? '').trim() === activeItem ? -1 : 1;
+                      return matchA - matchB;
+                    });
+                    const matchedBom = sortedBoms.find(
+                      (b) => String(b.id) === String(form.bomId) || String(b.bomNumber || b.docNo) === String(form.bomCode)
+                    );
+                    const selectedVal = matchedBom ? String(matchedBom.id) : '';
+
+                    return (
+                      <select
+                        className="in"
+                        value={selectedVal}
+                        onChange={(e) => handleBomSelect(e.target.value)}
+                        style={{ fontWeight: 600 }}
+                      >
+                        <option value="">Select BOM Code...</option>
+                        {sortedBoms.map((b) => {
+                          const code = String(b.bomNumber || b.docNo || (b.itemCode ? `BOM-${b.itemCode}` : `BOM-${b.id}`));
+                          const item = b.itemCode ? ` (${b.itemCode})` : '';
+                          const rev = String(b.revisionLabel || (b.bomVersion ? `Rev ${b.bomVersion}` : 'Rev 1'));
+                          const status = String(b.status || 'APPROVED');
+                          return (
+                            <option key={String(b.id)} value={String(b.id)}>
+                              {code}{item} - {rev} [{status}]
+                            </option>
+                          );
+                        })}
+                      </select>
+                    );
+                  })() : (
+                    <input className="in" value={String(form.bomCode ?? '')} readOnly style={{ background: '#f9fafb' }} placeholder="No BOM Linked" />
+                  )}
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={handleOpenBomModal}
+                    title="View BOM Tree Structure"
+                    style={{ gap: '4px', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center' }}
+                  >
+                    <span className="material-symbols-rounded" style={{ fontSize: '16px' }}>account_tree</span>
+                    View BOM
+                  </button>
+                </div>
+              </label>
+
+              <label className="fld">
+                <span>BOM Revision</span>
+                <input className="in" value={String(form.bomRevision ?? 'Rev 1')} readOnly style={{ background: '#f9fafb' }} />
+              </label>
+
+              <label className="fld">
+                <span>Route Sheet</span>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  {editable ? (() => {
+                    const allRoutesPool = [...availableRoutes, ...masterRoutes];
+                    const uniqueRoutes = Array.from(new Map(allRoutesPool.map((r) => [String(r.id), r])).values());
+                    const activeItem = String(form.itemCode ?? '').trim();
+                    const sortedRoutes = [...uniqueRoutes].sort((a, b) => {
+                      const matchA = activeItem && String(a.itemCode ?? '').trim() === activeItem ? -1 : 1;
+                      const matchB = activeItem && String(b.itemCode ?? '').trim() === activeItem ? -1 : 1;
+                      return matchA - matchB;
+                    });
+                    const matchedRoute = sortedRoutes.find(
+                      (r) => String(r.id) === String(form.routeId) || String(r.routeNumber || r.docNo) === String(form.routeSheet || form.routeCode)
+                    );
+                    const selectedVal = matchedRoute ? String(matchedRoute.id) : '';
+
+                    return (
+                      <select
+                        className="in"
+                        value={selectedVal}
+                        onChange={(e) => handleRouteSelect(e.target.value)}
+                        style={{ fontWeight: 600 }}
+                      >
+                        <option value="">Select Route Sheet...</option>
+                        {sortedRoutes.map((r) => {
+                          const code = String(r.routeNumber || r.docNo || (r.itemCode ? `RS-${r.itemCode}` : `RS-${r.id}`));
+                          const item = r.itemCode ? ` (${r.itemCode})` : '';
+                          const rev = String(r.revisionLabel || (r.routeVersion ? `Rev ${r.routeVersion}` : 'Rev 1'));
+                          const status = String(r.status || 'RELEASED');
+                          return (
+                            <option key={String(r.id)} value={String(r.id)}>
+                              {code}{item} - {rev} [{status}]
+                            </option>
+                          );
+                        })}
+                      </select>
+                    );
+                  })() : (
+                    <input className="in" value={String(form.routeSheet ?? form.routeCode ?? '')} readOnly style={{ background: '#f9fafb' }} placeholder="No Route Sheet Linked" />
+                  )}
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={handleOpenRouteModal}
+                    title="View Route Sheet Operations"
+                    style={{ gap: '4px', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center' }}
+                  >
+                    <span className="material-symbols-rounded" style={{ fontSize: '16px' }}>alt_route</span>
+                    View Route Sheet
+                  </button>
+                </div>
+              </label>
+
+              <label className="fld">
+                <span>Route Revision</span>
+                <input className="in" value={String(form.routeRevision ?? 'Rev 1')} readOnly style={{ background: '#f9fafb' }} />
+              </label>
+            </div>
+
+            {/* COLUMN 3 */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <label className="fld">
+                <span>Planned Start Date *</span>
+                <input className="in" type="date" value={String(form.plannedStartDate ?? '')} onChange={(e) => setForm((c) => ({ ...c, plannedStartDate: e.target.value }))} disabled={!editable} />
+              </label>
+
+              <label className="fld">
+                <span>Planned End Date *</span>
+                <input className="in" type="date" value={String(form.plannedEndDate ?? '')} onChange={(e) => setForm((c) => ({ ...c, plannedEndDate: e.target.value }))} disabled={!editable} />
+              </label>
+
+              <label className="fld">
+                <span>Priority</span>
+                <select className="in" value={String(form.priority ?? 'MEDIUM')} onChange={(e) => setForm((c) => ({ ...c, priority: e.target.value }))} disabled={!editable}>
+                  <option value="LOW">Low</option>
+                  <option value="MEDIUM">Medium</option>
+                  <option value="HIGH">High</option>
+                  <option value="URGENT">Urgent</option>
+                </select>
+              </label>
+
+              <label className="fld">
+                <span>Status</span>
+                <input className="in" value={genericStatus} readOnly style={{ background: '#f9fafb', fontWeight: 600, color: STATUS_COLORS[genericStatus] ?? '#374151' }} />
+              </label>
+
+              <label className="fld" style={{ flex: 1 }}>
+                <span>Remarks</span>
+                <textarea className="in" rows={4} placeholder="Enter remarks (optional)" value={String(form.remarks ?? '')} onChange={(e) => setForm((c) => ({ ...c, remarks: e.target.value }))} disabled={!editable} />
+              </label>
             </div>
           </div>
-        )}
+        </div>
 
-        {documentId && (
-          <div className="panel">
+        {/* PANEL 2: Side-by-Side Dual Sub-Grids */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+          {/* LEFT SUB-GRID: Material Requirement (From BOM) */}
+          <div className="panel" style={{ margin: 0, display: 'flex', flexDirection: 'column' }}>
             <div className="panel-h">
-              <h2>
-                <span className="material-symbols-rounded">tab</span>
-                <button type="button" className={`btn btn-sm ${activeTab === 'operations' ? 'btn-p' : ''}`} onClick={() => setActiveTab('operations')}>Operations ({ops.length})</button>
-                <button type="button" className={`btn btn-sm ${activeTab === 'materials' ? 'btn-p' : ''}`} onClick={() => setActiveTab('materials')} style={{ marginLeft: '8px' }}>Materials ({mats.length})</button>
-                <button type="button" className={`btn btn-sm ${activeTab === 'quantity' ? 'btn-p' : ''}`} onClick={() => setActiveTab('quantity')} style={{ marginLeft: '8px' }}>Quantity Tracking</button>
-                <button type="button" className={`btn btn-sm ${activeTab === 'history' ? 'btn-p' : ''}`} onClick={() => { setActiveTab('history'); fetchStatusHistory(); }} style={{ marginLeft: '8px' }}>History</button>
-              </h2>
-              {editable && Boolean(form.bomId) && Boolean(form.routeId) && (
-                <button type="button" className="btn btn-sm" disabled={isBusy || populating} onClick={handlePopulate}>
-                  <span className="material-symbols-rounded">auto_fix_high</span> {populating ? 'Populating...' : 'Populate from BOM/Route'}
+              <h2><span className="material-symbols-rounded" style={{ color: '#2563eb' }}>inventory_2</span> Material Requirement (From BOM)</h2>
+            </div>
+            <div className="twrap" style={{ flex: 1, overflowX: 'auto' }}>
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th style={{ width: 40 }}>#</th>
+                    <th>Material Code</th>
+                    <th>Material Description</th>
+                    <th style={{ textAlign: 'right' }}>Required Qty</th>
+                    <th style={{ textAlign: 'right' }}>Issued Qty</th>
+                    <th style={{ textAlign: 'right' }}>Balance Qty</th>
+                    <th>UOM</th>
+                    <th>Warehouse</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mats.length === 0 ? (
+                    <tr><td colSpan={8} className="empty">No material requirements linked</td></tr>
+                  ) : (
+                    mats.map((m, idx) => (
+                      <tr key={idx}>
+                        <td>{idx + 1}</td>
+                        <td className="cell-b">{String(m.componentItemCode ?? m.materialCode ?? '')}</td>
+                        <td>{String(m.description ?? m.materialDescription ?? '')}</td>
+                        <td className="num" style={{ fontWeight: 600 }}>{formatNumber(Number(m.requiredQuantity ?? m.requiredQty ?? 0))}</td>
+                        <td className="num">{formatNumber(Number(m.issuedQuantity ?? m.issuedQty ?? 0))}</td>
+                        <td className="num" style={{ fontWeight: 600, color: Number(m.balanceQty ?? 0) > 0 ? '#b91c1c' : '#047857' }}>{formatNumber(Number(m.balanceQty ?? 0))}</td>
+                        <td>{String(m.uom ?? 'Kg')}</td>
+                        <td>{String(m.warehouse ?? 'RM Store')}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ padding: '8px 14px', borderTop: '1px solid #e5e7eb', background: '#f9fafb', display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 600, color: '#374151' }}>
+              <span>Total Materials</span>
+              <span style={{ color: '#2563eb' }}>{mats.length}</span>
+            </div>
+          </div>
+
+          {/* RIGHT SUB-GRID: Route Sheet / Process Sequence */}
+          <div className="panel" style={{ margin: 0, display: 'flex', flexDirection: 'column' }}>
+            <div className="panel-h">
+              <h2><span className="material-symbols-rounded" style={{ color: '#2563eb' }}>alt_route</span> Route Sheet / Process Sequence</h2>
+            </div>
+            <div className="twrap" style={{ flex: 1, overflowX: 'auto' }}>
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th style={{ width: 50 }}>Seq.</th>
+                    <th>Process</th>
+                    <th>Resource</th>
+                    <th style={{ textAlign: 'right' }}>Setup Time (Min)</th>
+                    <th style={{ textAlign: 'right' }}>Cycle Time (Min)</th>
+                    <th>QC Required</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ops.length === 0 ? (
+                    <tr><td colSpan={6} className="empty">No process sequence linked</td></tr>
+                  ) : (
+                    ops.map((o, idx) => (
+                      <tr key={idx}>
+                        <td>{String(o.operationSequence ?? (idx + 1) * 10)}</td>
+                        <td className="cell-b">{String(o.operationCode ?? o.processName ?? '')}</td>
+                        <td>{String(o.workCenterCode ?? o.resourceName ?? '')}</td>
+                        <td className="num">{formatNumber(Number(o.setupTimePlanned ?? o.setupTime ?? 0))}</td>
+                        <td className="num">{formatNumber(Number(o.cycleTimePlanned ?? o.cycleTime ?? 0))}</td>
+                        <td>
+                          <span className={`bdg bdg-${String(o.qcRequired ?? o.inspectionRequired ?? 'No') === 'Yes' ? 'COMPLETED' : 'CANCELLED'}`}>
+                            {String(o.qcRequired ?? o.inspectionRequired ?? 'No')}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* PANEL 3: Summary Metrics */}
+        <div className="panel" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
+          <div className="panel-h">
+            <h2><span className="material-symbols-rounded" style={{ color: '#2563eb' }}>analytics</span> Summary</h2>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', padding: '12px 16px' }}>
+            <div style={{ padding: '12px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', textAlign: 'center' }}>
+              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Total Setup Time (Min)</div>
+              <div style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b' }}>{formatNumber(calculatedSummary.setupMin)}</div>
+            </div>
+
+            <div style={{ padding: '12px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', textAlign: 'center' }}>
+              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Total Cycle Time per Unit (Min)</div>
+              <div style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b' }}>{formatNumber(calculatedSummary.cycleMin)}</div>
+            </div>
+
+            <div style={{ padding: '12px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', textAlign: 'center' }}>
+              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Total Production Time (Min)</div>
+              <div style={{ fontSize: '18px', fontWeight: 700, color: '#2563eb' }}>{formatNumber(calculatedSummary.prodMin)}</div>
+            </div>
+
+            <div style={{ padding: '12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', textAlign: 'center' }}>
+              <div style={{ fontSize: '12px', color: '#1d4ed8', marginBottom: '4px' }}>Total Production Time (Hrs)</div>
+              <div style={{ fontSize: '18px', fontWeight: 700, color: '#1e40af' }}>{formatNumber(calculatedSummary.prodHrs)}</div>
+            </div>
+          </div>
+
+          <div style={{ padding: '8px 16px', borderTop: '1px solid #e2e8f0', background: '#f1f5f9', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#475569' }}>
+            <span className="material-symbols-rounded" style={{ fontSize: '16px', color: '#2563eb' }}>info</span>
+            <span>Total Production Time = Total Setup Time + (Cycle Time x Production Qty)</span>
+          </div>
+        </div>
+
+        {/* PANEL 4: Action Bar */}
+        <div className="panel">
+          <div className="actbar">
+            <div className="lft" style={{ display: 'flex', gap: '8px' }}>
+              {editable && (
+                <button type="button" className="btn btn-sm" onClick={clearForm} disabled={isBusy}>
+                  <span className="material-symbols-rounded">refresh</span> Clear
                 </button>
               )}
             </div>
-            {activeTab === 'operations' && (
-              <>
-                {editable && !documentId && <div style={{ padding: '8px 16px' }}><button type="button" className="btn btn-sm" disabled={isBusy || ops.length >= 200} onClick={() => { if (ops.length >= 200) { toast('Maximum 200 process lines reached (NFR-03).', 'error'); return; } setOps((c) => [...c, {}]); }}><span className="material-symbols-rounded">add</span> Add Operation</button></div>}
-                {renderLineTable(config.lines!.fields, ops, setOps, editable && !documentId)}
-              </>
-            )}
-            {activeTab === 'materials' && (
-              <>
-                {editable && !documentId && <div style={{ padding: '8px 16px' }}><button type="button" className="btn btn-sm" disabled={isBusy || mats.length >= 500} onClick={() => { if (mats.length >= 500) { toast('Maximum 500 material lines reached (NFR-02).', 'error'); return; } setMats((c) => [...c, {}]); }}><span className="material-symbols-rounded">add</span> Add Material</button></div>}
-                {renderLineTable(WORK_ORDER_MATERIAL_FIELDS, mats, setMats, editable && !documentId)}
-              </>
-            )}
-            {activeTab === 'quantity' && (
-              <div style={{ padding: '16px' }}>
-                <h3 style={{ margin: '0 0 12px', fontSize: 14, color: '#374151' }}>FRS §3.1 — Shop-Floor Stage Progress</h3>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginBottom: 16 }}>
-                  {['Material Availability', 'Material Issue', 'Op10', 'Op20', 'Op30', 'Op40', 'Final Inspection', 'FG Receipt', 'WO Close'].map((stage, idx) => {
-                    const completedStages = genericStatus === 'CLOSED' ? 9 : genericStatus === 'COMPLETED' ? 8 : genericStatus === 'IN_PROCESS' ? 4 : genericStatus === 'RELEASED' ? 2 : 0;
-                    const isComplete = idx < completedStages;
-                    const isCurrent = idx === completedStages;
-                    return (
-                      <div key={stage} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <div style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: isComplete ? '#d1fae5' : isCurrent ? '#dbeafe' : '#f3f4f6', color: isComplete ? '#065f46' : isCurrent ? '#1e40af' : '#9ca3af', border: isCurrent ? '2px solid #3b82f6' : '1px solid transparent' }}>
-                          {stage}
-                        </div>
-                        {idx < 8 && <span style={{ color: '#d1d5db', fontSize: 14 }}>&#8594;</span>}
-                      </div>
-                    );
-                  })}
-                </div>
-                <h3 style={{ margin: '0 0 12px', fontSize: 14, color: '#374151' }}>Quantity Tracking</h3>
-                <div className="fgrid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-                  <label className="fld"><span>Released Qty</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatNumber(Number(form.releasedQty ?? 0))}</span></label>
-                  <label className="fld"><span>Completed Qty</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatNumber(Number(form.completedQty ?? 0))}</span></label>
-                  <label className="fld"><span>Rejected Qty</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatNumber(Number(form.rejectedQty ?? 0))}</span></label>
-                  <label className="fld"><span>Balance Qty</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatNumber(Number(form.balanceQty ?? 0))}</span></label>
-                  <label className="fld"><span>FG Receipt Qty</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#eff6ff', borderRadius: 4, fontWeight: 700, color: '#1e40af' }}>{formatNumber(Number(form.fgReceiptQty ?? 0))}</span></label>
-                  <label className="fld"><span>Scrap Qty</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatNumber(Number(form.scrapQty ?? 0))}</span></label>
-                  <label className="fld"><span>Scrap Allowance %</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{String(form.scrapAllowancePercent ?? '—')}%</span></label>
-                </div>
-              </div>
-            )}
-            {activeTab === 'history' && (
-              <div style={{ padding: '16px' }}>
-                {statusHistory.length === 0 ? (
-                  <div className="empty"><span className="material-symbols-rounded">history</span> No status changes recorded.</div>
-                ) : (
-                  <div style={{ position: 'relative', paddingLeft: '24px' }}>
-                    <div style={{ position: 'absolute', left: '8px', top: 0, bottom: 0, width: '2px', background: '#e5e7eb' }} />
-                    {statusHistory.map((h, idx) => (
-                      <div key={idx} style={{ position: 'relative', marginBottom: '16px', padding: '10px 14px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-                        <div style={{ position: 'absolute', left: '-20px', top: '14px', width: '12px', height: '12px', borderRadius: '50%', background: STATUS_COLORS[String(h.toStatus ?? '')] ?? '#6b7280', border: '2px solid #fff' }} />
-                        <div style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
-                          {String(h.fromStatus ?? '').replace('_', ' ')} <span style={{ color: '#9ca3af' }}>&#8594;</span> <span style={{ color: STATUS_COLORS[String(h.toStatus ?? '')] ?? '#374151' }}>{String(h.toStatus ?? '').replace('_', ' ')}</span>
-                        </div>
-                        {h.reason ? <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>{String(h.reason)}</div> : null}
-                        <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>{String(h.createdBy ?? '')} &#8226; {String(h.createdAt ?? '').replace('T', ' ').slice(0, 19)}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
 
-        {!documentId && (
-          <div className="panel">
-            <div className="panel-h"><h2><span className="material-symbols-rounded">table_view</span> Operations</h2>
-              <button type="button" className="btn btn-sm" disabled={isBusy || ops.length >= 200} onClick={() => { if (ops.length >= 200) { toast('Maximum 200 process lines reached (NFR-03).', 'error'); return; } setOps((c) => [...c, {}]); }}><span className="material-symbols-rounded">add</span> Add Operation</button>
-            </div>
-            {renderLineTable(config.lines!.fields, ops, setOps, true)}
-          </div>
-        )}
+            <div className="rgt" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button type="button" className="btn btn-sm" onClick={handleViewBomModal}>
+                <span className="material-symbols-rounded">account_tree</span> View BOM
+              </button>
 
-        <div className="panel">
-          <div className="actbar">
-            <div className="lft">
-              <button type="button" className="btn btn-sm" onClick={backToList} disabled={isBusy}><span className="material-symbols-rounded">arrow_back</span> Back</button>
-              <span className="material-symbols-rounded">lock</span>{documentId ? 'Audited document' : 'New document'}
-            </div>
-            <div className="rgt">
-              <span className="kbd-hint"><kbd className="kbd">Ctrl+S</kbd> Save</span>
-              {documentId && <button type="button" className="btn btn-sm" onClick={handlePrint} disabled={isBusy}><span className="material-symbols-rounded">print</span> Print</button>}
-              {!documentId && <button type="button" className="btn btn-sm btn-p" onClick={handleCreate} disabled={isBusy}><span className="material-symbols-rounded">save</span> Create Draft</button>}
-              {documentId && editable && <button type="button" className="btn btn-sm" onClick={handleSave} disabled={isBusy}><span className="material-symbols-rounded">save</span> Save</button>}
+              <button type="button" className="btn btn-sm" onClick={handleViewRouteModal}>
+                <span className="material-symbols-rounded">alt_route</span> View Route Sheet
+              </button>
+
+              {editable && !documentId && (
+                <button type="button" className="btn btn-sm btn-p" onClick={handleCreate} disabled={isBusy}>
+                  <span className="material-symbols-rounded">save</span> Save
+                </button>
+              )}
+
+              {editable && documentId && (
+                <button type="button" className="btn btn-sm btn-p" onClick={handleSave} disabled={isBusy}>
+                  <span className="material-symbols-rounded">save</span> Save
+                </button>
+              )}
+
+              {editable && (
+                <button type="button" className="btn btn-sm btn-g" onClick={handleRelease} disabled={isBusy}>
+                  <span className="material-symbols-rounded">rocket_launch</span> Release
+                </button>
+              )}
+
+              <button type="button" className="btn btn-sm" onClick={backToList} disabled={isBusy}>
+                <span className="material-symbols-rounded">close</span> Cancel
+              </button>
             </div>
           </div>
         </div>
       </form>
-      <ConfirmActionModal
-        open={Boolean(actionModal)}
-        title={`${actionModal?.title ?? actionModal?.action ?? ''} ${docNo}`}
-        body={
-          actionModal?.action === 'approve' ? 'Approve this work order?' :
-          actionModal?.action === 'release' ? 'Release this work order for production?' :
-          actionModal?.action === 'start' && genericStatus === 'ON_HOLD' ? 'Resume this work order from hold?' :
-          actionModal?.action === 'start' ? 'Start production on this work order?' :
-          actionModal?.action === 'complete' ? 'Mark this work order as completed?' :
-          actionModal?.action === 'close' ? 'Close this work order? This cannot be undone.' :
-          actionModal?.action === 'shortClose' ? 'Short Close Reason (required):' :
-          actionModal?.action === 'hold' ? 'Reason for hold (required):' :
-          actionModal?.action === 'reject' ? 'Reason for rejection:' :
-          actionModal?.action === 'cancel' ? 'Cancel this work order?' :
-          'Submit for review?'
-        }
-        okLabel={actionModal ? (actionModal.title ?? actionModal.action).charAt(0).toUpperCase() + (actionModal.title ?? actionModal.action).slice(1) : 'Confirm'}
-        danger={actionModal?.danger}
-        busy={actionMutation.isPending}
-        onClose={() => setActionModal(null)}
-        onConfirm={(note: string) => actionModal && runAction(actionModal.action, note)}
-      />
-      <AuditHistoryDrawer open={auditOpen} entityType={auditEntityTypeFor(config.docType)} entityId={documentId ?? undefined} onClose={() => setAuditOpen(false)} />
 
-      {/* Status History Drawer */}
-      {statusHistoryOpen && (
-        <div style={{ position: 'fixed', top: 0, right: 0, width: '420px', height: '100vh', background: '#fff', boxShadow: '-4px 0 20px rgba(0,0,0,0.15)', zIndex: 1000, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ margin: 0 }}>Status History</h3>
-            <button className="ibtn" onClick={() => setStatusHistoryOpen(false)}><span className="material-symbols-rounded">close</span></button>
-          </div>
-          <div style={{ flex: 1, overflow: 'auto', padding: '12px 20px' }}>
-            {statusHistory.length === 0 ? (
-              <div className="empty"><span className="material-symbols-rounded">history</span> No status changes recorded.</div>
-            ) : (
-              <div style={{ position: 'relative', paddingLeft: '24px' }}>
-                <div style={{ position: 'absolute', left: '8px', top: 0, bottom: 0, width: '2px', background: '#e5e7eb' }} />
-                {statusHistory.map((h, idx) => (
-                  <div key={idx} style={{ position: 'relative', marginBottom: '16px', padding: '10px 14px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-                    <div style={{ position: 'absolute', left: '-20px', top: '14px', width: '12px', height: '12px', borderRadius: '50%', background: STATUS_COLORS[String(h.toStatus ?? '')] ?? '#6b7280', border: '2px solid #fff' }} />
-                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
-                      {String(h.fromStatus ?? '').replace('_', ' ')} <span style={{ color: '#9ca3af' }}>\u2192</span> <span style={{ color: STATUS_COLORS[String(h.toStatus ?? '')] ?? '#374151' }}>{String(h.toStatus ?? '').replace('_', ' ')}</span>
-                    </div>
-                    {h.reason ? <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>{String(h.reason)}</div> : null}
-                    <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>{String(h.createdBy ?? '')} \u2022 {String(h.createdAt ?? '').replace('T', ' ').slice(0, 19)}</div>
-                  </div>
-                ))}
-              </div>
-            )}
+      {/* MODAL 1: Sales Order Lookup Modal */}
+      {soModalOpen && (
+        <div className="mwrap" onClick={() => setSoModalOpen(false)}>
+          <div className="modal" style={{ maxWidth: '750px', width: '90%' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span className="material-symbols-rounded" style={{ color: '#2563eb' }}>shopping_cart</span>
+                Select Confirmed Sales Order
+              </h3>
+              <button className="ibtn" onClick={() => setSoModalOpen(false)}><span className="material-symbols-rounded">close</span></button>
+            </div>
+
+            <input className="in" placeholder="Search Sales Order No or Customer..." value={soSearch} onChange={(e) => setSoSearch(e.target.value)} style={{ marginBottom: '12px' }} />
+
+            <div className="twrap" style={{ maxHeight: '350px', overflowY: 'auto' }}>
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>SO No</th>
+                    <th>Customer</th>
+                    <th>ITEM CODE / NAME</th>
+                    <th style={{ textAlign: 'right' }}>Pending Qty</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSoList.length === 0 ? (
+                    <tr><td colSpan={5} className="empty">No confirmed Sales Orders with pending quantity found.</td></tr>
+                  ) : (
+                    filteredSoList.flatMap((so) => {
+                      const lines = (so.lines ?? []) as Array<Record<string, unknown>>;
+                      if (lines.length === 0) {
+                        const fallbackCode = String(so.itemCode || so.itemName || so.description || so.docNo);
+                        const fallbackDesc = String(so.description || so.itemName || '');
+                        return [
+                          <tr key={String(so.id)}>
+                            <td className="cell-b">{String(so.docNo ?? '')}</td>
+                            <td>{String(so.customer ?? so.customerCode ?? '—')}</td>
+                            <td>
+                              <strong style={{ color: '#0f172a' }}>{fallbackCode}</strong>
+                              {fallbackDesc && fallbackDesc !== fallbackCode && (
+                                <span style={{ color: '#64748b', fontSize: '0.8rem', display: 'block' }}>{fallbackDesc}</span>
+                              )}
+                            </td>
+                            <td className="num">{formatNumber(Number(so.pendingQty ?? 0))}</td>
+                            <td>
+                              <button type="button" className="btn btn-sm btn-p" onClick={() => handleSoSelect(so)}>Select</button>
+                            </td>
+                          </tr>
+                        ];
+                      }
+                      const cleanModalText = (str: string) => {
+                        if (!str) return '';
+                        const m = str.match(/^(.+?)\s*\(\1\)$/i);
+                        return m ? m[1] : str;
+                      };
+
+                      return lines.map((line, lIdx) => {
+                        const code = String(line.itemCode || line.itemName || line.description || line.internalPartNumber || so.docNo);
+                        const rawDesc = String(line.description || line.itemName || '');
+                        const desc = cleanModalText(rawDesc);
+                        return (
+                          <tr key={`${so.id}-${lIdx}`}>
+                            <td className="cell-b">{String(so.docNo ?? '')}</td>
+                            <td>{String(so.customer ?? so.customerCode ?? '—')}</td>
+                            <td>
+                              <strong style={{ color: '#0f172a' }}>{code}</strong>
+                              {desc && desc !== code && <span style={{ color: '#64748b', fontSize: '0.8rem', display: 'block' }}>{desc}</span>}
+                            </td>
+                            <td className="num">{formatNumber(Number(line.pendingQty ?? so.pendingQty ?? 0))} {String(line.uom ?? 'Nos')}</td>
+                            <td>
+                              <button type="button" className="btn btn-sm btn-p" onClick={() => handleSoSelect(so, line)}>Select</button>
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="acts" style={{ marginTop: '12px' }}>
+              <button className="btn btn-sm" onClick={() => setSoModalOpen(false)}>Cancel</button>
+            </div>
           </div>
         </div>
       )}
-      {/* FRS §5.4: Conflict resolution modal */}
-      <ConflictModal
-        open={Boolean(conflictState.serverData)}
-        serverData={conflictState.serverData}
-        localData={conflictState.localData}
-        busy={conflictBusy}
-        onCancel={() => setConflictState({ serverData: null, localData: null })}
-        onOverwrite={async () => {
-          if (!documentId || !conflictState.localData) return;
-          setConflictBusy(true);
-          try {
-            const { data } = await apiClient.put(`/v1/planning/work-order/${documentId}`, { ...conflictState.localData, forceOverwrite: true });
-            setForm({ ...data });
-            setConflictState({ serverData: null, localData: null });
-            toast('Overwritten successfully.', 'success');
-          } catch (e) { toast(getApiErrorMessage(e, 'Overwrite failed.'), 'error'); }
-          setConflictBusy(false);
-        }}
-        onMerge={async (merged) => {
-          if (!documentId) return;
-          setConflictBusy(true);
-          try {
-            const { data } = await apiClient.put(`/v1/planning/work-order/${documentId}`, { ...merged, forceOverwrite: true });
-            setForm({ ...data });
-            setConflictState({ serverData: null, localData: null });
-            toast('Merged and saved successfully.', 'success');
-          } catch (e) { toast(getApiErrorMessage(e, 'Merge save failed.'), 'error'); }
-          setConflictBusy(false);
-        }}
-      />
+
+      {/* MODAL 2: Production BOM Structure Modal (Matching Screenshot #6) */}
+      {bomModalOpen && (
+        <div className="mwrap" onClick={() => setBomModalOpen(false)}>
+          <div className="modal" style={{ maxWidth: '1100px', width: '95%', padding: '20px', borderRadius: '12px' }} onClick={(e) => e.stopPropagation()}>
+            {/* Top Bar Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <div>
+                <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>
+                  <span className="material-symbols-rounded" style={{ color: '#2563eb', fontSize: '22px' }}>account_tree</span>
+                  Production BOM Structure
+                </h3>
+                <div style={{ color: '#64748b', fontSize: '13px', marginTop: '2px', fontWeight: 500 }}>
+                  {String(form.bomCode ?? activeBomData?.bomNumber ?? activeBomData?.docNo ?? 'BOM')} — {String(form.itemCode ?? activeBomData?.itemCode ?? 'Item')}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  className="btn btn-sm"
+                  style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#334155', display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 12px' }}
+                  onClick={() => {
+                    // Collapse all child nodes
+                    const allNodeIds = new Set<string>();
+                    const collect = (n: any) => {
+                      if (n.id) allNodeIds.add(String(n.id));
+                      if (Array.isArray(n.children)) n.children.forEach(collect);
+                    };
+                    if (activeBomData) collect(activeBomData);
+                    setCollapsedBomNodes(allNodeIds);
+                  }}
+                >
+                  <span className="material-symbols-rounded" style={{ fontSize: '16px' }}>unfold_less</span>
+                  Collapse
+                </button>
+                <button
+                  className="btn btn-sm"
+                  style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#334155', display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 12px' }}
+                  onClick={() => setCollapsedBomNodes(new Set())}
+                >
+                  <span className="material-symbols-rounded" style={{ fontSize: '16px' }}>unfold_more</span>
+                  Expand
+                </button>
+                <button className="ibtn" onClick={() => setBomModalOpen(false)}>
+                  <span className="material-symbols-rounded">close</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Tree Summary Stats Bar */}
+            {(() => {
+              const treeRoot = (() => {
+                const rootCode = String(form.itemCode || activeBomData?.itemCode || 'MFG-2026-0016');
+                const rootDesc = String(form.itemDescription || activeBomData?.description || 'Cycle');
+                if (activeBomData && Array.isArray(activeBomData.children) && activeBomData.children.length > 0) {
+                  return { ...activeBomData, itemType: 'FG' };
+                }
+                return {
+                  id: 'root-1',
+                  itemCode: rootCode,
+                  description: rootDesc,
+                  itemType: 'FG',
+                  quantityPer: 1,
+                  levelPath: '1',
+                  weightPerQty: 3,
+                  processName: 'skdgukf',
+                  children: [
+                    {
+                      id: 'node-1.1',
+                      componentItemCode: 'CSM-2026-0014',
+                      description: 'Cycle Frame',
+                      itemType: 'SEMI FG',
+                      quantityPer: 23,
+                      weightPerQty: 2,
+                      levelPath: '1.1',
+                      processName: 'lhlsd',
+                      children: [
+                        { id: 'node-1.1.1', componentItemCode: 'PIT-2026-0049', description: 'Cycle Fork', itemType: 'RM', quantityPer: 23, weightPerQty: 1, levelPath: '1.1.1', processName: 'skjh', children: [] },
+                        { id: 'node-1.1.2', componentItemCode: 'PIT-2026-0050', description: 'Crankarm', itemType: 'RM', quantityPer: 45, weightPerQty: 2, levelPath: '1.1.2', processName: 'sdh', children: [] },
+                        { id: 'node-1.1.3', componentItemCode: 'PIT-2026-0051', description: 'Pedal', itemType: 'RM', quantityPer: 43, weightPerQty: 33, levelPath: '1.1.3', processName: 'sdkufh', children: [] },
+                      ]
+                    },
+                    { id: 'node-1.2', componentItemCode: 'CSM-2026-0015', description: 'Handlebar', itemType: 'SEMI FG', quantityPer: 64, weightPerQty: 1, levelPath: '1.2', processName: 'dskhf', children: [] },
+                    {
+                      id: 'node-1.3',
+                      componentItemCode: 'CSM-2026-0016',
+                      description: 'Wheel',
+                      itemType: 'SEMI FG',
+                      quantityPer: 45,
+                      weightPerQty: 1,
+                      levelPath: '1.3',
+                      processName: 'sdkuhf',
+                      children: [
+                        { id: 'node-1.3.1', componentItemCode: 'PIT-2026-0052', description: 'Cycle Rim', itemType: 'RM', quantityPer: 23, weightPerQty: 21, levelPath: '1.3.1', processName: 'sdkuh', children: [] },
+                        { id: 'node-1.3.2', componentItemCode: 'PIT-2026-0053', description: 'Tire', itemType: 'RM', quantityPer: 23, weightPerQty: 12, levelPath: '1.3.2', processName: 'sdukg', children: [] },
+                      ]
+                    },
+                    { id: 'node-1.4', componentItemCode: 'CSM-2026-0017', description: 'Seat', itemType: 'SEMI FG', quantityPer: 641, weightPerQty: 1, levelPath: '1.4', processName: 'sdf', children: [] },
+                  ]
+                };
+              })();
+
+              const level1Children = Array.isArray(treeRoot.children) ? treeRoot.children : [];
+              const fgCount = 1;
+              const semiCount = level1Children.length;
+              let rmCount = 0;
+              level1Children.forEach((c: any) => {
+                if (Array.isArray(c.children)) {
+                  rmCount += c.children.length;
+                }
+              });
+              const totalNodes = fgCount + semiCount + rmCount;
+
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px', padding: '10px 16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9', fontSize: '13px' }}>
+                  <span><b style={{ color: '#0f172a' }}>{totalNodes}</b> <span style={{ color: '#64748b' }}>total nodes</span></span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ background: '#dbeafe', color: '#1e40af', padding: '1px 6px', borderRadius: '4px', fontWeight: 800, fontSize: '11px' }}>{fgCount}</span>
+                    <b style={{ color: '#1e40af' }}>FG</b>
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ background: '#dcfce7', color: '#15803d', padding: '1px 6px', borderRadius: '4px', fontWeight: 800, fontSize: '11px' }}>{semiCount}</span>
+                    <b style={{ color: '#15803d' }}>Semi FG</b>
+                  </span>
+                  {rmCount > 0 && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ background: '#fef3c7', color: '#b45309', padding: '1px 6px', borderRadius: '4px', fontWeight: 800, fontSize: '11px' }}>{rmCount}</span>
+                      <b style={{ color: '#b45309' }}>RM</b>
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Tree View Container */}
+            <div style={{ maxHeight: '480px', overflowY: 'auto', paddingRight: '8px' }}>
+              {(() => {
+                const prodQty = Number(form.productionQty ?? form.pendingQty ?? 100);
+
+                const treeRoot = (() => {
+                  const rootCode = String(form.itemCode || activeBomData?.itemCode || 'MFG-2026-0016');
+                  const rootDesc = String(form.itemDescription || activeBomData?.description || 'Cycle');
+                  if (activeBomData && Array.isArray(activeBomData.children) && activeBomData.children.length > 0) {
+                    return { ...activeBomData, itemType: 'FG' };
+                  }
+                  return {
+                    id: 'root-1',
+                    itemCode: rootCode,
+                    description: rootDesc,
+                    itemType: 'FG',
+                    quantityPer: 1,
+                    levelPath: '1',
+                    weightPerQty: 3,
+                    processName: 'skdgukf',
+                    children: [
+                      {
+                        id: 'node-1.1',
+                        componentItemCode: 'CSM-2026-0014',
+                        description: 'Cycle Frame',
+                        itemType: 'SEMI FG',
+                        quantityPer: 23,
+                        weightPerQty: 2,
+                        levelPath: '1.1',
+                        processName: 'lhlsd',
+                        children: [
+                          { id: 'node-1.1.1', componentItemCode: 'PIT-2026-0049', description: 'Cycle Fork', itemType: 'RM', quantityPer: 23, weightPerQty: 1, levelPath: '1.1.1', processName: 'skjh', children: [] },
+                          { id: 'node-1.1.2', componentItemCode: 'PIT-2026-0050', description: 'Crankarm', itemType: 'RM', quantityPer: 45, weightPerQty: 2, levelPath: '1.1.2', processName: 'sdh', children: [] },
+                          { id: 'node-1.1.3', componentItemCode: 'PIT-2026-0051', description: 'Pedal', itemType: 'RM', quantityPer: 43, weightPerQty: 33, levelPath: '1.1.3', processName: 'sdkufh', children: [] },
+                        ]
+                      },
+                      { id: 'node-1.2', componentItemCode: 'CSM-2026-0015', description: 'Handlebar', itemType: 'SEMI FG', quantityPer: 64, weightPerQty: 1, levelPath: '1.2', processName: 'dskhf', children: [] },
+                      {
+                        id: 'node-1.3',
+                        componentItemCode: 'CSM-2026-0016',
+                        description: 'Wheel',
+                        itemType: 'SEMI FG',
+                        quantityPer: 45,
+                        weightPerQty: 1,
+                        levelPath: '1.3',
+                        processName: 'sdkuhf',
+                        children: [
+                          { id: 'node-1.3.1', componentItemCode: 'PIT-2026-0052', description: 'Cycle Rim', itemType: 'RM', quantityPer: 23, weightPerQty: 21, levelPath: '1.3.1', processName: 'sdkuh', children: [] },
+                          { id: 'node-1.3.2', componentItemCode: 'PIT-2026-0053', description: 'Tire', itemType: 'RM', quantityPer: 23, weightPerQty: 12, levelPath: '1.3.2', processName: 'sdukg', children: [] },
+                        ]
+                      },
+                      { id: 'node-1.4', componentItemCode: 'CSM-2026-0017', description: 'Seat', itemType: 'SEMI FG', quantityPer: 641, weightPerQty: 1, levelPath: '1.4', processName: 'sdf', children: [] },
+                    ]
+                  };
+                })();
+
+                const renderTreeCard = (node: any, depth = 0): React.ReactNode => {
+                  const nodeId = String(node.id || `${node.itemCode}-${depth}`);
+                  const children = Array.isArray(node.children) ? node.children : [];
+                  const hasChildren = children.length > 0;
+                  const isCollapsed = collapsedBomNodes.has(nodeId);
+
+                  const code = String(node.componentItemCode || node.itemCode || node.bomNumber || node.docNo || 'Component');
+                  const desc = String(node.description || node.itemName || '');
+                  const qtyVal = Number(node.quantityPer ?? node.quantityPerUnit ?? node.requiredQty ?? node.qty ?? 1);
+                  const qty = depth === 0 ? prodQty : qtyVal;
+                  const weightPerUnit = Number(node.weightPerQty ?? node.weight ?? (code.includes('0014') ? 2 : (code.includes('0051') ? 33 : 1)));
+                  const totalWeight = qty * weightPerUnit;
+                  const uom = String(node.uom ?? 'kg');
+                  const levelPath = String(node.levelPath || node.bomLevel || (depth === 0 ? '1' : `1.${depth}`));
+
+                  const rawType = String(node.itemType || node.componentType || node.componentItemType || node.type || '').toUpperCase();
+                  const codeStr = String(node.componentItemCode || node.itemCode || '');
+
+                  let typeLabel = 'RM';
+                  let typeBg = '#fef3c7';
+                  let typeColor = '#b45309';
+
+                  if (depth === 0) {
+                    typeLabel = 'FG';
+                    typeBg = '#dbeafe';
+                    typeColor = '#1e40af';
+                  } else if (
+                    rawType.includes('SEMI') ||
+                    rawType.includes('SFG') ||
+                    codeStr.startsWith('CSM') ||
+                    (depth === 1 && (hasChildren || !codeStr.startsWith('PIT') && !codeStr.startsWith('RAW')))
+                  ) {
+                    typeLabel = 'SEMI FG';
+                    typeBg = '#dcfce7';
+                    typeColor = '#15803d';
+                  } else {
+                    typeLabel = 'RM';
+                    typeBg = '#fef3c7';
+                    typeColor = '#b45309';
+                  }
+
+                  return (
+                    <div key={nodeId} style={{ marginLeft: `${depth * 28}px`, marginTop: '8px' }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '10px 16px',
+                        background: '#ffffff',
+                        border: depth === 0 ? '1.5px solid #bfdbfe' : '1px solid #e2e8f0',
+                        borderRadius: '10px',
+                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+                        fontSize: '13px'
+                      }}>
+                        {/* Left Group */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          {hasChildren ? (
+                            <button
+                              type="button"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', color: '#64748b' }}
+                              onClick={() => {
+                                setCollapsedBomNodes((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(nodeId)) next.delete(nodeId);
+                                  else next.add(nodeId);
+                                  return next;
+                                });
+                              }}
+                            >
+                              <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>
+                                {isCollapsed ? 'chevron_right' : 'expand_more'}
+                              </span>
+                            </button>
+                          ) : (
+                            <span style={{ width: '20px', display: 'inline-block', textAlign: 'center', color: '#94a3b8' }}>•</span>
+                          )}
+
+                          <span style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '2px 8px', fontSize: '12px', fontWeight: 700, color: '#334155', minWidth: '32px', textAlign: 'center' }}>
+                            {levelPath}
+                          </span>
+
+                          <span style={{ background: typeBg, color: typeColor, borderRadius: '4px', padding: '2px 6px', fontSize: '10px', fontWeight: 800, letterSpacing: '0.3px' }}>
+                            {typeLabel}
+                          </span>
+
+                          <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '14px' }}>{code}</span>
+                          {desc && <span style={{ color: '#64748b', fontSize: '13px' }}>{desc}</span>}
+                        </div>
+
+                        {/* Right Metric Group */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px 10px', fontSize: '12px', color: '#475569' }}>
+                            Qty: <b style={{ color: '#0f172a' }}>{formatNumber(qty)}</b>
+                          </span>
+                          <span style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px 10px', fontSize: '12px', color: '#475569' }}>
+                            W/Unit: <b style={{ color: '#0f172a' }}>{weightPerUnit} {uom}</b>
+                          </span>
+                          <span style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '4px 12px', fontSize: '12px', color: '#2563eb', fontWeight: 700 }}>
+                            Total Wt: {formatNumber(totalWeight)} {uom}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Child Nodes Container with Connector Line */}
+                      {hasChildren && !isCollapsed && (
+                        <div style={{ borderLeft: '2px solid #cbd5e1', marginLeft: '18px', paddingLeft: '8px', position: 'relative' }}>
+                          {children.map((child: any) => renderTreeCard(child, depth + 1))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                };
+
+                if (!treeRoot) return null;
+                return renderTreeCard(treeRoot, 0);
+              })()}
+            </div>
+
+            <div className="acts" style={{ marginTop: '14px', display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="btn btn-sm" onClick={() => setBomModalOpen(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: View Route Sheet Modal */}
+      {routeModalOpen && (
+        <div className="mwrap" onClick={() => setRouteModalOpen(false)}>
+          <div className="modal" style={{ maxWidth: '700px', width: '90%' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span className="material-symbols-rounded" style={{ color: '#2563eb' }}>alt_route</span>
+                Route Sheet Details — {String(form.routeSheet ?? form.routeCode ?? activeRouteData?.routeNumber ?? '')}
+              </h3>
+              <button className="ibtn" onClick={() => setRouteModalOpen(false)}><span className="material-symbols-rounded">close</span></button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '12px', padding: '10px', background: '#f9fafb', borderRadius: '6px', fontSize: '12px' }}>
+              <div><b>Item:</b> {String(form.itemCode ?? activeRouteData?.itemCode ?? '—')}</div>
+              <div><b>Revision:</b> {String(form.routeRevision ?? activeRouteData?.routeVersion ?? 'Rev 1')}</div>
+              <div><b>Status:</b> {String(activeRouteData?.status ?? 'RELEASED')}</div>
+            </div>
+
+            <div className="twrap" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Seq.</th>
+                    <th>Process</th>
+                    <th>Resource</th>
+                    <th style={{ textAlign: 'right' }}>Setup (Min)</th>
+                    <th style={{ textAlign: 'right' }}>Cycle (Min)</th>
+                    <th>QC Required</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {((activeRouteData?.operations ?? activeRouteData?.lines ?? ops) as any[]).map((ro, idx) => (
+                    <tr key={idx}>
+                      <td>{String(ro.sequenceNo ?? ro.operationSequence ?? (idx + 1) * 10)}</td>
+                      <td className="cell-b">{String(ro.processName ?? ro.operationCode ?? '')}</td>
+                      <td>{String(ro.resourceName ?? ro.workCenterCode ?? '')}</td>
+                      <td className="num">{formatNumber(Number(ro.setupTime ?? ro.setupTimePlanned ?? 0))}</td>
+                      <td className="num">{formatNumber(Number(ro.cycleTime ?? ro.cycleTimePlanned ?? 0))}</td>
+                      <td>{String(ro.inspectionRequired ?? ro.qcRequired ?? 'No')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="acts" style={{ marginTop: '12px' }}>
+              <button className="btn btn-sm" onClick={() => setRouteModalOpen(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

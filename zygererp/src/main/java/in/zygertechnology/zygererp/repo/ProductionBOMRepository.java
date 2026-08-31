@@ -16,4 +16,8 @@ public interface ProductionBOMRepository extends BaseDocRepository<ProductionBOM
 
     /** FRS v4.0 X-06: count Approved BOMs per (item, salesOrder), excluding a given ID */
     long countByItemCodeAndSalesOrderIdAndStatusAndIdNot(String itemCode, Long salesOrderId, String status, Long id);
+    long countByItemCodeAndSalesOrderIdIsNullAndIsActiveTrueAndIdNot(String itemCode, Long id);
+    long countByItemCodeAndSalesOrderIdAndIsActiveTrueAndIdNot(String itemCode, Long salesOrderId, Long id);
+    long countByItemCodeAndSalesOrderIdIsNullAndIsActiveTrue(String itemCode);
+    long countByItemCodeAndSalesOrderIdAndIsActiveTrue(String itemCode, Long salesOrderId);
 }

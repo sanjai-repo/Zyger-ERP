@@ -40,7 +40,20 @@ public class PlanningService {
         DocEntity e = docs.create(key, body, user);
         applyCreationDefaults(key, e);
         if ("production-bom".equals(key) && e instanceof ProductionBOM bom) {
-            // FRS v4.0 Changelog #4: auto-derive itemType from ItemMaster
+            if (body.get("itemType") != null && !String.valueOf(body.get("itemType")).isBlank()) {
+                bom.setItemType(String.valueOf(body.get("itemType")).trim());
+            }
+            if (body.get("baseQuantity") != null) {
+                try {
+                    bom.setBaseQuantity(new BigDecimal(String.valueOf(body.get("baseQuantity"))));
+                } catch (Exception ignored) {}
+            }
+            if (body.get("weight") != null) {
+                try {
+                    BigDecimal w = new BigDecimal(String.valueOf(body.get("weight")));
+                    if (w.compareTo(BigDecimal.ZERO) > 0) bom.setWeight(w);
+                } catch (Exception ignored) {}
+            }
             autoDeriveBomItemType(bom);
             recomputeBomWeights(bom);
             recomputeBomTotalMaterialCost(bom);
@@ -64,6 +77,20 @@ public class PlanningService {
         validateBeforeUpdate(key, id, body);
         DocEntity e = docs.update(key, id, body, user);
         if ("production-bom".equals(key) && e instanceof ProductionBOM bom) {
+            if (body.get("itemType") != null && !String.valueOf(body.get("itemType")).isBlank()) {
+                bom.setItemType(String.valueOf(body.get("itemType")).trim());
+            }
+            if (body.get("baseQuantity") != null) {
+                try {
+                    bom.setBaseQuantity(new BigDecimal(String.valueOf(body.get("baseQuantity"))));
+                } catch (Exception ignored) {}
+            }
+            if (body.get("weight") != null) {
+                try {
+                    BigDecimal w = new BigDecimal(String.valueOf(body.get("weight")));
+                    if (w.compareTo(BigDecimal.ZERO) > 0) bom.setWeight(w);
+                } catch (Exception ignored) {}
+            }
             recomputeBomWeights(bom);
             recomputeBomTotalMaterialCost(bom);
         }
@@ -124,10 +151,76 @@ public class PlanningService {
             if (itemType.isEmpty()) {
                 throw new IllegalArgumentException("Item Type is mandatory.");
             }
+            if ("RM".equalsIgnoreCase(itemType) || "RAW_MATERIAL".equalsIgnoreCase(itemType)) {
+                throw new IllegalArgumentException("BOM cannot be created for Raw Material items.");
+            }
             String itemCode = body.get("itemCode") != null ? String.valueOf(body.get("itemCode")).trim() : "";
             if (itemCode.isEmpty()) {
                 throw new IllegalArgumentException("BOM Item is mandatory.");
             }
+            if (body.containsKey("baseQuantity") && body.get("baseQuantity") != null) {
+                try {
+                    BigDecimal qty = new BigDecimal(String.valueOf(body.get("baseQuantity")));
+                    if (qty.compareTo(BigDecimal.ZERO) <= 0) {
+                        throw new IllegalArgumentException("Quantity should be greater than zero.");
+                    }
+                } catch (NumberFormatException ignored) {}
+            }
+
+            // Uniqueness validation (V-06 / V-21 / V-22)
+            Object soIdObj = body.get("salesOrderId");
+            Long soId = soIdObj != null && !String.valueOf(soIdObj).isBlank() ? Long.parseLong(String.valueOf(soIdObj)) : null;
+            Object bomIdObj = body.get("id");
+            Long currentBomId = bomIdObj != null && !String.valueOf(bomIdObj).isBlank() ? Long.parseLong(String.valueOf(bomIdObj)) : null;
+
+            if (soId == null) {
+                long existingCount = currentBomId != null
+                    ? bomRepo.countByItemCodeAndSalesOrderIdIsNullAndIsActiveTrueAndIdNot(itemCode, currentBomId)
+                    : bomRepo.countByItemCodeAndSalesOrderIdIsNullAndIsActiveTrue(itemCode);
+                if (existingCount > 0) {
+                    throw new IllegalStateException("Active BOM already exists for the selected item.");
+                }
+            } else {
+                long existingSoCount = currentBomId != null
+                    ? bomRepo.countByItemCodeAndSalesOrderIdAndIsActiveTrueAndIdNot(itemCode, soId, currentBomId)
+                    : bomRepo.countByItemCodeAndSalesOrderIdAndIsActiveTrue(itemCode, soId);
+                if (existingSoCount > 0) {
+                    throw new IllegalStateException("BOM already exists for the selected Sales Order and Item.");
+                }
+            }
+
+            // Component Lines validation (V-13, V-14, V-16, V-09, V-20)
+            Object linesObj = body.get("lines");
+            if (linesObj instanceof List<?> lineList) {
+                if (lineList.isEmpty()) {
+                    throw new IllegalArgumentException("At least one component is required.");
+                }
+                Set<String> seenComponents = new HashSet<>();
+                for (Object lineItem : lineList) {
+                    if (lineItem instanceof Map<?, ?> lineMap) {
+                        String compCode = lineMap.get("componentItemCode") != null ? String.valueOf(lineMap.get("componentItemCode")).trim() : "";
+                        if (compCode.isEmpty()) {
+                            throw new IllegalArgumentException("Item Name is mandatory.");
+                        }
+                        if (itemCode.equals(compCode)) {
+                            throw new IllegalArgumentException("Parent item and component item cannot be same.");
+                        }
+                        if (!seenComponents.add(compCode)) {
+                            throw new IllegalArgumentException("Duplicate component item is not allowed.");
+                        }
+                        Object qObj = lineMap.get("quantityPer");
+                        if (qObj != null) {
+                            try {
+                                BigDecimal qPer = new BigDecimal(String.valueOf(qObj));
+                                if (qPer.compareTo(BigDecimal.ZERO) <= 0) {
+                                    throw new IllegalArgumentException("Component quantity must be greater than zero.");
+                                }
+                            } catch (NumberFormatException ignored) {}
+                        }
+                    }
+                }
+            }
+
             Object parentBomId = body.get("parentBomId");
             Object bomId = body.get("id");
             if (parentBomId != null) {
@@ -627,7 +720,7 @@ public class PlanningService {
         return bom;
     }
 
-    /** FRS v4.0 Changelog #4, #9: Auto-derive BOM itemType, description from ItemMaster */
+    /** FRS v4.0 Changelog #4, #9: Auto-derive BOM itemType, description from ItemMaster if not explicitly provided */
     private void autoDeriveBomItemType(ProductionBOM bom) {
         if (bom.getItemCode() == null || bom.getItemCode().isBlank()) return;
         try {
@@ -636,7 +729,16 @@ public class PlanningService {
                 .setParameter("code", bom.getItemCode()).setMaxResults(1).getResultList();
             if (!items.isEmpty()) {
                 ItemMaster item = (ItemMaster) items.get(0);
-                if (item.getItemType() != null) bom.setItemType(item.getItemType());
+                if (bom.getItemType() == null || bom.getItemType().isBlank()) {
+                    String derived = null;
+                    if (item.getItemGroup() != null && item.getItemGroup().getItemType() != null) {
+                        derived = normalizeBomType(item.getItemGroup().getItemType());
+                    }
+                    if (derived == null && item.getItemType() != null) {
+                        derived = normalizeBomType(item.getItemType());
+                    }
+                    if (derived != null) bom.setItemType(derived);
+                }
                 if (item.getDescription() != null && (bom.getDescription() == null || bom.getDescription().isBlank())) {
                     bom.setDescription(item.getDescription());
                 }
@@ -645,6 +747,16 @@ public class PlanningService {
                 }
             }
         } catch (Exception ignored) {}
+    }
+
+    private String normalizeBomType(String raw) {
+        String t = raw == null ? "" : raw.trim().toUpperCase().replace("-", "_").replace(" ", "_");
+        if (t.equals("SEMI_FG") || t.equals("SFG") || t.contains("SEMI")) return "SEMI_FG";
+        if (t.equals("FG") || t.equals("FINISHED") || t.equals("FINISHED_GOODS")
+                || (t.contains("FINISHED") && !t.contains("SEMI"))
+                || t.equals("MANUFACTURING") || t.equals("MANUFACTURING_ITEM")) return "FG";
+        if (t.equals("RM") || t.equals("RAW_MATERIAL") || t.contains("RAW")) return "RAW_MATERIAL";
+        return null;
     }
 
     /** FRS v4.0 §3 §0: Auto-derive WO item fields from ItemMaster */
@@ -733,7 +845,7 @@ public class PlanningService {
             : (body.containsKey("orderQuantity") && body.get("orderQuantity") != null
                 ? new BigDecimal(String.valueOf(body.get("orderQuantity"))) : null);
         if (prodQty == null || prodQty.signum() <= 0) {
-            throw new IllegalArgumentException("Production Quantity is mandatory and must be greater than zero.");
+            throw new IllegalArgumentException("Production Quantity is mandatory.");
         }
         // V3: Production Qty must not exceed Pending Qty
         BigDecimal pendingQty = body.containsKey("pendingQty") && body.get("pendingQty") != null
@@ -923,7 +1035,7 @@ public class PlanningService {
     /** FRS §4.5: Compute weightPerQty from ItemMaster, totalWeight per line, and parent BOM weight. */
     private void recomputeBomWeights(ProductionBOM bom) {
         if (bom.getLines() == null || bom.getLines().isEmpty()) {
-            bom.setWeight(BigDecimal.ZERO);
+            if (bom.getWeight() == null) bom.setWeight(BigDecimal.ZERO);
             return;
         }
         BigDecimal totalWeight = BigDecimal.ZERO;
@@ -942,7 +1054,9 @@ public class PlanningService {
             line.setTotalWeight(qty.multiply(wpq));
             totalWeight = totalWeight.add(line.getTotalWeight());
         }
-        bom.setWeight(totalWeight);
+        if (totalWeight.compareTo(BigDecimal.ZERO) > 0 || bom.getWeight() == null) {
+            bom.setWeight(totalWeight);
+        }
     }
 
     /** FRS §4.7: Tamper prevention — recompute derived fields on RouteOperation from ProcessMaster/ResourceMaster. */
@@ -1429,6 +1543,20 @@ public class PlanningService {
         List<Map<String, Object>> children;
         if (hasLevelPaths) {
             children = buildTreeFromBomLevels(activeLines);
+            // FRS FR-09: the FG's own line (path "1") duplicates the root item; flatten it
+            // so level-2 Semi-FG components become direct children of the FG root.
+            List<Map<String, Object>> flattened = new ArrayList<>();
+            for (Map<String, Object> child : children) {
+                Object p = child.get("levelPath");
+                if (p != null && p.toString().equals("1")) {
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> grand = (List<Map<String, Object>>) child.getOrDefault("children", List.of());
+                    flattened.addAll(grand.isEmpty() ? List.of(child) : grand);
+                } else {
+                    flattened.add(child);
+                }
+            }
+            children = flattened;
         } else {
             int seq = 1;
             children = new ArrayList<>();
@@ -1463,6 +1591,7 @@ public class PlanningService {
             node.put("weightPerQty", line.getWeightPerQty());
             node.put("totalWeight", line.getTotalWeight());
             node.put("componentType", line.getComponentType());
+            node.put("itemType", line.getComponentType());
             node.put("bomLevel", line.getBomLevel());
             node.put("remarks", line.getRemarks());
             node.put("levelPath", path);
@@ -1499,6 +1628,7 @@ public class PlanningService {
         node.put("weightPerQty", line.getWeightPerQty());
         node.put("totalWeight", line.getTotalWeight());
         node.put("componentType", line.getComponentType());
+        node.put("itemType", line.getComponentType());
         node.put("bomLevel", line.getBomLevel());
         node.put("remarks", line.getRemarks());
         node.put("level", levelPath.split("\\.").length);
@@ -1764,18 +1894,6 @@ public class PlanningService {
 
         List<Map<String, Object>> result = new ArrayList<>();
         for (SalesOrder so : sos) {
-            boolean hasPendingLines = false;
-            if (so.getLines() != null) {
-                for (SalesOrderItem item : so.getLines()) {
-                    if (item.getPendingQty() != null && item.getPendingQty().compareTo(BigDecimal.ZERO) > 0) {
-                        hasPendingLines = true;
-                        break;
-                    }
-                }
-            }
-            if (!hasPendingLines && (so.getPendingQty() == null || so.getPendingQty().compareTo(BigDecimal.ZERO) <= 0)) {
-                continue;
-            }
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("id", so.getId());
             row.put("docNo", so.getDocNo());
@@ -1783,57 +1901,204 @@ public class PlanningService {
             row.put("customer", so.getCustomer());
             row.put("deliveryDate", so.getDeliveryDate());
             row.put("customerRequiredDate", so.getCustomerRequiredDate());
-            row.put("pendingQty", so.getPendingQty());
+
+            List<SalesOrderItem> itemsList = so.getLines();
+            if (itemsList == null || itemsList.isEmpty()) {
+                itemsList = em.createQuery(
+                    "SELECT i FROM SalesOrderItem i WHERE i.doc.id = :docId", SalesOrderItem.class)
+                    .setParameter("docId", so.getId())
+                    .getResultList();
+            }
 
             List<Map<String, Object>> lineRows = new ArrayList<>();
-            if (so.getLines() != null) {
-                for (SalesOrderItem item : so.getLines()) {
-                    BigDecimal pending = item.getPendingQty() != null ? item.getPendingQty() : BigDecimal.ZERO;
-                    if (pending.compareTo(BigDecimal.ZERO) <= 0) continue;
+            BigDecimal totalPending = BigDecimal.ZERO;
+
+            if (itemsList != null && !itemsList.isEmpty()) {
+                for (SalesOrderItem item : itemsList) {
+                    BigDecimal pending = item.getPendingQty() != null 
+                        ? item.getPendingQty() 
+                        : (item.getOrderQty() != null ? item.getOrderQty() : BigDecimal.ZERO);
+                    
+                    if (pending.compareTo(BigDecimal.ZERO) <= 0 && itemsList.size() > 1) {
+                        continue;
+                    }
+                    totalPending = totalPending.add(pending);
+
                     Map<String, Object> lr = new LinkedHashMap<>();
                     lr.put("id", item.getId());
-                    lr.put("itemName", item.getItemName());
-                    lr.put("description", item.getDescription());
-                    lr.put("orderQty", item.getOrderQty());
-                    lr.put("pendingQty", item.getPendingQty());
+                    String code = item.getItemCode() != null && !item.getItemCode().isBlank() 
+                        ? item.getItemCode() 
+                        : (item.getItemName() != null && !item.getItemName().isBlank() 
+                            ? item.getItemName() 
+                            : (item.getDescription() != null && !item.getDescription().isBlank()
+                                ? item.getDescription()
+                                : (item.getInternalPartNumber() != null && !item.getInternalPartNumber().isBlank()
+                                    ? item.getInternalPartNumber()
+                                    : (item.getCustomerPartNumber() != null && !item.getCustomerPartNumber().isBlank()
+                                        ? item.getCustomerPartNumber()
+                                        : so.getDocNo()))));
+                    
+                    String name = item.getItemName() != null && !item.getItemName().isBlank()
+                        ? item.getItemName()
+                        : (item.getDescription() != null && !item.getDescription().isBlank() ? item.getDescription() : code);
+                    String desc = item.getDescription() != null && !item.getDescription().isBlank() 
+                        ? item.getDescription() : name;
+
+                    lr.put("itemCode", code);
+                    lr.put("itemName", name);
+                    lr.put("description", desc);
+                    lr.put("orderQty", item.getOrderQty() != null ? item.getOrderQty() : pending);
+                    lr.put("pendingQty", pending);
                     lr.put("drawingNumber", item.getDrawingNumber());
                     lr.put("drawingRevision", item.getDrawingRevision());
-                    lr.put("uom", item.getUom());
+                    lr.put("uom", item.getUom() != null ? item.getUom() : "Nos");
                     lineRows.add(lr);
                 }
             }
+
+            // Fallback to SalesOrderSchedule if lines are still empty
+            if (lineRows.isEmpty() && so.getSchedules() != null && !so.getSchedules().isEmpty()) {
+                for (SalesOrderSchedule sch : so.getSchedules()) {
+                    BigDecimal pending = sch.getPendingQty() != null 
+                        ? sch.getPendingQty() 
+                        : (sch.getScheduledQty() != null ? sch.getScheduledQty() : BigDecimal.ZERO);
+                    if (pending.compareTo(BigDecimal.ZERO) <= 0 && so.getSchedules().size() > 1) continue;
+                    totalPending = totalPending.add(pending);
+
+                    Map<String, Object> lr = new LinkedHashMap<>();
+                    lr.put("id", sch.getId());
+                    String code = sch.getItemCode() != null && !sch.getItemCode().isBlank() ? sch.getItemCode() : so.getDocNo();
+                    lr.put("itemCode", code);
+                    lr.put("itemName", code);
+                    lr.put("description", "Scheduled Item");
+                    lr.put("orderQty", sch.getScheduledQty());
+                    lr.put("pendingQty", pending);
+                    lr.put("uom", "Nos");
+                    lineRows.add(lr);
+                }
+            }
+
+            BigDecimal headerPending = so.getPendingQty() != null && so.getPendingQty().compareTo(BigDecimal.ZERO) > 0 
+                ? so.getPendingQty() : totalPending;
+
+            if (headerPending.compareTo(BigDecimal.ZERO) <= 0 && lineRows.isEmpty()) {
+                continue;
+            }
+
+            // Guarantee clean fallback item row if lines are still empty
+            if (lineRows.isEmpty()) {
+                Map<String, Object> lr = new LinkedHashMap<>();
+                lr.put("id", so.getId());
+                String code = so.getDocNo();
+                String name = (so.getCustomer() != null ? so.getCustomer() : "Customer") + " Finished Part";
+                lr.put("itemCode", code);
+                lr.put("itemName", name);
+                lr.put("description", name);
+                lr.put("orderQty", so.getOrderedQty() != null ? so.getOrderedQty() : headerPending);
+                lr.put("pendingQty", headerPending);
+                lr.put("uom", "Nos");
+                lineRows.add(lr);
+            }
+
+            row.put("pendingQty", headerPending);
+
+            // Populate header-level item fields from first line for fallback
+            if (!lineRows.isEmpty()) {
+                Map<String, Object> firstLine = lineRows.get(0);
+                row.put("itemCode", firstLine.get("itemCode"));
+                row.put("itemName", firstLine.get("itemName"));
+                row.put("description", firstLine.get("description"));
+                row.put("uom", firstLine.get("uom"));
+                row.put("orderQty", firstLine.get("orderQty"));
+            }
+
             row.put("lines", lineRows);
             result.add(row);
         }
         return result;
     }
 
-    /** FRD §6.1: Find active BOM (APPROVED) and active Route Sheet (RELEASED) for an item. */
+    /** FRD §6.1: Find active BOM (APPROVED) and active Route Sheet (RELEASED) for an item, prioritizing SO-specific BOM. */
     @Transactional(readOnly = true)
-    public Map<String, Object> getActiveBomAndRoute(String itemCode) {
+    public Map<String, Object> getActiveBomAndRoute(String itemCode, Long salesOrderId) {
         Map<String, Object> result = new LinkedHashMap<>();
-        if (itemCode == null || itemCode.isBlank()) return result;
 
-        List<?> boms = em.createQuery(
-            "SELECT b FROM ProductionBOM b WHERE b.itemCode = :itemCode AND b.status = 'APPROVED' AND b.deleted = false ORDER BY b.id DESC")
-            .setParameter("itemCode", itemCode).setMaxResults(1).getResultList();
-        if (!boms.isEmpty()) {
-            ProductionBOM bom = (ProductionBOM) boms.get(0);
-            result.put("bomId", bom.getId());
-            result.put("bomCode", bom.getBomNumber());
-            result.put("bomRevision", bom.getBomVersion());
+        List<ProductionBOM> boms = new ArrayList<>();
+        // 1. Try finding BOM by Sales Order ID first (if provided)
+        if (salesOrderId != null) {
+            if (itemCode != null && !itemCode.isBlank()) {
+                boms = em.createQuery(
+                    "SELECT b FROM ProductionBOM b WHERE b.salesOrderId = :soId AND b.itemCode = :itemCode AND b.deleted = false ORDER BY b.id DESC", ProductionBOM.class)
+                    .setParameter("soId", salesOrderId)
+                    .setParameter("itemCode", itemCode)
+                    .getResultList();
+            }
+            if (boms.isEmpty()) {
+                boms = em.createQuery(
+                    "SELECT b FROM ProductionBOM b WHERE b.salesOrderId = :soId AND b.deleted = false ORDER BY b.id DESC", ProductionBOM.class)
+                    .setParameter("soId", salesOrderId)
+                    .getResultList();
+            }
+        }
+        // 2. Fallback to general item code active BOM
+        if (boms.isEmpty() && itemCode != null && !itemCode.isBlank()) {
+            boms = em.createQuery(
+                "SELECT b FROM ProductionBOM b WHERE b.itemCode = :itemCode AND b.deleted = false ORDER BY b.id DESC", ProductionBOM.class)
+                .setParameter("itemCode", itemCode)
+                .getResultList();
         }
 
-        List<?> routes = em.createQuery(
-            "SELECT r FROM RouteSheet r WHERE r.itemCode = :itemCode AND r.status = 'RELEASED' AND r.deleted = false ORDER BY r.id DESC")
-            .setParameter("itemCode", itemCode).setMaxResults(1).getResultList();
-        if (!routes.isEmpty()) {
-            RouteSheet route = (RouteSheet) routes.get(0);
-            result.put("routeId", route.getId());
-            result.put("routeSheetCode", route.getRouteNumber());
-            result.put("routeRevision", route.getRouteVersion());
+        List<Map<String, Object>> bomList = boms.stream().map(b -> docs.toRow(b)).toList();
+        result.put("boms", bomList);
+
+        if (!bomList.isEmpty()) {
+            Map<String, Object> firstBom = bomList.get(0);
+            result.put("bomId", firstBom.get("id"));
+            result.put("bomCode", firstBom.get("bomNumber"));
+            result.put("bomRevision", firstBom.get("bomVersion"));
+            result.put("itemCode", firstBom.get("itemCode"));
+            result.put("materials", firstBom.get("lines"));
+        }
+
+        // Route Sheet lookup
+        List<RouteSheet> routes = new ArrayList<>();
+        String effectiveItemCode = itemCode != null && !itemCode.isBlank() ? itemCode : (String) result.get("itemCode");
+        if (effectiveItemCode != null && !effectiveItemCode.isBlank()) {
+            routes = em.createQuery(
+                "SELECT r FROM RouteSheet r WHERE r.itemCode = :itemCode AND r.deleted = false ORDER BY r.id DESC", RouteSheet.class)
+                .setParameter("itemCode", effectiveItemCode).getResultList();
+        }
+        List<Map<String, Object>> routeList = routes.stream().map(r -> docs.toRow(r)).toList();
+        result.put("routes", routeList);
+
+        if (!routeList.isEmpty()) {
+            Map<String, Object> firstRoute = routeList.get(0);
+            result.put("routeId", firstRoute.get("id"));
+            result.put("routeSheetCode", firstRoute.get("routeNumber"));
+            result.put("routeRevision", firstRoute.get("routeVersion"));
+            result.put("operations", firstRoute.get("operations"));
         }
 
         return result;
+    }
+
+    public Map<String, Object> getActiveBomAndRoute(String itemCode) {
+        return getActiveBomAndRoute(itemCode, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getAllAvailableBoms() {
+        List<ProductionBOM> list = em.createQuery(
+            "SELECT b FROM ProductionBOM b WHERE b.deleted = false ORDER BY b.id DESC", ProductionBOM.class)
+            .getResultList();
+        return list.stream().map(b -> docs.toRow(b)).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getAllAvailableRoutes() {
+        List<RouteSheet> list = em.createQuery(
+            "SELECT r FROM RouteSheet r WHERE r.deleted = false ORDER BY r.id DESC", RouteSheet.class)
+            .getResultList();
+        return list.stream().map(r -> docs.toRow(r)).toList();
     }
 }
