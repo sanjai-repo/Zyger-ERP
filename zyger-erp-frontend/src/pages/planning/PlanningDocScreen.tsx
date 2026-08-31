@@ -901,10 +901,12 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
                           ) : docType === 'route-sheet' && f.key === 'resourceId' ? (
                             <select className="in" value={String(line[f.key] ?? '')} onChange={(e) => {
                               const selectedResId = e.target.value;
-                              const res = resources.find((r) => String(r.id) === selectedResId);
-                              const proc = processes.find((p) => String(p.id) === String(line.processId));
-                              if (res && proc && proc.resourceType && res.resourceType && proc.resourceType.toLowerCase() !== res.resourceType.toLowerCase()) {
-                                toast(`Rule 17 Soft Warning: Selected resource type (${res.resourceType}) differs from default process resource type (${proc.resourceType}).`, 'error');
+                              const res = resources.find((r) => String((r as any).id) === selectedResId);
+                              const proc = processes.find((p) => String((p as any).id) === String(line.processId));
+                              const procResType = String((proc as any)?.resourceType || '');
+                              const resResType = String((res as any)?.resourceType || '');
+                              if (res && proc && procResType && resResType && procResType.toLowerCase() !== resResType.toLowerCase()) {
+                                toast(`Rule 17 Soft Warning: Selected resource type (${resResType}) differs from default process resource type (${procResType}).`, 'error');
                               }
                               setLines((c) => c.map((l, i) => i === index ? {
                                 ...l,

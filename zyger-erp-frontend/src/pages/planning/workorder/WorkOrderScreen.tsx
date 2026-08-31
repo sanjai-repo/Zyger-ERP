@@ -262,14 +262,10 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
     if (!form.salesOrderId && !form.salesOrderNo && !form.soNumber) {
       toast('Sales Order is mandatory.', 'error'); return false;
     }
-    // FRD §7.0 V2 & V3: Production Qty mandatory and must not exceed Pending Qty
+    // FRD §7.0 V2: Production Qty mandatory
     const prodQty = Number(form.productionQty ?? 0);
-    const pendingQty = Number(form.pendingQty ?? 0);
     if (!prodQty || prodQty <= 0) {
       toast('Production Quantity is mandatory.', 'error'); return false;
-    }
-    if (pendingQty > 0 && prodQty > pendingQty) {
-      toast('Production Quantity exceeds Pending Quantity.', 'error'); return false;
     }
     // FRD §7.0 V4 & V5: Active BOM and Route Sheet
     if (!form.bomCode && !form.bomId) {
@@ -370,7 +366,8 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
     };
 
     setForm((c) => ({ ...c, ...updates }));
-    setSelectedSoLineId(line.id ?? itemCode);
+    const lineIdVal = (line as any).id ?? itemCode ?? null;
+    setSelectedSoLineId(typeof lineIdVal === 'number' ? lineIdVal : (lineIdVal ? String(lineIdVal) : null));
     setSoModalOpen(false);
 
     if (itemCode || so.id) {

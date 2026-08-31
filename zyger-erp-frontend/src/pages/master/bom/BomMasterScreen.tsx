@@ -1333,14 +1333,14 @@ function renderTreeRows(node: TreeNode, expanded: Set<string>, toggle: (path: st
   const isExpanded = expanded.has(path);
 
   const code = node.itemCode || node.componentItemCode || '';
-  const desc = node.description || node.name || '';
+  const desc = node.description || (node as any).name || '';
   const qtyVal = node.quantityPer != null && node.quantityPer > 0 ? node.quantityPer : 1;
   const unitW = node.weightPerQty != null ? Number(node.weightPerQty) : 0;
   const totalW = node.totalWeight != null && node.totalWeight > 0 ? Number(node.totalWeight) : unitW * qtyVal;
   const rmk = node.remarks || '';
 
   // Type classification matching FG vs SEMI FG vs RM
-  const typeUpper = (node.type || '').toUpperCase();
+  const typeUpper = (node.itemType || (node as any).type || '').toUpperCase();
   const codeUpper = code.toUpperCase();
   const isSemiFg = (typeUpper.includes('SEMI') || typeUpper === 'SFG' || typeUpper === 'SEMI_FG' || codeUpper.startsWith('SFG') || codeUpper.startsWith('SMFG') || codeUpper.startsWith('CSM'));
   const isFg = !isSemiFg && (typeUpper.includes('FG') || typeUpper.includes('FINISHED') || codeUpper.startsWith('FG') || codeUpper.startsWith('MFG') || isRoot);
@@ -1355,7 +1355,7 @@ function renderTreeRows(node: TreeNode, expanded: Set<string>, toggle: (path: st
         style={{
           display: 'flex',
           alignItems: 'center',
-          justify: 'space-between',
+          justifyContent: 'space-between',
           background: isRoot ? '#ffffff' : '#ffffff',
           border: isRoot ? '1.5px solid #93c5fd' : '1px solid #e2e8f0',
           borderRadius: '12px',

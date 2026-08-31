@@ -123,15 +123,7 @@ public class PlanningService {
                     && body.get("sourceDocNo") == null) {
                 throw new IllegalArgumentException("Sales Order is mandatory.");
             }
-            // FRD §7.0: Prod Qty must not exceed Pending Qty on update
             WorkOrder wo = (WorkOrder) docs.get("work-order", id);
-            BigDecimal prodQty = body.containsKey("productionQty") && body.get("productionQty") != null
-                ? new BigDecimal(String.valueOf(body.get("productionQty"))) : wo.getProductionQty();
-            BigDecimal pendingQty = body.containsKey("pendingQty") && body.get("pendingQty") != null
-                ? new BigDecimal(String.valueOf(body.get("pendingQty"))) : wo.getPendingQty();
-            if (prodQty != null && pendingQty != null && prodQty.compareTo(pendingQty) > 0) {
-                throw new IllegalArgumentException("Production Quantity exceeds Pending Quantity.");
-            }
             // FRD §7.0: Planned End Date > Start Date on update
             String sd = body.containsKey("plannedStartDate") ? String.valueOf(body.getOrDefault("plannedStartDate", "")) : String.valueOf(wo.getPlannedStartDate() != null ? wo.getPlannedStartDate() : "");
             String ed = body.containsKey("plannedEndDate") ? String.valueOf(body.getOrDefault("plannedEndDate", "")) : String.valueOf(wo.getPlannedEndDate() != null ? wo.getPlannedEndDate() : "");
@@ -846,12 +838,6 @@ public class PlanningService {
                 ? new BigDecimal(String.valueOf(body.get("orderQuantity"))) : null);
         if (prodQty == null || prodQty.signum() <= 0) {
             throw new IllegalArgumentException("Production Quantity is mandatory.");
-        }
-        // V3: Production Qty must not exceed Pending Qty
-        BigDecimal pendingQty = body.containsKey("pendingQty") && body.get("pendingQty") != null
-            ? new BigDecimal(String.valueOf(body.get("pendingQty"))) : null;
-        if (prodQty != null && pendingQty != null && prodQty.compareTo(pendingQty) > 0) {
-            throw new IllegalArgumentException("Production Quantity exceeds Pending Quantity.");
         }
         // V6: Planned End Date > Start Date
         if (body.containsKey("plannedStartDate") && body.containsKey("plannedEndDate")) {
