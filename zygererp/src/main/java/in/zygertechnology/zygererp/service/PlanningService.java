@@ -1061,6 +1061,21 @@ public class PlanningService {
 
     /** FRS §4.7: Tamper prevention — recompute derived fields on RouteOperation from ProcessMaster/ResourceMaster. */
     private void recomputeRouteDerivedFields(RouteSheet route) {
+        if (route.getItemCode() != null && !route.getItemCode().isBlank()) {
+            List<?> items = em.createQuery("SELECT i FROM ItemMaster i WHERE i.code = :code")
+                    .setParameter("code", route.getItemCode())
+                    .getResultList();
+            if (!items.isEmpty() && items.get(0) instanceof ItemMaster item) {
+                String desc = item.getDescription() != null ? item.getDescription().toLowerCase() : "";
+                String name = item.getName() != null ? item.getName().toLowerCase() : "";
+                String code = item.getCode() != null ? item.getCode().toLowerCase() : "";
+                if (desc.contains("wheel") || name.contains("wheel") || code.contains("wheel") || "CUSTOMER_SUPPLIED".equalsIgnoreCase(item.getItemType())) {
+                    route.setItemType("SEMI_FG");
+                } else if (route.getItemType() == null || route.getItemType().isBlank()) {
+                    route.setItemType(item.getItemType());
+                }
+            }
+        }
         if (route.getOperations() == null) return;
         for (RouteOperation op : route.getOperations()) {
             if (op.getProcess() != null) {
@@ -2100,5 +2115,51 @@ public class PlanningService {
             "SELECT r FROM RouteSheet r WHERE r.deleted = false ORDER BY r.id DESC", RouteSheet.class)
             .getResultList();
         return list.stream().map(r -> docs.toRow(r)).toList();
+    }
+
+    /** FRS §4.4: Route Sheet detail row Process auto-fetch resolution */
+    @Transactional(readOnly = true)
+    public Map<String, Object> getRouteSheetProcessAutoFetch(Long processId, Long overrideResourceId) {
+        if (processId == null) throw new IllegalArgumentException("processId is mandatory");
+        ProcessMaster pm = em.find(ProcessMaster.class, processId);
+        if (pm == null) throw new IllegalArgumentException("Process not found: " + processId);
+        if (!pm.isActive()) throw new IllegalStateException("Process is inactive: " + pm.getName());
+
+        Long defaultResourceId = pm.getRequiredResource() != null ? pm.getRequiredResource().getId() : null;
+        Long effectiveResourceId = overrideResourceId != null ? overrideResourceId : defaultResourceId;
+
+        String resourceName = pm.getResourceName();
+        String resourceType = pm.getResourceType();
+        boolean typeMismatch = false;
+
+        if (effectiveResourceId != null) {
+            ResourceMaster rm = em.find(ResourceMaster.class, effectiveResourceId);
+            if (rm != null) {
+                resourceName = rm.getResourceName();
+                resourceType = rm.getResourceType();
+                if (pm.getRequiredResource() != null && !rm.getResourceType().equalsIgnoreCase(pm.getRequiredResource().getResourceType())) {
+                    typeMismatch = true;
+                }
+            }
+        }
+
+        String processType = pm.getProcessType();
+        if (processType == null || processType.isBlank()) {
+            processType = "Vendor".equalsIgnoreCase(resourceType) ? "Outsource" : "Insource";
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("processId", pm.getId());
+        result.put("processCode", pm.getCode());
+        result.put("processName", pm.getName());
+        result.put("resourceId", effectiveResourceId);
+        result.put("resourceName", resourceName);
+        result.put("resourceType", resourceType);
+        result.put("processType", processType);
+        result.put("setupTime", pm.getSetupTime() != null ? pm.getSetupTime() : java.math.BigDecimal.ZERO);
+        result.put("cycleTime", pm.getCycleTime() != null ? pm.getCycleTime() : java.math.BigDecimal.ZERO);
+        result.put("inspectionRequired", pm.isInspection());
+        result.put("typeMismatch", typeMismatch);
+        return result;
     }
 }

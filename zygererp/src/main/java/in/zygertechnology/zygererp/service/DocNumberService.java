@@ -34,6 +34,14 @@ public class DocNumberService {
     }
 
     private String resolvePrefix(String docType) {
+        String key = docType == null ? "" : docType.trim().toLowerCase();
+        try {
+            Optional<NumberingConfig> cfgOpt = numberingConfigs.findByDocType(key)
+                    .filter(c -> Boolean.TRUE.equals(c.getActive()));
+            if (cfgOpt.isPresent() && cfgOpt.get().getPrefix() != null && !cfgOpt.get().getPrefix().isBlank()) {
+                return cfgOpt.get().getPrefix();
+            }
+        } catch (Exception ignored) {}
         try {
             return DocTypes.get(docType).prefix();
         } catch (Exception e) {
@@ -43,6 +51,7 @@ public class DocNumberService {
             else if ("sales-invoice".equalsIgnoreCase(docType)) return "INV";
             else if ("dc-return".equalsIgnoreCase(docType)) return "DCR";
             else if ("invoice-return".equalsIgnoreCase(docType)) return "INVR";
+            else if ("resource".equalsIgnoreCase(docType)) return "RES";
         }
         return docType;
     }

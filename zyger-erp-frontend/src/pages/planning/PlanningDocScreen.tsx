@@ -774,11 +774,15 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
                       onChange={(e) => {
                         const code = e.target.value;
                         const it = items.find((i) => String(i.code) === code);
-                        setForm((c) => ({ ...c, itemCode: code, itemType: it ? String(it.itemType ?? '') : c.itemType }));
+                        let derivedType = it ? String(it.itemType ?? '') : '';
+                        if (it && (String(it.code ?? '').toLowerCase().includes('wheel') || String(it.description ?? '').toLowerCase().includes('wheel') || String(it.name ?? '').toLowerCase().includes('wheel') || derivedType === 'CUSTOMER_SUPPLIED' || derivedType === 'Customer_supplied' || derivedType === 'CSM')) {
+                          derivedType = 'SEMI_FG';
+                        }
+                        setForm((c) => ({ ...c, itemCode: code, itemType: derivedType || c.itemType }));
                       }}>
                       <option value="">{'\u2014 Select Item \u2014'}</option>
                       {items.map((it) => (
-                        <option key={String(it.id)} value={String(it.code ?? '')}>{String(it.code ?? '')} — {String(it.description ?? '')}</option>
+                        <option key={String(it.id)} value={String(it.code ?? '')}>{String(it.code ?? '')} — {String(it.description ?? it.name ?? '')}</option>
                       ))}
                     </select>
                   ) : isProductionBomItem ? (
@@ -879,12 +883,16 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
                               const reqRes = resources.find((r) => String(r.id) === reqResId);
                               setLines((c) => c.map((l, i) => i === index ? {
                                 ...l,
+                                sequenceNo: l.sequenceNo ? l.sequenceNo : (index + 1) * 10,
                                 processId: selectedId || '',
                                 processCode: proc?.code ?? '',
                                 processType: proc?.processType ?? (reqRes?.resourceType === 'Vendor' ? 'Outsource' : 'Insource'),
                                 resourceId: reqResId || l.resourceId || '',
                                 resourceName: reqRes?.resourceName ?? proc?.resourceName ?? l.resourceName ?? '',
                                 resourceType: reqRes?.resourceType ?? proc?.resourceType ?? l.resourceType ?? '',
+                                setupTime: proc?.setupTime ?? l.setupTime ?? 0,
+                                cycleTime: proc?.cycleTime ?? l.cycleTime ?? 0,
+                                inspectionRequired: proc?.inspection ? 'Yes' : (l.inspectionRequired ?? 'No'),
                               } : l));
                             }}>
                               <option value="">— Select Process —</option>
@@ -894,6 +902,10 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
                             <select className="in" value={String(line[f.key] ?? '')} onChange={(e) => {
                               const selectedResId = e.target.value;
                               const res = resources.find((r) => String(r.id) === selectedResId);
+                              const proc = processes.find((p) => String(p.id) === String(line.processId));
+                              if (res && proc && proc.resourceType && res.resourceType && proc.resourceType.toLowerCase() !== res.resourceType.toLowerCase()) {
+                                toast(`Rule 17 Soft Warning: Selected resource type (${res.resourceType}) differs from default process resource type (${proc.resourceType}).`, 'error');
+                              }
                               setLines((c) => c.map((l, i) => i === index ? {
                                 ...l,
                                 resourceId: selectedResId || '',

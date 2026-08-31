@@ -290,4 +290,12 @@ public class PlanningController {
     Map<String, Object> outsourceProcessReport(@RequestParam Map<String, String> q) {
         return planning.getRouteSheetOutsourceReport(q);
     }
+
+    /** FRS §4.4: Auto-fetch endpoint when selecting a Process in Route Sheet detail grid */
+    @GetMapping("/route-sheet/auto-fetch-process")
+    Map<String, Object> autoFetchProcess(
+            @RequestParam Long processId,
+            @RequestParam(required = false) Long resourceId) {
+        return planning.getRouteSheetProcessAutoFetch(processId, resourceId);
+    }
 }

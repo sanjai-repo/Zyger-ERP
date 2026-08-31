@@ -73,6 +73,7 @@ reg("process",                 "PRC", Effect.NONE,  "PROCESS",                nu
         reg("rack",                    "RCK", Effect.NONE,  "RACK",                   null, false);
         reg("bin",                     "BIN", Effect.NONE,  "BIN",                    null, false);
         reg("process-group",           "PG",  Effect.NONE,  "PROCESS_GROUP",          null, false);
+        reg("resource",                "RES", Effect.NONE,  "RESOURCE",               null, false);
         reg("machine",                 "MAC", Effect.NONE,  "MACHINE",                null, false);
         reg("instrument",              "INS", Effect.NONE,  "INSTRUMENT",             null, false);
         reg("tool",                    "TOL", Effect.NONE,  "TOOL",                   null, false);

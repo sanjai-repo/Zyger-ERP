@@ -196,10 +196,7 @@ export const ROUTE_SHEET_CONFIG: DocScreenConfig = {
     { key: 'itemCode', label: 'Item *', type: 'text', required: true },
     { key: 'itemType', label: 'Item Type', type: 'text', readonly: true },
     { key: 'itemRevision', label: 'Revision *', type: 'text', required: true },
-    { key: 'revisionLabel', label: 'Revision Label', type: 'text', readonly: true },
     { key: 'status', label: 'Status', type: 'select', options: ['DRAFT', 'RELEASED', 'UNDER_REVISION', 'OBSOLETE'], readonly: true },
-    { key: 'effectiveFrom', label: 'Effective From', type: 'date' },
-    { key: 'effectiveTo', label: 'Effective To', type: 'date' },
     { key: 'remarks', label: 'Remarks', type: 'textarea', span2: true },
   ],
   lines: {
