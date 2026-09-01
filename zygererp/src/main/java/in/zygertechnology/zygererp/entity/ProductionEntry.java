@@ -4,6 +4,9 @@ import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import in.zygertechnology.zygererp.config.AuditEntityListener;
 
 @Entity
@@ -20,6 +23,23 @@ public class ProductionEntry {
     @Column(name = "entry_number", unique = true, length = 60)
     private String entryNumber;
 
+    @Column(name = "entry_type", length = 30)
+    @Builder.Default
+    private String entryType = "Production Entry";
+
+    @Column(name = "production_type", length = 30)
+    @Builder.Default
+    private String productionType = "GENERAL"; // GENERAL or REWORK
+
+    @Column(name = "supervisor_code", length = 60)
+    private String supervisorCode;
+
+    @Column(name = "supervisor_name", length = 200)
+    private String supervisorName;
+
+    @Column(name = "financial_year", length = 20)
+    private String financialYear;
+
     @Column(name = "work_order_number", length = 60)
     private String workOrderNumber;
 
@@ -28,6 +48,13 @@ public class ProductionEntry {
 
     @Column(name = "subjob_number", length = 60)
     private String subjobNumber;
+
+    @Column(name = "route_sheet_number", length = 60)
+    private String routeSheetNumber;
+
+    @Column(name = "pending_sequence_only")
+    @Builder.Default
+    private Boolean pendingSequenceOnly = true;
 
     @Column(name = "part_code", length = 60)
     private String partCode;
@@ -40,6 +67,18 @@ public class ProductionEntry {
 
     @Column(name = "operation_sequence")
     private Integer operationSequence;
+
+    @Column(name = "process_qty", precision = 18, scale = 4)
+    private BigDecimal processQty;
+
+    @Column(name = "route_sheet_qty", precision = 18, scale = 4)
+    private BigDecimal routeSheetQty;
+
+    @Column(name = "uom", length = 20)
+    private String uom;
+
+    @Column(name = "route_sheet_date")
+    private LocalDate routeSheetDate;
 
     @Column(name = "machine_code", length = 60)
     private String machineCode;
@@ -59,6 +98,24 @@ public class ProductionEntry {
     @Column(name = "end_time")
     private Instant endTime;
 
+    @Column(name = "process_time", precision = 14, scale = 2)
+    private BigDecimal processTime;
+
+    @Column(name = "process_rate", precision = 14, scale = 2)
+    private BigDecimal processRate;
+
+    @Column(name = "mhr", precision = 14, scale = 2)
+    private BigDecimal mhr;
+
+    @Column(name = "item_weight", precision = 14, scale = 4)
+    private BigDecimal itemWeight;
+
+    @Column(name = "idle_time", precision = 14, scale = 2)
+    private BigDecimal idleTime;
+
+    @Column(name = "idle_reason", length = 255)
+    private String idleReason;
+
     @Column(name = "produced_quantity", precision = 18, scale = 4)
     private BigDecimal producedQuantity;
 
@@ -75,10 +132,20 @@ public class ProductionEntry {
     private BigDecimal scrapQuantity;
 
     @Column(length = 30)
-    private String status;
+    private String status; // DRAFT, POSTED, SUBMITTED, APPROVED, REJECTED, CANCELLED, REVERSED
 
     @Column(name = "quality_status", length = 30)
     private String qualityStatus;
+
+    @Column(name = "reversed_from_entry_id")
+    private Long reversedFromEntryId;
+
+    @Column(name = "is_reversal")
+    @Builder.Default
+    private Boolean isReversal = false;
+
+    @Column(name = "reversal_reason", length = 500)
+    private String reversalReason;
 
     @Column(length = 500)
     private String remarks;
@@ -97,4 +164,76 @@ public class ProductionEntry {
 
     @Column(name = "updated_at")
     private Instant updatedAt;
+
+    // --- Child Detail Collections ---
+
+    @OneToMany(mappedBy = "productionEntry", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @Builder.Default
+    private List<ProductionEntryOperator> operators = new ArrayList<>();
+
+    @OneToMany(mappedBy = "productionEntry", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @Builder.Default
+    private List<ProductionEntryRejection> rejectionReasons = new ArrayList<>();
+
+    @OneToMany(mappedBy = "productionEntry", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @Builder.Default
+    private List<ProductionEntryRework> reworkReasons = new ArrayList<>();
+
+    @OneToMany(mappedBy = "productionEntry", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @Builder.Default
+    private List<ProductionEntryMaterial> materials = new ArrayList<>();
+
+    @OneToMany(mappedBy = "productionEntry", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @Builder.Default
+    private List<ProductionEntryBatch> batchAllocations = new ArrayList<>();
+
+    public void setOperators(List<ProductionEntryOperator> list) {
+        this.operators.clear();
+        if (list != null) {
+            for (ProductionEntryOperator o : list) {
+                o.setProductionEntry(this);
+                this.operators.add(o);
+            }
+        }
+    }
+
+    public void setRejectionReasons(List<ProductionEntryRejection> list) {
+        this.rejectionReasons.clear();
+        if (list != null) {
+            for (ProductionEntryRejection r : list) {
+                r.setProductionEntry(this);
+                this.rejectionReasons.add(r);
+            }
+        }
+    }
+
+    public void setReworkReasons(List<ProductionEntryRework> list) {
+        this.reworkReasons.clear();
+        if (list != null) {
+            for (ProductionEntryRework rw : list) {
+                rw.setProductionEntry(this);
+                this.reworkReasons.add(rw);
+            }
+        }
+    }
+
+    public void setMaterials(List<ProductionEntryMaterial> list) {
+        this.materials.clear();
+        if (list != null) {
+            for (ProductionEntryMaterial m : list) {
+                m.setProductionEntry(this);
+                this.materials.add(m);
+            }
+        }
+    }
+
+    public void setBatchAllocations(List<ProductionEntryBatch> list) {
+        this.batchAllocations.clear();
+        if (list != null) {
+            for (ProductionEntryBatch b : list) {
+                b.setProductionEntry(this);
+                this.batchAllocations.add(b);
+            }
+        }
+    }
 }

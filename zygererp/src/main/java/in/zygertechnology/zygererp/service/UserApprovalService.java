@@ -26,6 +26,7 @@ public class UserApprovalService {
     private final AuditLogService auditLogs;
     private final EmailService emailService;
     private final ScreenSeedService screenSeedService;
+    private final RbacService rbacService;
 
     public record StatusCounts(long total, long active, long pending, long rejected, long suspended, long disabled) {}
 
@@ -206,6 +207,8 @@ public class UserApprovalService {
                     .anyMatch(r -> r.isActive() && "ADMIN".equalsIgnoreCase(r.getName()));
         }
 
+        Set<String> userPermCodes = rbacService != null ? rbacService.getUserPermissionCodes(u.getUsername()) : Set.of();
+
         List<Map<String,Object>> rows = new ArrayList<>();
         for (Screen s : screenList) {
             UserScreenPermission p = perms.get(s.getId());
@@ -220,11 +223,35 @@ public class UserApprovalService {
                 row.put("canDelete", true);
                 row.put("canExport", true);
             } else {
-                row.put("canView", p != null && p.isCanView());
-                row.put("canCreate", p != null && p.isCanCreate());
-                row.put("canEdit", p != null && p.isCanEdit());
-                row.put("canDelete", p != null && p.isCanDelete());
-                row.put("canExport", p != null && p.isCanExport());
+                String mod = s.getModule() != null ? s.getModule().toUpperCase() : "";
+                String scrKey = s.getScreenKey() != null ? s.getScreenKey().toUpperCase() : "";
+
+                boolean roleCanView = userPermCodes.contains(mod + ":" + scrKey + ":VIEW")
+                        || userPermCodes.contains(mod + ":*:VIEW")
+                        || userPermCodes.contains(mod + ":*:*")
+                        || userPermCodes.contains("*:*:*");
+                boolean roleCanCreate = userPermCodes.contains(mod + ":" + scrKey + ":CREATE")
+                        || userPermCodes.contains(mod + ":*:CREATE")
+                        || userPermCodes.contains(mod + ":*:*")
+                        || userPermCodes.contains("*:*:*");
+                boolean roleCanEdit = userPermCodes.contains(mod + ":" + scrKey + ":EDIT")
+                        || userPermCodes.contains(mod + ":*:EDIT")
+                        || userPermCodes.contains(mod + ":*:*")
+                        || userPermCodes.contains("*:*:*");
+                boolean roleCanDelete = userPermCodes.contains(mod + ":" + scrKey + ":DELETE")
+                        || userPermCodes.contains(mod + ":*:DELETE")
+                        || userPermCodes.contains(mod + ":*:*")
+                        || userPermCodes.contains("*:*:*");
+                boolean roleCanExport = userPermCodes.contains(mod + ":" + scrKey + ":EXPORT")
+                        || userPermCodes.contains(mod + ":*:EXPORT")
+                        || userPermCodes.contains(mod + ":*:*")
+                        || userPermCodes.contains("*:*:*");
+
+                row.put("canView", (p != null && p.isCanView()) || roleCanView);
+                row.put("canCreate", (p != null && p.isCanCreate()) || roleCanCreate);
+                row.put("canEdit", (p != null && p.isCanEdit()) || roleCanEdit);
+                row.put("canDelete", (p != null && p.isCanDelete()) || roleCanDelete);
+                row.put("canExport", (p != null && p.isCanExport()) || roleCanExport);
             }
             rows.add(row);
         }

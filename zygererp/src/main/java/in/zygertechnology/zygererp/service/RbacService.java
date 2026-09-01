@@ -92,7 +92,6 @@ public class RbacService {
                 String screen = parts[1];
                 String action = parts[2];
 
-                // Module wildcard: MASTER:*:* covers all screens/actions in MASTER
                 if (!"*".equals(module)) {
                     expanded.add(module + ":*:*");
                     expanded.add(module + ":" + screen + ":*");

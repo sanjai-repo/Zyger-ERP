@@ -146,7 +146,8 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public Map<String,Object> logout(@RequestBody Map<String,String> body) {
+    public Map<String,Object> logout(@RequestBody Map<String,String> body, HttpServletRequest request) {
+        // Revoke the refresh token so it can no longer be exchanged for a new access token.
         String raw = body.get("refreshToken");
         if (raw != null && !raw.isBlank()) {
             refreshTokens.findByToken(sha256(raw)).ifPresent(rt -> {
@@ -156,6 +157,14 @@ public class AuthController {
                 }
             });
         }
+
+        // Blacklist the access token so the current session is invalidated immediately
+        // (not merely left to expire). Any in-flight/stale tab using this token gets 401.
+        String header = request.getHeader("Authorization");
+        if (header != null && header.startsWith("Bearer ")) {
+            jwt.deny(header.substring(7));
+        }
+
         return Map.of("message", "Logged out successfully");
     }
 

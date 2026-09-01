@@ -15,6 +15,9 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import org.springframework.transaction.annotation.Transactional;
+import jakarta.servlet.http.HttpServletRequest;
+
 import java.security.Principal;
 
 import java.math.BigDecimal;
@@ -52,6 +55,9 @@ public class ProductionController {
     private final jakarta.persistence.EntityManager em;
     private final in.zygertechnology.zygererp.service.WorkflowStateMachine stateMachine;
     private final in.zygertechnology.zygererp.service.ProductionRollupService rollupService;
+    private final in.zygertechnology.zygererp.service.ProductionEntryValidationService entryValidator;
+    private final PostingIdempotencyKeyRepository idempotencyKeys;
+    private final ProductionEntryAuditLogRepository auditLogs;
 
     private static String principalName(Principal p) { return p != null ? p.getName() : "system"; }
 
@@ -559,32 +565,56 @@ public class ProductionController {
     public List<ProductionEntry> listProductionEntries() { return productionEntries.findAll(); }
 
     @PostMapping("/api/v1/production/entries")
+    @Transactional
     public ProductionEntry createProductionEntry(@RequestBody ProductionEntry pe, Principal p) {
         pe.setId(null);
         pe.setEntryNumber(numbers.next("production-entry", "PE"));
+
+        BigDecimal processQty = pe.getProcessQty() != null ? pe.getProcessQty() : (pe.getProducedQuantity() != null ? pe.getProducedQuantity() : BigDecimal.ZERO);
         BigDecimal good = pe.getGoodQuantity() != null ? pe.getGoodQuantity() : BigDecimal.ZERO;
         BigDecimal rework = pe.getReworkQuantity() != null ? pe.getReworkQuantity() : BigDecimal.ZERO;
         BigDecimal reject = pe.getRejectedQuantity() != null ? pe.getRejectedQuantity() : BigDecimal.ZERO;
         BigDecimal scrap = pe.getScrapQuantity() != null ? pe.getScrapQuantity() : BigDecimal.ZERO;
-        BigDecimal sum = good.add(rework).add(reject).add(scrap);
 
-        if (pe.getProducedQuantity() == null || pe.getProducedQuantity().compareTo(BigDecimal.ZERO) <= 0) {
-            pe.setProducedQuantity(sum);
-        } else if (sum.compareTo(pe.getProducedQuantity()) != 0 && sum.compareTo(BigDecimal.ZERO) > 0) {
-            throw new IllegalArgumentException("Production quantity reconciliation failed (GBL-16): Good (" + good +
-                    ") + Rework (" + rework + ") + Reject (" + reject + ") + Scrap (" + scrap +
-                    ") = " + sum + " does not equal Produced Quantity (" + pe.getProducedQuantity() + ")");
+        // Auto-derive good quantity if not manually specified
+        if (good.compareTo(BigDecimal.ZERO) == 0 && processQty.compareTo(BigDecimal.ZERO) > 0 && rework.add(reject).compareTo(BigDecimal.ZERO) > 0) {
+            good = processQty.subtract(rework).subtract(reject);
+            pe.setGoodQuantity(good);
         }
-        pe.setGoodQuantity(good);
-        pe.setReworkQuantity(rework);
-        pe.setRejectedQuantity(reject);
-        pe.setScrapQuantity(scrap);
+
+        pe.setProducedQuantity(processQty);
+        pe.setProcessQty(processQty);
 
         if (pe.getStatus() == null) pe.setStatus("DRAFT");
         if (pe.getQualityStatus() == null) pe.setQualityStatus("PENDING");
         pe.setCreatedBy(principalName(p));
         pe.setCreatedAt(Instant.now());
-        return productionEntries.save(pe);
+
+        // Validate rules
+        entryValidator.validate(pe);
+        entryValidator.validateSequenceAndPending(pe);
+
+        // Ensure proper JPA bi-directional linkages
+        pe.setOperators(pe.getOperators());
+        pe.setRejectionReasons(pe.getRejectionReasons());
+        pe.setReworkReasons(pe.getReworkReasons());
+        pe.setMaterials(pe.getMaterials());
+        pe.setBatchAllocations(pe.getBatchAllocations());
+
+        ProductionEntry saved = productionEntries.save(pe);
+
+        // Audit Log Event
+        try {
+            auditLogs.save(ProductionEntryAuditLog.builder()
+                    .entryId(saved.getId())
+                    .eventType("CREATE")
+                    .userId(principalName(p))
+                    .timestamp(Instant.now())
+                    .metadataJson("{\"entryNumber\":\"" + saved.getEntryNumber() + "\"}")
+                    .build());
+        } catch (Exception ignored) {}
+
+        return saved;
     }
 
     @GetMapping("/api/v1/production/entries/{id}")
@@ -592,63 +622,134 @@ public class ProductionController {
         return productionEntries.findById(id).orElseThrow(() -> new RuntimeException("Production Entry not found"));
     }
 
+    @GetMapping("/api/v1/production/entries/eligible-operations")
+    public List<Map<String, Object>> getEligibleOperations(@RequestParam String jobCardNumber,
+                                                           @RequestParam(defaultValue = "true") boolean pendingSequenceOnly) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        List<JobCardSubjob> subjobs = jobCardSubjobs.findByJobCardJobCardNumber(jobCardNumber);
+        subjobs.sort((a, b) -> Integer.compare(a.getSequenceNo() != null ? a.getSequenceNo() : 0, b.getSequenceNo() != null ? b.getSequenceNo() : 0));
+
+        boolean priorCompleted = true;
+        for (JobCardSubjob sj : subjobs) {
+            Map<String, Object> map = new LinkedHashMap<>();
+            map.put("subjobNumber", sj.getSubjobNumber());
+            map.put("operationCode", sj.getOperationCode());
+            map.put("operationDescription", sj.getOperationDescription());
+            map.put("sequenceNo", sj.getSequenceNo());
+            map.put("machineCode", sj.getMachineCode());
+            map.put("workCenterCode", sj.getWorkCenterCode());
+            map.put("plannedQuantity", sj.getPlannedQuantity());
+            map.put("completedQuantity", sj.getCompletedQuantity());
+            BigDecimal pendingQty = (sj.getPlannedQuantity() != null ? sj.getPlannedQuantity() : BigDecimal.ZERO)
+                    .subtract(sj.getCompletedQuantity() != null ? sj.getCompletedQuantity() : BigDecimal.ZERO);
+            map.put("pendingQuantity", pendingQty);
+            map.put("status", sj.getStatus());
+            map.put("eligible", !pendingSequenceOnly || priorCompleted);
+
+            result.add(map);
+
+            if (!"COMPLETED".equalsIgnoreCase(sj.getStatus()) && !"POSTED".equalsIgnoreCase(sj.getStatus())) {
+                priorCompleted = false;
+            }
+        }
+        return result;
+    }
+
     @PutMapping("/api/v1/production/entries/{id}")
+    @Transactional
     public ProductionEntry updateProductionEntry(@PathVariable Long id, @RequestBody ProductionEntry pe, Principal p) {
         ProductionEntry e = productionEntries.findById(id).orElseThrow(() -> new RuntimeException("Production Entry not found"));
-        if ("COMPLETED".equals(e.getStatus()) || "CLOSED".equals(e.getStatus())) {
-            throw new RuntimeException("Cannot edit " + e.getStatus() + " production entries");
+
+        // V-22: Posted entries cannot be modified directly
+        if ("POSTED".equalsIgnoreCase(e.getStatus()) || "COMPLETED".equalsIgnoreCase(e.getStatus())) {
+            throw new IllegalArgumentException("Posted Production Entry cannot be edited directly (V-22). Create a reversal/correction transaction.");
         }
+
         pe.setId(id);
         pe.setEntryNumber(e.getEntryNumber());
 
-        BigDecimal good = pe.getGoodQuantity() != null ? pe.getGoodQuantity() : BigDecimal.ZERO;
-        BigDecimal rework = pe.getReworkQuantity() != null ? pe.getReworkQuantity() : BigDecimal.ZERO;
-        BigDecimal reject = pe.getRejectedQuantity() != null ? pe.getRejectedQuantity() : BigDecimal.ZERO;
-        BigDecimal scrap = pe.getScrapQuantity() != null ? pe.getScrapQuantity() : BigDecimal.ZERO;
-        BigDecimal sum = good.add(rework).add(reject).add(scrap);
-
-        if (pe.getProducedQuantity() == null || pe.getProducedQuantity().compareTo(BigDecimal.ZERO) <= 0) {
-            pe.setProducedQuantity(sum);
-        } else if (sum.compareTo(pe.getProducedQuantity()) != 0 && sum.compareTo(BigDecimal.ZERO) > 0) {
-            throw new IllegalArgumentException("Production quantity reconciliation failed (GBL-16): Good (" + good +
-                    ") + Rework (" + rework + ") + Reject (" + reject + ") + Scrap (" + scrap +
-                    ") = " + sum + " does not equal Produced Quantity (" + pe.getProducedQuantity() + ")");
-        }
-        pe.setGoodQuantity(good);
-        pe.setReworkQuantity(rework);
-        pe.setRejectedQuantity(reject);
-        pe.setScrapQuantity(scrap);
+        BigDecimal processQty = pe.getProcessQty() != null ? pe.getProcessQty() : (pe.getProducedQuantity() != null ? pe.getProducedQuantity() : BigDecimal.ZERO);
+        pe.setProducedQuantity(processQty);
+        pe.setProcessQty(processQty);
 
         pe.setCreatedAt(e.getCreatedAt());
         pe.setCreatedBy(e.getCreatedBy());
         pe.setUpdatedAt(Instant.now());
         pe.setUpdatedBy(principalName(p));
-        return productionEntries.save(pe);
+
+        entryValidator.validate(pe);
+        entryValidator.validateSequenceAndPending(pe);
+
+        pe.setOperators(pe.getOperators());
+        pe.setRejectionReasons(pe.getRejectionReasons());
+        pe.setReworkReasons(pe.getReworkReasons());
+        pe.setMaterials(pe.getMaterials());
+        pe.setBatchAllocations(pe.getBatchAllocations());
+
+        ProductionEntry saved = productionEntries.save(pe);
+
+        // Audit Log Event
+        try {
+            auditLogs.save(ProductionEntryAuditLog.builder()
+                    .entryId(saved.getId())
+                    .eventType("DRAFT_SAVE")
+                    .userId(principalName(p))
+                    .timestamp(Instant.now())
+                    .build());
+        } catch (Exception ignored) {}
+
+        return saved;
     }
 
     @DeleteMapping("/api/v1/production/entries/{id}")
-    public void deleteProductionEntry(@PathVariable Long id) {
+    @Transactional
+    public void deleteProductionEntry(@PathVariable Long id, Principal p) {
         ProductionEntry e = productionEntries.findById(id).orElseThrow(() -> new RuntimeException("Production Entry not found"));
         if (!"DRAFT".equals(e.getStatus())) throw new RuntimeException("Only DRAFT entries can be deleted");
+
+        try {
+            auditLogs.save(ProductionEntryAuditLog.builder()
+                    .entryId(e.getId())
+                    .eventType("CANCEL")
+                    .userId(principalName(p))
+                    .timestamp(Instant.now())
+                    .metadataJson("{\"entryNumber\":\"" + e.getEntryNumber() + "\"}")
+                    .build());
+        } catch (Exception ignored) {}
+
         productionEntries.deleteById(id);
     }
 
     @PostMapping("/api/v1/production/entries/{id}/actions/{action}")
+    @Transactional
     public ProductionEntry productionEntryAction(@PathVariable Long id, @PathVariable String action,
                                                   @RequestBody(required = false) Map<String, String> body,
+                                                  HttpServletRequest request,
                                                   Principal p) {
         ProductionEntry pe = productionEntries.findById(id).orElseThrow(() -> new RuntimeException("Production Entry not found"));
-        switch (action.toLowerCase()) {
+        String act = action.toLowerCase();
+
+        // Idempotency Key Guard for Post action (§4.3, §5.9, §9)
+        String idempotencyKeyHeader = request != null ? request.getHeader("X-Idempotency-Key") : null;
+        if (idempotencyKeyHeader == null && request != null) {
+            idempotencyKeyHeader = request.getHeader("Idempotency-Key");
+        }
+
+        if ("post".equals(act) && idempotencyKeyHeader != null && !idempotencyKeyHeader.isBlank()) {
+            Optional<PostingIdempotencyKey> existingKey = idempotencyKeys.findByIdempotencyKey(idempotencyKeyHeader);
+            if (existingKey.isPresent() && "SUCCESS".equals(existingKey.get().getResultStatus())) {
+                return pe; // Return already processed result idempotently (FR-45)
+            }
+        }
+
+        switch (act) {
             case "submit": {
-                // Backdated entry check: entry dated before the job card start requires an explicit reason
                 if (pe.getProductionDate() != null && pe.getJobCardNumber() != null && !pe.getJobCardNumber().isBlank()) {
                     JobCard jc = jobCards.findByJobCardNumber(pe.getJobCardNumber()).stream().findFirst().orElse(null);
                     if (jc != null && jc.getActualStartDate() != null && pe.getProductionDate().isBefore(jc.getActualStartDate())) {
                         String reason = body != null ? body.get("backdatedReason") : null;
                         if (reason == null || reason.isBlank()) {
-                            throw new IllegalArgumentException("Backdated entry (entry date " + pe.getProductionDate() +
-                                    " is before job card start " + jc.getActualStartDate() +
-                                    ") requires a reason. Pass backdatedReason parameter.");
+                            throw new IllegalArgumentException("Backdated entry requires a reason. Pass backdatedReason parameter.");
                         }
                     }
                 }
@@ -656,6 +757,142 @@ public class ProductionController {
                 break;
             }
             case "approve": pe.setStatus("APPROVED"); break;
+            case "post": {
+                // Atomic Final Posting (§4.3)
+                entryValidator.validate(pe);
+                entryValidator.validateSequenceAndPending(pe);
+
+                // Update subjob progress
+                if (pe.getJobCardNumber() != null && pe.getOperationCode() != null) {
+                    List<JobCardSubjob> subs = jobCardSubjobs.findByJobCardJobCardNumber(pe.getJobCardNumber());
+                    for (JobCardSubjob sj : subs) {
+                        if (pe.getOperationCode().equalsIgnoreCase(sj.getOperationCode())) {
+                            BigDecimal currentCompleted = sj.getCompletedQuantity() != null ? sj.getCompletedQuantity() : BigDecimal.ZERO;
+                            BigDecimal goodQty = pe.getGoodQuantity() != null ? pe.getGoodQuantity() : BigDecimal.ZERO;
+                            sj.setCompletedQuantity(currentCompleted.add(goodQty));
+
+                            BigDecimal currentReject = sj.getRejectedQuantity() != null ? sj.getRejectedQuantity() : BigDecimal.ZERO;
+                            sj.setRejectedQuantity(currentReject.add(pe.getRejectedQuantity() != null ? pe.getRejectedQuantity() : BigDecimal.ZERO));
+
+                            BigDecimal currentRework = sj.getReworkQuantity() != null ? sj.getReworkQuantity() : BigDecimal.ZERO;
+                            sj.setReworkQuantity(currentRework.add(pe.getReworkQuantity() != null ? pe.getReworkQuantity() : BigDecimal.ZERO));
+
+                            BigDecimal currentScrap = sj.getScrapQuantity() != null ? sj.getScrapQuantity() : BigDecimal.ZERO;
+                            sj.setScrapQuantity(currentScrap.add(pe.getScrapQuantity() != null ? pe.getScrapQuantity() : BigDecimal.ZERO));
+
+                            if (sj.getCompletedQuantity().compareTo(sj.getPlannedQuantity() != null ? sj.getPlannedQuantity() : BigDecimal.ZERO) >= 0) {
+                                sj.setStatus("COMPLETED");
+                                sj.setEndTime(Instant.now());
+                            } else {
+                                sj.setStatus("IN_PROGRESS");
+                            }
+                            jobCardSubjobs.save(sj);
+                        }
+                    }
+                }
+
+                pe.setStatus("POSTED");
+
+                if (idempotencyKeyHeader != null && !idempotencyKeyHeader.isBlank()) {
+                    try {
+                        idempotencyKeys.save(PostingIdempotencyKey.builder()
+                                .idempotencyKey(idempotencyKeyHeader)
+                                .entryId(pe.getId())
+                                .resultStatus("SUCCESS")
+                                .createdAt(Instant.now())
+                                .build());
+                    } catch (Exception ignored) {}
+                }
+
+                try {
+                    auditLogs.save(ProductionEntryAuditLog.builder()
+                            .entryId(pe.getId())
+                            .eventType("POST")
+                            .userId(principalName(p))
+                            .timestamp(Instant.now())
+                            .build());
+                } catch (Exception ignored) {}
+
+                break;
+            }
+            case "reverse": {
+                if (!"POSTED".equalsIgnoreCase(pe.getStatus()) && !"COMPLETED".equalsIgnoreCase(pe.getStatus())) {
+                    throw new IllegalArgumentException("Only POSTED entries can be reversed.");
+                }
+                String reason = body != null ? body.get("reversalReason") : "Correction transaction";
+
+                // Create Reversal record
+                ProductionEntry rev = new ProductionEntry();
+                rev.setEntryNumber(numbers.next("production-entry", "PE-REV"));
+                rev.setEntryType("Reversal Entry");
+                rev.setProductionType(pe.getProductionType());
+                rev.setSupervisorCode(pe.getSupervisorCode());
+                rev.setSupervisorName(pe.getSupervisorName());
+                rev.setWorkOrderNumber(pe.getWorkOrderNumber());
+                rev.setJobCardNumber(pe.getJobCardNumber());
+                rev.setSubjobNumber(pe.getSubjobNumber());
+                rev.setRouteSheetNumber(pe.getRouteSheetNumber());
+                rev.setPartCode(pe.getPartCode());
+                rev.setPartDescription(pe.getPartDescription());
+                rev.setOperationCode(pe.getOperationCode());
+                rev.setMachineCode(pe.getMachineCode());
+                rev.setOperatorCode(pe.getOperatorCode());
+                rev.setShiftCode(pe.getShiftCode());
+                rev.setProductionDate(Instant.now());
+
+                BigDecimal negGood = pe.getGoodQuantity() != null ? pe.getGoodQuantity().negate() : BigDecimal.ZERO;
+                BigDecimal negRework = pe.getReworkQuantity() != null ? pe.getReworkQuantity().negate() : BigDecimal.ZERO;
+                BigDecimal negReject = pe.getRejectedQuantity() != null ? pe.getRejectedQuantity().negate() : BigDecimal.ZERO;
+                BigDecimal negScrap = pe.getScrapQuantity() != null ? pe.getScrapQuantity().negate() : BigDecimal.ZERO;
+                BigDecimal negProcess = pe.getProcessQty() != null ? pe.getProcessQty().negate() : BigDecimal.ZERO;
+
+                rev.setGoodQuantity(negGood);
+                rev.setReworkQuantity(negRework);
+                rev.setRejectedQuantity(negReject);
+                rev.setScrapQuantity(negScrap);
+                rev.setProducedQuantity(negProcess);
+                rev.setProcessQty(negProcess);
+
+                rev.setReversedFromEntryId(pe.getId());
+                rev.setIsReversal(true);
+                rev.setReversalReason(reason);
+                rev.setStatus("POSTED");
+                rev.setQualityStatus("REVERSED");
+                rev.setCreatedBy(principalName(p));
+                rev.setCreatedAt(Instant.now());
+
+                // Reverse subjob numbers
+                if (pe.getJobCardNumber() != null && pe.getOperationCode() != null) {
+                    List<JobCardSubjob> subs = jobCardSubjobs.findByJobCardJobCardNumber(pe.getJobCardNumber());
+                    for (JobCardSubjob sj : subs) {
+                        if (pe.getOperationCode().equalsIgnoreCase(sj.getOperationCode())) {
+                            BigDecimal current = sj.getCompletedQuantity() != null ? sj.getCompletedQuantity() : BigDecimal.ZERO;
+                            BigDecimal adj = current.subtract(pe.getGoodQuantity() != null ? pe.getGoodQuantity() : BigDecimal.ZERO);
+                            sj.setCompletedQuantity(adj.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : adj);
+                            sj.setStatus("IN_PROGRESS");
+                            jobCardSubjobs.save(sj);
+                        }
+                    }
+                }
+
+                pe.setStatus("REVERSED");
+                pe.setReversalReason(reason);
+                productionEntries.save(pe);
+
+                ProductionEntry savedRev = productionEntries.save(rev);
+
+                try {
+                    auditLogs.save(ProductionEntryAuditLog.builder()
+                            .entryId(pe.getId())
+                            .eventType("REVERSE")
+                            .userId(principalName(p))
+                            .timestamp(Instant.now())
+                            .metadataJson("{\"reversalEntryId\":" + savedRev.getId() + "}")
+                            .build());
+                } catch (Exception ignored) {}
+
+                return savedRev;
+            }
             case "reject": pe.setStatus("REJECTED"); break;
             case "cancel": pe.setStatus("CANCELLED"); break;
             case "quality-pass": pe.setQualityStatus("PASS"); break;
@@ -666,6 +903,112 @@ public class ProductionController {
         pe.setUpdatedAt(Instant.now());
         pe.setUpdatedBy(principalName(p));
         return productionEntries.save(pe);
+    }
+
+    // ---- Summary & Reporting Endpoints (§4.9 - Sourced strictly from POSTED entries per BR-12) ----
+
+    @GetMapping("/api/v1/production/reports/rejection-summary")
+    public List<Map<String, Object>> getRejectionSummary() {
+        List<Map<String, Object>> list = new ArrayList<>();
+        List<ProductionEntry> entries = productionEntries.findByStatus("POSTED");
+        Map<String, BigDecimal> reasonMap = new LinkedHashMap<>();
+
+        for (ProductionEntry pe : entries) {
+            if (pe.getRejectionReasons() != null) {
+                for (ProductionEntryRejection r : pe.getRejectionReasons()) {
+                    String key = (r.getReasonCode() != null ? r.getReasonCode() : "UNKNOWN") + " - " + (r.getReasonDescription() != null ? r.getReasonDescription() : "");
+                    reasonMap.put(key, reasonMap.getOrDefault(key, BigDecimal.ZERO).add(r.getQuantity() != null ? r.getQuantity() : BigDecimal.ZERO));
+                }
+            }
+        }
+        reasonMap.forEach((reason, qty) -> list.add(Map.of("reason", reason, "quantity", qty)));
+        return list;
+    }
+
+    @GetMapping("/api/v1/production/reports/rework-summary")
+    public List<Map<String, Object>> getReworkSummary() {
+        List<Map<String, Object>> list = new ArrayList<>();
+        List<ProductionEntry> entries = productionEntries.findByStatus("POSTED");
+        Map<String, Map<String, Object>> map = new LinkedHashMap<>();
+
+        for (ProductionEntry pe : entries) {
+            if (pe.getReworkReasons() != null) {
+                for (ProductionEntryRework rw : pe.getReworkReasons()) {
+                    String key = rw.getReasonCode() != null ? rw.getReasonCode() : "GENERAL";
+                    Map<String, Object> data = map.getOrDefault(key, new LinkedHashMap<>());
+                    data.put("reasonCode", key);
+                    data.put("reasonDescription", rw.getReasonDescription() != null ? rw.getReasonDescription() : key);
+                    data.put("targetProcess", rw.getTargetProcessCode() != null ? rw.getTargetProcessCode() : "N/A");
+                    BigDecimal currentQty = (BigDecimal) data.getOrDefault("quantity", BigDecimal.ZERO);
+                    data.put("quantity", currentQty.add(rw.getQuantity() != null ? rw.getQuantity() : BigDecimal.ZERO));
+                    map.put(key, data);
+                }
+            }
+        }
+        list.addAll(map.values());
+        return list;
+    }
+
+    @GetMapping("/api/v1/production/reports/idle-summary")
+    public List<Map<String, Object>> getIdleSummary() {
+        List<Map<String, Object>> list = new ArrayList<>();
+        List<ProductionEntry> entries = productionEntries.findByStatus("POSTED");
+        Map<String, BigDecimal> map = new LinkedHashMap<>();
+
+        for (ProductionEntry pe : entries) {
+            if (pe.getIdleTime() != null && pe.getIdleTime().compareTo(BigDecimal.ZERO) > 0) {
+                String reason = pe.getIdleReason() != null ? pe.getIdleReason() : "UNSPECIFIED";
+                map.put(reason, map.getOrDefault(reason, BigDecimal.ZERO).add(pe.getIdleTime()));
+            }
+        }
+        map.forEach((reason, idleTimeMins) -> list.add(Map.of("reason", reason, "idleTimeMinutes", idleTimeMins)));
+        return list;
+    }
+
+    @GetMapping("/api/v1/production/reports/machine-summary")
+    public List<Map<String, Object>> getMachineSummary() {
+        List<Map<String, Object>> list = new ArrayList<>();
+        List<ProductionEntry> entries = productionEntries.findByStatus("POSTED");
+        Map<String, Map<String, Object>> map = new LinkedHashMap<>();
+
+        for (ProductionEntry pe : entries) {
+            String mCode = pe.getMachineCode() != null ? pe.getMachineCode() : "UNASSIGNED";
+            Map<String, Object> mData = map.getOrDefault(mCode, new LinkedHashMap<>());
+            mData.put("machineCode", mCode);
+
+            BigDecimal good = (BigDecimal) mData.getOrDefault("goodQty", BigDecimal.ZERO);
+            BigDecimal rejected = (BigDecimal) mData.getOrDefault("rejectedQty", BigDecimal.ZERO);
+            BigDecimal rework = (BigDecimal) mData.getOrDefault("reworkQty", BigDecimal.ZERO);
+
+            mData.put("goodQty", good.add(pe.getGoodQuantity() != null ? pe.getGoodQuantity() : BigDecimal.ZERO));
+            mData.put("rejectedQty", rejected.add(pe.getRejectedQuantity() != null ? pe.getRejectedQuantity() : BigDecimal.ZERO));
+            mData.put("reworkQty", rework.add(pe.getReworkQuantity() != null ? pe.getReworkQuantity() : BigDecimal.ZERO));
+            map.put(mCode, mData);
+        }
+        list.addAll(map.values());
+        return list;
+    }
+
+    @GetMapping("/api/v1/production/reports/operator-summary")
+    public List<Map<String, Object>> getOperatorSummary() {
+        List<Map<String, Object>> list = new ArrayList<>();
+        List<ProductionEntry> entries = productionEntries.findByStatus("POSTED");
+        Map<String, Map<String, Object>> map = new LinkedHashMap<>();
+
+        for (ProductionEntry pe : entries) {
+            String opCode = pe.getOperatorCode() != null ? pe.getOperatorCode() : "UNASSIGNED";
+            Map<String, Object> opData = map.getOrDefault(opCode, new LinkedHashMap<>());
+            opData.put("operatorCode", opCode);
+
+            BigDecimal good = (BigDecimal) opData.getOrDefault("goodQty", BigDecimal.ZERO);
+            BigDecimal rejected = (BigDecimal) opData.getOrDefault("rejectedQty", BigDecimal.ZERO);
+
+            opData.put("goodQty", good.add(pe.getGoodQuantity() != null ? pe.getGoodQuantity() : BigDecimal.ZERO));
+            opData.put("rejectedQty", rejected.add(pe.getRejectedQuantity() != null ? pe.getRejectedQuantity() : BigDecimal.ZERO));
+            map.put(opCode, opData);
+        }
+        list.addAll(map.values());
+        return list;
     }
 
     // ===========================

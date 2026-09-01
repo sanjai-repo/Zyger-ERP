@@ -41,7 +41,7 @@ public class SecurityConfig {
         cfg.setAllowedOrigins(java.util.Arrays.stream(allowedOrigins.split(","))
                 .map(String::trim).filter(s -> !s.isEmpty()).toList());
         cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        cfg.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));
+        cfg.setAllowedHeaders(List.of("*"));
         cfg.setAllowCredentials(true);
         cfg.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

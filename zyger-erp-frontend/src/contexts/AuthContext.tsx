@@ -150,6 +150,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setScreensLoaded(false);
   };
 
+  // Cross-tab synchronization: when auth state changes in ANY tab (login, logout,
+  // or a token being cleared by a 401 timeout), all other tabs react so a stale tab
+  // can never keep showing the previous user's data.
+  //
+  // The `storage` event fires only in OTHER tabs of the same origin when localStorage
+  // changes. localStorage is shared, so both login (persist) and logout (clearSession)
+  // trigger it everywhere. This directly fixes "old tab still shows user1 after user2 logs in".
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== TOKEN_KEY && e.key !== USER_KEY) return;
+
+      const tokenCleared = e.key === TOKEN_KEY ? (e.newValue == null) : (e.key === USER_KEY && e.newValue == null);
+
+      if (tokenCleared) {
+        // Another tab logged out / session expired -> force this tab to log out too.
+        clearSession();
+        setUser(null);
+        setScreenPerms({});
+        setScreensLoaded(false);
+      } else if (e.key === TOKEN_KEY && e.newValue && e.newValue !== localStorage.getItem(TOKEN_KEY)) {
+        // Another tab logged in as a different user -> don't show stale data from this
+        // tab's previous user. Reload so the app bootstraps with the new token/user.
+        window.location.reload();
+      }
+    };
+
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
   return (
     <AuthContext.Provider value={{ user, isAuthenticated: !!user, screenPerms, screensLoaded, can, canAny, hasModule, canScreen, login, loginDemo, logout }}>
       {children}

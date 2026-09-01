@@ -6,4 +6,5 @@ import java.util.List;
 
 public interface JobCardSubjobRepository extends JpaRepository<JobCardSubjob, Long> {
     List<JobCardSubjob> findByJobCardId(Long jobCardId);
+    List<JobCardSubjob> findByJobCardJobCardNumber(String jobCardNumber);
 }
