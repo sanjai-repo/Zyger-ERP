@@ -165,6 +165,14 @@ export function TabsProvider({ children }: { children: ReactNode }) {
 
 export const useTabs = () => {
   const context = useContext(TabsContext);
-  if (!context) throw new Error('useTabs must be used within TabsProvider');
+  if (!context) {
+    return {
+      tabs: [],
+      activeTabId: null,
+      openTab: () => {},
+      closeTab: () => {},
+      setActiveTab: () => {},
+    };
+  }
   return context;
 };

@@ -399,9 +399,10 @@ public class PlanningService {
                 next = "SUBMITTED";
             }
             case "approve" -> {
-                requireStatus(current, "SUBMITTED");
-                // FRS v4.0 X-07: segregation of duties — approver != submitter
-                validateSegregationOfDuty(wo.getSubmittedBy(), user);
+                requireStatus(current, "DRAFT", "SUBMITTED");
+                if (wo.getSubmittedBy() != null && !wo.getSubmittedBy().isBlank()) {
+                    validateSegregationOfDuty(wo.getSubmittedBy(), user);
+                }
                 next = "APPROVED";
                 wo.setApprovedBy(user);
             }

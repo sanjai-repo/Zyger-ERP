@@ -314,18 +314,38 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
     } catch (e) { toast(getApiErrorMessage(e, `${action} failed.`), 'error'); }
   };
 
+  const handleSubmit = async () => {
+    if (!documentId) return;
+    runAction('submit');
+  };
+
+  const handleApprove = async () => {
+    if (!documentId) return;
+    runAction('approve');
+  };
+
   const handleRelease = async () => {
     if (!documentId) {
       if (!validate()) return;
       try {
         const created = await createMutation.mutateAsync(buildPayload());
         setDocumentId(String(created.id ?? ''));
+        try {
+          await actionMutation.mutateAsync({ id: String(created.id), action: 'approve' });
+        } catch { /* ignore if already approved */ }
         const updated = await actionMutation.mutateAsync({ id: String(created.id), action: 'release' });
         setForm({ ...updated });
         toast(`Work Order ${updated.woNumber ?? updated.docNo ?? ''} released.`);
       } catch (e) { toast(getApiErrorMessage(e, 'Release failed.'), 'error'); }
     } else {
-      runAction('release');
+      try {
+        if (genericStatus === 'DRAFT' || genericStatus === 'SUBMITTED') {
+          await actionMutation.mutateAsync({ id: documentId, action: 'approve' });
+        }
+        const updated = await actionMutation.mutateAsync({ id: documentId, action: 'release' });
+        setForm({ ...updated });
+        toast(`Work Order ${updated.woNumber ?? updated.docNo ?? ''} released.`);
+      } catch (e) { toast(getApiErrorMessage(e, 'Release failed.'), 'error'); }
     }
   };
 
@@ -820,6 +840,16 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
             {documentId && (
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <StatusBadge status={genericStatus} />
+                {genericStatus === 'DRAFT' && (
+                  <button type="button" className="btn btn-sm btn-p" onClick={handleSubmit} disabled={isBusy}>
+                    <span className="material-symbols-rounded">send</span> Submit
+                  </button>
+                )}
+                {(genericStatus === 'DRAFT' || genericStatus === 'SUBMITTED') && (
+                  <button type="button" className="btn btn-sm btn-g" onClick={handleApprove} disabled={isBusy}>
+                    <span className="material-symbols-rounded">thumb_up</span> Approve
+                  </button>
+                )}
                 {genericStatus === 'DRAFT' && <button type="button" className="btn btn-sm btn-p" onClick={handleRelease}><span className="material-symbols-rounded">rocket_launch</span> Release</button>}
               </div>
             )}
@@ -1234,6 +1264,18 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
               {editable && !documentId && (
                 <button type="button" className="btn btn-sm btn-p" onClick={handleCreate} disabled={isBusy}>
                   <span className="material-symbols-rounded">add_circle</span> Create Work Order
+                </button>
+              )}
+
+              {editable && documentId && genericStatus === 'DRAFT' && (
+                <button type="button" className="btn btn-sm btn-p" onClick={handleSubmit} disabled={isBusy}>
+                  <span className="material-symbols-rounded">send</span> Submit
+                </button>
+              )}
+
+              {editable && documentId && (genericStatus === 'DRAFT' || genericStatus === 'SUBMITTED') && (
+                <button type="button" className="btn btn-sm btn-g" onClick={handleApprove} disabled={isBusy}>
+                  <span className="material-symbols-rounded">thumb_up</span> Approve
                 </button>
               )}
 

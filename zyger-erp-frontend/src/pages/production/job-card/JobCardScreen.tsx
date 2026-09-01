@@ -103,24 +103,32 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
   const [users, setUsers] = useState<Array<{ username: string; fullName: string }>>([]);
   const [workCenters, setWorkCenters] = useState<Array<{ code: string; name: string }>>([]);
   const [shifts, setShifts] = useState<Array<{ code: string; name: string }>>([]);
+  const [workOrdersList, setWorkOrdersList] = useState<Array<any>>([]);
+  const [fetchingWo, setFetchingWo] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
 
   const fetchMasters = useCallback(async () => {
     try {
-      const [mRes, uRes, wRes, sRes] = await Promise.allSettled([
+      const [mRes, uRes, wRes, sRes, woRes] = await Promise.allSettled([
         apiClient.get('/master/machines', { params: { size: 200 } }),
         apiClient.get('/master/users', { params: { size: 200 } }),
         apiClient.get('/master/work-centers', { params: { size: 100 } }),
         apiClient.get('/master/shifts', { params: { size: 100 } }),
+        apiClient.get('/v1/planning/work-order', { params: { size: 200 } }),
       ]);
       if (mRes.status === 'fulfilled') setMachines((mRes.value.data?.content ?? mRes.value.data ?? []).filter((m: any) => m.active !== false));
       if (uRes.status === 'fulfilled') setUsers((uRes.value.data?.content ?? uRes.value.data ?? []).filter((u: any) => u.active !== false));
       if (wRes.status === 'fulfilled') setWorkCenters(wRes.value.data?.content ?? wRes.value.data ?? []);
       if (sRes.status === 'fulfilled') setShifts(sRes.value.data?.content ?? sRes.value.data ?? []);
+      if (woRes.status === 'fulfilled') {
+        const raw = woRes.value.data;
+        const list = Array.isArray(raw) ? raw : (raw?.data ?? raw?.content ?? []);
+        setWorkOrdersList(list);
+      }
     } catch { /* ignore */ }
   }, []);
 
-  useEffect(() => { if (expandedId || tab === 'form') fetchMasters(); }, [expandedId, tab, fetchMasters]);
+  useEffect(() => { fetchMasters(); }, [fetchMasters]);
 
   const load = async () => {
     setLoading(true);
@@ -132,6 +140,60 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
   };
 
   useEffect(() => { load(); }, []);
+
+  // Auto-fetch Work Order data when a Work Order number is selected or typed
+  const handleWorkOrderSelect = async (selectedWoNo: string) => {
+    setForm((c) => ({ ...c, workOrderNumber: selectedWoNo }));
+    if (!selectedWoNo.trim()) return;
+
+    setFetchingWo(true);
+    try {
+      // Look up in loaded work orders list first
+      let matched = workOrdersList.find(
+        (w) =>
+          String(w.docNo ?? w.woNumber ?? '').toLowerCase() === selectedWoNo.trim().toLowerCase() ||
+          String(w.woNumber ?? '').toLowerCase() === selectedWoNo.trim().toLowerCase()
+      );
+
+      // If not in cache, query backend API
+      if (!matched) {
+        const { data } = await apiClient.get('/v1/planning/work-order', {
+          params: { search: selectedWoNo.trim(), size: 10 },
+        });
+        const list = Array.isArray(data) ? data : (data?.data ?? data?.content ?? []);
+        matched = list.find(
+          (w: any) =>
+            String(w.docNo ?? w.woNumber ?? '').toLowerCase() === selectedWoNo.trim().toLowerCase() ||
+            String(w.woNumber ?? '').toLowerCase() === selectedWoNo.trim().toLowerCase()
+        );
+        if (!matched && list.length > 0) matched = list[0];
+      }
+
+      if (matched) {
+        setForm((prev) => ({
+          ...prev,
+          workOrderNumber: matched.docNo || matched.woNumber || selectedWoNo,
+          partCode: matched.itemCode || matched.partCode || prev.partCode || '',
+          partDescription: matched.itemDescription || matched.partDescription || matched.itemCode || prev.partDescription || '',
+          revision: matched.itemRevision || matched.revision || prev.revision || '',
+          plannedQuantity: matched.orderQuantity ?? matched.plannedQuantity ?? matched.quantity ?? prev.plannedQuantity ?? 0,
+          priority: matched.priority || prev.priority || 'MEDIUM',
+          plannedStartDate: matched.plannedStartDate ? String(matched.plannedStartDate).slice(0, 10) : prev.plannedStartDate || '',
+          plannedEndDate: matched.dueDate ? String(matched.dueDate).slice(0, 10) : matched.plannedEndDate ? String(matched.plannedEndDate).slice(0, 10) : prev.plannedEndDate || '',
+          routeSheetNumber: matched.routeSheetCode || matched.routeCode || matched.routeSheetNumber || prev.routeSheetNumber || '',
+          bomNumber: matched.bomCode || matched.bomNumber || prev.bomNumber || '',
+          customerCode: matched.customerCode || prev.customerCode || '',
+        }));
+        toast(`Auto-fetched details for Work Order ${matched.docNo || matched.woNumber}`);
+      } else {
+        toast(`Work Order '${selectedWoNo}' not found in database`, 'warning');
+      }
+    } catch (e) {
+      toast(getApiErrorMessage(e, 'Failed to fetch Work Order details.'), 'error');
+    } finally {
+      setFetchingWo(false);
+    }
+  };
 
   const save = async () => {
     if (!String(form.partCode ?? '').trim()) { toast('Part Code is required.', 'error'); return; }
@@ -267,12 +329,29 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
         <div className="panel">
           <div className="panel-h"><h2>Create Job Card from Work Order</h2></div>
           <p style={{ fontSize: 13, color: 'var(--muted)', margin: '0 0 16px' }}>
-            Enter an approved Work Order number. The system will auto-populate part details, BOM, Route Sheet, and create subjobs from route operations.
+            Select or enter an approved Work Order number. The system will auto-populate part details, BOM, Route Sheet, and create subjobs from route operations.
           </p>
           <div className="fgrid" style={{ gridTemplateColumns: '1fr auto' }}>
             <label className="fld"><span>Work Order Number *</span>
-              <input className="in" placeholder="e.g. WO-2026-0001" value={woNumber} onChange={(e) => setWoNumber(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') createFromWO(); }} autoFocus />
+              <input
+                className="in"
+                placeholder="Select or enter Work Order..."
+                list="wo-options-create"
+                value={woNumber}
+                onChange={(e) => setWoNumber(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') createFromWO(); }}
+                autoFocus
+              />
+              <datalist id="wo-options-create">
+                {workOrdersList.map((w: any) => {
+                  const num = w.docNo || w.woNumber;
+                  return (
+                    <option key={w.id || num} value={num}>
+                      {num} - {w.itemCode || ''} ({w.orderQuantity || 0} pcs)
+                    </option>
+                  );
+                })}
+              </datalist>
             </label>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
               <button className="btn btn-p" onClick={createFromWO} disabled={busy || !woNumber.trim()}>
@@ -288,7 +367,7 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
         </div>
       )}
 
-      {/* ========= MANUAL FORM ========= */}
+      {/* ========= MANUAL FORM WITH WORK ORDER AUTO-FETCH ========= */}
       {tab === 'form' && (
         <div className="panel">
           <div className="panel-h">
@@ -300,7 +379,46 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
             )}
           </div>
           <div className="fgrid">
-            <label className="fld"><span>Work Order No</span><input className="in" value={String(form.workOrderNumber ?? '')} onChange={(e) => set('workOrderNumber', e.target.value)} /></label>
+            <label className="fld">
+              <span>Work Order No</span>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  className="in"
+                  placeholder="Select or type Work Order No..."
+                  list="wo-options-form"
+                  value={String(form.workOrderNumber ?? '')}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    set('workOrderNumber', val);
+                    handleWorkOrderSelect(val);
+                  }}
+                />
+                <datalist id="wo-options-form">
+                  {workOrdersList.map((w: any) => {
+                    const num = w.docNo || w.woNumber;
+                    return (
+                      <option key={w.id || num} value={num}>
+                        {num} - {w.itemCode || ''} ({w.orderQuantity || 0} pcs)
+                      </option>
+                    );
+                  })}
+                </datalist>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  title="Auto Fetch Work Order Details"
+                  onClick={() => handleWorkOrderSelect(String(form.workOrderNumber ?? ''))}
+                  disabled={fetchingWo}
+                  style={{ whiteSpace: 'nowrap' }}
+                >
+                  <span className="material-symbols-rounded" style={{ fontSize: 16 }}>
+                    {fetchingWo ? 'progress_activity' : 'sync'}
+                  </span>{' '}
+                  Auto Fetch
+                </button>
+              </div>
+            </label>
+
             <label className="fld"><span>Part Code *</span><input className="in" value={String(form.partCode ?? '')} onChange={(e) => set('partCode', e.target.value)} /></label>
             <label className="fld"><span>Part Description</span><input className="in" value={String(form.partDescription ?? '')} onChange={(e) => set('partDescription', e.target.value)} /></label>
             <label className="fld"><span>Revision</span><input className="in" value={String(form.revision ?? '')} onChange={(e) => set('revision', e.target.value)} /></label>
@@ -399,7 +517,12 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
                           </button>
                           {openActionMenu === r.id && (
                             <div style={{ position: 'absolute', right: 0, top: '100%', zIndex: 20, background: 'var(--card-bg, #fff)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.12)', minWidth: 180, padding: '4px 0' }} onClick={(e) => e.stopPropagation()}>
-                              {r.status === 'DRAFT' && can('production', 'Approve') && <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); action(r.id, 'release'); }}><span className="material-symbols-rounded" style={{ fontSize: 18, color: '#2563eb' }}>play_arrow</span> Release Job</button>}
+                              {r.status === 'DRAFT' && can('production', 'Approve') && (
+                                <>
+                                  <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); action(r.id, 'approve'); }}><span className="material-symbols-rounded" style={{ fontSize: 18, color: '#16a34a' }}>check_circle</span> Approve Job Card</button>
+                                  <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); action(r.id, 'release'); }}><span className="material-symbols-rounded" style={{ fontSize: 18, color: '#2563eb' }}>play_arrow</span> Release Job</button>
+                                </>
+                              )}
                               {r.status === 'RELEASED' && <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); action(r.id, 'start'); }}><span className="material-symbols-rounded" style={{ fontSize: 18, color: '#f59e0b' }}>play_circle</span> Start Production</button>}
                               {(r.status === 'RELEASED' || r.status === 'IN_PROGRESS') && <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); setActionTarget({ id: r.id, action: 'hold' }); }}><span className="material-symbols-rounded" style={{ fontSize: 18, color: '#ef4444' }}>pause</span> Hold</button>}
                               {r.status === 'IN_PROGRESS' && <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')} onClick={() => { setOpenActionMenu(null); loadCompCheck(r.id); }}><span className="material-symbols-rounded" style={{ fontSize: 18, color: '#22c55e' }}>check_circle</span> Complete</button>}

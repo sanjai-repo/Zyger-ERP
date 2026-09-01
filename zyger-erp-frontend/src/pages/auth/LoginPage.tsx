@@ -10,6 +10,11 @@ export default function LoginPage() {
   const [mode, setMode] = useState<Mode>('login');
   const [mounted, setMounted] = useState(false);
 
+  // Company logo & name state
+  const [companyLogoUrl, setCompanyLogoUrl] = useState<string | null>(null);
+  const [companyName, setCompanyName] = useState<string>('Zyger ERP');
+  const [logoError, setLogoError] = useState<boolean>(false);
+
   // Form State
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
@@ -33,19 +38,38 @@ export default function LoginPage() {
     requestAnimationFrame(() => setMounted(true));
   }, []);
 
-  // Favicon sync
+  // Favicon sync & company logo fetch
   useEffect(() => {
     const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
-    const logoUrl = baseUrl.replace(/\/$/, '') + '/master/company-info/logo/company';
-    const existing = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-    if (existing) {
-      existing.href = logoUrl;
-    } else {
-      const link = document.createElement('link');
+    const cleanBase = baseUrl.replace(/\/$/, '');
+    const directLogoUrl = `${cleanBase}/master/company-info/logo/company`;
+
+    // Ensure favicon element exists in head
+    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (!link) {
+      link = document.createElement('link');
       link.rel = 'icon';
-      link.href = logoUrl;
       document.head.appendChild(link);
     }
+    link.href = directLogoUrl;
+    setCompanyLogoUrl(directLogoUrl);
+
+    // Fetch company info to check for specific companyLogoUrl and name
+    fetch(`${cleanBase}/master/company-info`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) {
+          if (data.companyName) setCompanyName(data.companyName);
+          if (data.companyLogoUrl) {
+            const cacheBustedUrl = `${cleanBase}/master/company-info/logo/company?v=${encodeURIComponent(data.companyLogoUrl)}`;
+            setCompanyLogoUrl(cacheBustedUrl);
+            if (link) link.href = cacheBustedUrl;
+          }
+        }
+      })
+      .catch(() => {
+        // Fallback to direct endpoint URL
+      });
   }, []);
 
   // Load remembered username
@@ -215,15 +239,30 @@ export default function LoginPage() {
           user-select: none;
         }
 
-        /* White Circle Badge */
-        .lgp-logo-badge {
+        /* Logo Wrap Container — Full Uncropped Logo without Circle Radius */
+        .lgp-logo-container {
+          min-height: 100px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-bottom: 20px;
+        }
+
+        .lgp-logo-img {
+          max-width: 180px;
+          max-height: 100px;
+          object-fit: contain;
+          border-radius: 0 !important; /* No circular cropping; shows full uncropped icon */
+          filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.25));
+        }
+
+        .lgp-logo-fallback-badge {
           width: 92px;
           height: 92px;
-          border-radius: 50%;
+          border-radius: 24px;
           background: #ffffff;
           display: grid;
           place-items: center;
-          margin-bottom: 24px;
           box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
           animation: lgpFloat 6s ease-in-out infinite;
         }
@@ -460,13 +499,24 @@ export default function LoginPage() {
         
         {/* LEFT PLAIN BLUE GRADIENT PANEL */}
         <div className="lgp-blue-panel">
-          {/* Logo Badge */}
-          <div className="lgp-logo-badge">
-            <span className="material-symbols-rounded lgp-logo-icon">rocket_launch</span>
+          {/* Logo Container — Displays full uncropped company logo without radius clipping */}
+          <div className="lgp-logo-container">
+            {companyLogoUrl && !logoError ? (
+              <img
+                src={companyLogoUrl}
+                alt={companyName}
+                className="lgp-logo-img"
+                onError={() => setLogoError(true)}
+              />
+            ) : (
+              <div className="lgp-logo-fallback-badge">
+                <span className="material-symbols-rounded lgp-logo-icon">rocket_launch</span>
+              </div>
+            )}
           </div>
 
           <div className="lgp-hero-title">Welcome to</div>
-          <div className="lgp-brand-name">Zyger ERP</div>
+          <div className="lgp-brand-name">{companyName}</div>
           
           <p className="lgp-hero-subtext">
             Precision Manufacturing Enterprise Resource Planning platform. Seamless management for continuous operation.

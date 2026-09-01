@@ -687,8 +687,8 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
           <div className="panel-h"><h2><span className="material-symbols-rounded">description</span> Header</h2>
             {documentId && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {!isProductionBom && documentId && !isViewOnly && (genericStatus === 'DRAFT' || genericStatus === 'SUBMITTED') && <button type="button" className="btn btn-sm btn-g" onClick={() => setActionModal({ action: 'approve', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">thumb_up</span> Approve</button>}
                 {!isProductionBom && !isRouteSheet && documentId && !isViewOnly && genericStatus === 'DRAFT' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'submit', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">send</span> Submit</button>}
-                {!isProductionBom && documentId && !isViewOnly && genericStatus === 'SUBMITTED' && <button type="button" className="btn btn-sm btn-g" onClick={() => setActionModal({ action: 'approve', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">thumb_up</span> Approve</button>}
                 {!isProductionBom && documentId && !isViewOnly && genericStatus === 'SUBMITTED' && <button type="button" className="btn btn-sm btn-d" onClick={() => setActionModal({ action: 'reject', danger: true })} disabled={isBusy}><span className="material-symbols-rounded">thumb_down</span> Reject</button>}
                 {isRouteSheet && documentId && !isViewOnly && genericStatus === 'DRAFT' && <button type="button" className="btn btn-sm btn-g" onClick={() => { if (lines.length === 0) { toast('V-03: At least one operation row is required before Release.', 'error'); return; } setActionModal({ action: 'release', danger: false }); }} disabled={isBusy}><span className="material-symbols-rounded">rocket_launch</span> Release</button>}
                 {isRouteSheet && documentId && !isViewOnly && genericStatus === 'RELEASED' && <button type="button" className="btn btn-sm btn-p" onClick={() => setActionModal({ action: 'revise', danger: false })} disabled={isBusy}><span className="material-symbols-rounded">edit_note</span> Revise</button>}
@@ -1073,6 +1073,11 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
             </div>
             <div className="rgt">
               <span className="kbd-hint"><kbd className="kbd">Ctrl+S</kbd> Save</span>
+              {documentId && (genericStatus === 'DRAFT' || genericStatus === 'SUBMITTED') && (
+                <button type="button" className="btn btn-sm btn-g" onClick={() => setActionModal({ action: 'approve', danger: false })} disabled={isBusy}>
+                  <span className="material-symbols-rounded">thumb_up</span> Approve
+                </button>
+              )}
               {documentId && editable && (
                 <button type="button" className="btn btn-sm" onClick={handleSave} disabled={isBusy}><span className="material-symbols-rounded">save</span> Save</button>
               )}

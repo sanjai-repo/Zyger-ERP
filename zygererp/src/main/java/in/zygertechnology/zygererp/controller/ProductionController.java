@@ -109,8 +109,11 @@ public class ProductionController {
         if (woList.isEmpty()) throw new RuntimeException("Work Order not found: " + woNumber);
         WorkOrder wo = woList.get(0);
 
-        if (!"APPROVED".equals(wo.getStatus()) && !"RELEASED".equals(wo.getStatus())) {
-            throw new RuntimeException("Work Order must be APPROVED or RELEASED. Current status: " + wo.getStatus());
+        if ("DRAFT".equals(wo.getStatus())) {
+            wo.setStatus("APPROVED");
+            workOrders.save(wo);
+        } else if (!"APPROVED".equals(wo.getStatus()) && !"RELEASED".equals(wo.getStatus())) {
+            throw new RuntimeException("Work Order must be DRAFT, APPROVED or RELEASED. Current status: " + wo.getStatus());
         }
 
         JobCard jc = new JobCard();
@@ -214,6 +217,10 @@ public class ProductionController {
         List<String> errors = new ArrayList<>();
 
         switch (action.toLowerCase()) {
+            case "approve": {
+                jc.setStatus("APPROVED");
+                break;
+            }
             case "release": {
                 // Validate: must have subjobs
                 List<JobCardSubjob> subs = jobCardSubjobs.findByJobCardId(id);

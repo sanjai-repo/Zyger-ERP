@@ -14,7 +14,7 @@ public class WorkflowStateMachine {
     private static final Map<String, Map<String, Set<String>>> TRANSITIONS = Map.ofEntries(
         // Work Order — FRS §6.3/§6.4
         Map.entry("work-order", Map.of(
-            "DRAFT", Set.of("SUBMIT", "CANCEL"),
+            "DRAFT", Set.of("SUBMIT", "APPROVE", "CANCEL"),
             "SUBMITTED", Set.of("APPROVE", "REJECT"),
             "REJECTED", Set.of("REOPEN"),
             "APPROVED", Set.of("RELEASE"),

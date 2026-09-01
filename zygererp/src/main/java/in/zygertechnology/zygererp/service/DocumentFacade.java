@@ -799,7 +799,7 @@ public class DocumentFacade {
         try {
             switch (action) {
                 case "submit" -> requireStatus(e, "DRAFT", "REJECTED");
-                case "approve" -> requireStatus(e, "SUBMITTED");
+                case "approve" -> requireStatus(e, "DRAFT", "SUBMITTED");
                 case "reject" -> requireStatus(e, "SUBMITTED", "DRAFT");
                 case "reopen" -> requireStatus(e, "REJECTED");
                 case "cancel" -> requireStatus(e, "DRAFT", "SUBMITTED", "APPROVED");
