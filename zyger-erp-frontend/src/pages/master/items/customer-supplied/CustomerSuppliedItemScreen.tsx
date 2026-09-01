@@ -338,8 +338,8 @@ export default function CustomerSuppliedItemScreen() {
   const [accessoriesRows, setAccessoriesRows] = useState<Array<any>>([]);
   const [uomRows, setUomRows] = useState<Array<any>>([]);
   const [altItemRows, setAltItemRows] = useState<Array<any>>([]);
-  const [itemGroupRows, setItemGroupRows] = useState<Array<{id:number;code:string;name:string;itemType?:string}>>([]);
-  const [uomOptions, setUomOptions] = useState<Array<{id:number;code:string;name:string;symbol?:string}>>([]);
+  const [itemGroupRows, setItemGroupRows] = useState<Array<{ id: number; code: string; name: string; itemType?: string }>>([]);
+  const [uomOptions, setUomOptions] = useState<Array<{ id: number; code: string; name: string; symbol?: string }>>([]);
 
   const [openSec, setOpenSec] = useState<Record<string, boolean>>({
     sec1: true, sec2: true, sec3: true, sec4: true, sec5: true,
@@ -377,7 +377,7 @@ export default function CustomerSuppliedItemScreen() {
     }
   };
 
-  useEffect(() => { loadItems(); apiClient.get('/master/item-groups').then(r => setItemGroupRows(r.data ?? [])).catch(() => {}); apiClient.get('/master/uoms').then(r => setUomOptions(r.data ?? [])).catch(() => {}); }, []);
+  useEffect(() => { loadItems(); apiClient.get('/master/item-groups').then(r => setItemGroupRows(r.data ?? [])).catch(() => { }); apiClient.get('/master/uoms').then(r => setUomOptions(r.data ?? [])).catch(() => { }); }, []);
 
   const setFld = (k: keyof CustomerSuppliedItemForm, v: any) => setForm(c => ({ ...c, [k]: v }));
 
@@ -968,7 +968,7 @@ export default function CustomerSuppliedItemScreen() {
                   <span>UOM</span>
                   <select className="in" value={form.dimensionUom} onChange={e => setFld('dimensionUom', e.target.value)}>
                     <option value="">Select...</option>
-                    {uomOptions.length > 0 && uomOptions.filter(u => ['MM','CM','MTR','INCH','FT'].includes(u.code)).map(u => <option key={u.id} value={u.code}>{u.code} - {u.name}</option>)}
+                    {uomOptions.length > 0 && uomOptions.filter(u => ['MM', 'CM', 'MTR', 'INCH', 'FT'].includes(u.code)).map(u => <option key={u.id} value={u.code}>{u.code} - {u.name}</option>)}
                   </select>
                 </label>
                 <label className="fld">

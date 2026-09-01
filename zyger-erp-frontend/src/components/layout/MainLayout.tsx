@@ -178,7 +178,7 @@ export default function MainLayout() {
         setCompanyLogo(null);
       }
       if (d?.companyName) setCompanyName(d.companyName);
-    }).catch(() => {});
+    }).catch(() => { });
   }, []);
 
   useEffect(() => {
@@ -559,11 +559,11 @@ export default function MainLayout() {
       <header className="topbar">
         <div className="brand">
           {companyLogo ? (
-            <div className="brand-logo" style={{ overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', boxShadow: 'none' }}>
-              <img src={companyLogo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain', background: 'transparent' }} />
+            <div className="brand-logo" style={{ borderRadius: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', boxShadow: 'none' }}>
+              <img src={companyLogo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain', background: 'transparent', borderRadius: 0 }} />
             </div>
           ) : (
-            <div className="brand-logo">Z</div>
+            <div className="brand-logo" style={{ borderRadius: 0 }}>Z</div>
           )}
           <div className="brand-titles">
             <b>{companyName}</b>

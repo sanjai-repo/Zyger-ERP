@@ -125,15 +125,18 @@ a {
     align-items: center
 }
 
-.brand-logo {
-    width: 36px;
-    height: 36px;
-    border-radius: 9px;
-    background: linear-gradient(135deg, #ea5455, #cf3637);
+.brand-logo,
+.fiori-brand-logo,
+.brand-logo img,
+.fiori-brand-logo img {
+    width: 40px;
+    height: 40px;
+    border-radius: 0 !important;
+    background: #3B82F6;
     display: grid;
     place-items: center;
     font-weight: 800;
-    box-shadow: 0 2px 6px rgba(234, 84, 85, .4)
+    box-shadow: none;
 }
 
 .brand-titles b {
@@ -764,66 +767,205 @@ select.in {
     width: 250px
 }
 
+/* ==========================================================================
+   BUTTON SYSTEM (Linear Gradients, Glowing Depth Shadows & Scale Motion)
+   ========================================================================== */
+
 .btn {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
-    padding: 9px 15px;
+    justify-content: center;
+    gap: 8px;
+    padding: 9px 16px;
     border-radius: 8px;
     border: 1px solid var(--border);
     background: var(--card);
     color: var(--text);
-    font-size: .82rem;
+    font-size: .83rem;
     font-weight: 600;
-    transition: .15s
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    position: relative;
+    overflow: hidden;
 }
 
 .btn .material-symbols-rounded {
-    font-size: 17px
+    font-size: 18px;
+    line-height: 1;
+    display: inline-block;
+    vertical-align: middle;
+    transition: transform 0.2s ease;
 }
 
 .btn:hover {
     border-color: var(--blue);
-    color: var(--blue)
+    color: var(--blue);
+    background: var(--surface);
+    transform: translateY(-2px) scale(1.01);
+    box-shadow: var(--sh-hover);
 }
 
-.btn-p {
-    background: var(--blue);
-    border-color: var(--blue);
-    color: #fff;
-    box-shadow: 0 2px 6px rgba(0, 123, 214, .35)
+.btn:hover .material-symbols-rounded {
+    transform: scale(1.1);
 }
 
-.btn-p:hover {
-    background: var(--blue-h);
-    color: #fff
+.btn:active {
+    transform: translateY(0) scale(0.97);
+    box-shadow: var(--sh-sm);
 }
 
-.btn-g {
-    background: var(--green);
-    border-color: var(--green);
-    color: #fff
+.btn:disabled,
+.btn[disabled] {
+    opacity: 0.55;
+    cursor: not-allowed;
+    pointer-events: none;
+    transform: none !important;
+    box-shadow: none !important;
 }
 
-.btn-g:hover {
-    filter: brightness(.93);
-    color: #fff
+/* Primary Action Button: Glowing Blue Linear Gradient */
+.btn-p,
+.btn-primary {
+    background: linear-gradient(135deg, #007bd6 0%, #005699 100%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    color: #ffffff !important;
+    box-shadow: 0 4px 16px rgba(0, 123, 214, 0.42) !important;
 }
 
-.btn-d {
-    background: var(--red);
-    border-color: var(--red);
-    color: #fff
+.btn-p .material-symbols-rounded,
+.btn-primary .material-symbols-rounded {
+    color: #ffffff !important;
 }
 
-.btn-d:hover {
-    filter: brightness(.93);
-    color: #fff
+.btn-p:hover,
+.btn-primary:hover {
+    background: linear-gradient(135deg, #008be6 0%, #0066b3 100%) !important;
+    color: #ffffff !important;
+    box-shadow: 0 6px 22px rgba(0, 123, 214, 0.6) !important;
+    transform: translateY(-2px) scale(1.02) !important;
 }
 
+.btn-p:active,
+.btn-primary:active {
+    transform: translateY(0) scale(0.97) !important;
+    box-shadow: 0 2px 8px rgba(0, 123, 214, 0.4) !important;
+}
+
+/* Danger Action Button: Glowing Red Linear Gradient */
+.btn-d,
+.btn-danger {
+    background: linear-gradient(135deg, #ea5455 0%, #cf3637 100%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    color: #ffffff !important;
+    box-shadow: 0 4px 16px rgba(234, 84, 85, 0.42) !important;
+}
+
+.btn-d .material-symbols-rounded,
+.btn-danger .material-symbols-rounded {
+    color: #ffffff !important;
+}
+
+.btn-d:hover,
+.btn-danger:hover {
+    background: linear-gradient(135deg, #f66162 0%, #dc3c3d 100%) !important;
+    color: #ffffff !important;
+    box-shadow: 0 6px 22px rgba(234, 84, 85, 0.6) !important;
+    transform: translateY(-2px) scale(1.02) !important;
+}
+
+.btn-d:active,
+.btn-danger:active {
+    transform: translateY(0) scale(0.97) !important;
+    box-shadow: 0 2px 8px rgba(234, 84, 85, 0.4) !important;
+}
+
+/* Success Action Button: Glowing Green Linear Gradient */
+.btn-g,
+.btn-success {
+    background: linear-gradient(135deg, #28c76f 0%, #1f9d55 100%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    color: #ffffff !important;
+    box-shadow: 0 4px 16px rgba(40, 199, 111, 0.42) !important;
+}
+
+.btn-g .material-symbols-rounded,
+.btn-success .material-symbols-rounded {
+    color: #ffffff !important;
+}
+
+.btn-g:hover,
+.btn-success:hover {
+    background: linear-gradient(135deg, #34d87c 0%, #22ab5d 100%) !important;
+    color: #ffffff !important;
+    box-shadow: 0 6px 22px rgba(40, 199, 111, 0.6) !important;
+    transform: translateY(-2px) scale(1.02) !important;
+}
+
+.btn-g:active,
+.btn-success:active {
+    transform: translateY(0) scale(0.97) !important;
+    box-shadow: 0 2px 8px rgba(40, 199, 111, 0.4) !important;
+}
+
+/* Small Button Variant */
 .btn-sm {
-    padding: 6px 10px;
-    font-size: .76rem
+    padding: 6px 12px;
+    font-size: .76rem;
+    border-radius: 6px;
+}
+
+.btn-sm .material-symbols-rounded {
+    font-size: 16px;
+}
+
+/* Icon Button System (.ibtn) */
+.ibtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    position: relative;
+}
+
+.ibtn .material-symbols-rounded {
+    font-size: 19px;
+    line-height: 1;
+    display: inline-block;
+    transition: transform 0.2s ease;
+}
+
+.ibtn:hover {
+    background: var(--blue-bg);
+    border-color: rgba(0, 123, 214, 0.2);
+    color: var(--blue);
+    transform: scale(1.08) translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 123, 214, 0.2);
+}
+
+.ibtn:hover .material-symbols-rounded {
+    transform: scale(1.1);
+}
+
+.ibtn:active {
+    transform: scale(0.95);
+    box-shadow: none;
+}
+
+.ibtn.danger:hover {
+    background: rgba(234, 84, 85, 0.12);
+    border-color: rgba(234, 84, 85, 0.25);
+    color: var(--red);
+    box-shadow: 0 4px 12px rgba(234, 84, 85, 0.2);
 }
 
 /* TABLE */
@@ -2297,6 +2439,7 @@ textarea.in {
     background: #1e293b;
     border-color: #334155;
 }
+
 /* SHARED MODAL HELPERS (modal-overlay / modal-h / modal-b / modal-f / modal-content) */
 .modal-overlay {
     position: fixed;

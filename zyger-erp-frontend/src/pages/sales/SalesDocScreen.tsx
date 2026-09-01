@@ -59,7 +59,7 @@ export default function SalesDocScreen({ config, initialDocId, viewOnly = false,
   const [customerMasters, setCustomerMasters] = useState<Array<{ id: number; name: string; code: string; billingAddress?: string; shippingAddress?: string; address?: string; city?: string; state?: string; pincode?: string; addressesJson?: string; deliveryAddressesJson?: string }>>([]);
   const [itemMasters, setItemMasters] = useState<Array<{ id: number; name: string; code: string; uom?: string; price?: number; description?: string; active?: boolean }>>([]);
   const [uomMasters, setUomMasters] = useState<Array<{ id: number; code: string; name: string }>>([]);
-  
+
   // Active Sales Orders for Proforma, DC, Invoice auto-population
   const [salesOrderList, setSalesOrderList] = useState<Array<Record<string, unknown>>>([]);
 
@@ -569,7 +569,7 @@ export default function SalesDocScreen({ config, initialDocId, viewOnly = false,
         const qty = Number(l.billedQty ?? l.qty ?? 0);
         const price = Number(l.unitPrice ?? l.rate ?? 0);
         const baseNet = qty * price;
-        
+
         let taxPct = 18;
         const tc = String(l.taxCode || l.tax || 'GST 18%');
         if (tc.includes('28%')) taxPct = 28;
@@ -672,7 +672,7 @@ export default function SalesDocScreen({ config, initialDocId, viewOnly = false,
 
         const qty = Number(l.billedQty ?? l.qty ?? 0);
         const price = Number(l.unitPrice ?? l.rate ?? 0);
-        
+
         return {
           lineNo: i + 1,
           itemCode: l.itemCode || '',
