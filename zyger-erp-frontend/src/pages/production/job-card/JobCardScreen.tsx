@@ -186,7 +186,7 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
         }));
         toast(`Auto-fetched details for Work Order ${matched.docNo || matched.woNumber}`);
       } else {
-        toast(`Work Order '${selectedWoNo}' not found in database`, 'warning');
+        toast(`Work Order '${selectedWoNo}' not found in database`, 'error');
       }
     } catch (e) {
       toast(getApiErrorMessage(e, 'Failed to fetch Work Order details.'), 'error');

@@ -26,6 +26,21 @@ interface TabsContextType {
 const TabsContext = createContext<TabsContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'zyger-tabs';
+
+/** Read the screen id from the URL hash, e.g. "#/purchase-order" → "purchase-order". */
+function readHashScreenId(): string | null {
+  const hash = window.location.hash.replace(/^#\//, '').replace(/^#/, '');
+  return hash || null;
+}
+
+/** Write the screen id to the URL hash without triggering a full navigation. */
+function writeHashScreenId(screenId: string | null) {
+  if (screenId) {
+    window.history.replaceState(null, '', `#/${screenId}`);
+  } else {
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+}
 const DASHBOARD_TAB: Tab = {
   id: 'dashboard',
   label: 'Dashboard',
@@ -90,6 +105,11 @@ function buildTabsFromIds(ids: string[]): Tab[] {
 export function TabsProvider({ children }: { children: ReactNode }) {
   const { screensLoaded, canScreen } = useAuth();
   const [tabs, setTabs] = useState<Tab[]>(() => {
+    // Prefer URL hash over localStorage for deep-linking support
+    const hashScreen = readHashScreenId();
+    if (hashScreen && hashScreen !== 'dashboard') {
+      return buildTabsFromIds(['dashboard', hashScreen]);
+    }
     const saved = loadSavedState();
     if (saved && saved.tabIds.length > 0) {
       return buildTabsFromIds(saved.tabIds);
@@ -98,6 +118,9 @@ export function TabsProvider({ children }: { children: ReactNode }) {
   });
 
   const [activeTabId, setActiveTabId] = useState<string | null>(() => {
+    // Prefer URL hash for initial active tab
+    const hashScreen = readHashScreenId();
+    if (hashScreen) return hashScreen;
     const saved = loadSavedState();
     if (saved && saved.tabIds.includes(saved.activeTabId)) {
       return saved.activeTabId;
@@ -118,12 +141,40 @@ export function TabsProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screensLoaded]);
 
+  // Sync active tab to URL hash and localStorage
   useEffect(() => {
     if (isInitialMount.current) {
       isInitialMount.current = false;
       return;
     }
     saveState(tabs.map(t => t.id), activeTabId);
+    writeHashScreenId(activeTabId);
+  }, [tabs, activeTabId]);
+
+  // Listen for browser back/forward (hashchange) to sync tabs
+  useEffect(() => {
+    const onHashChange = () => {
+      const hashScreen = readHashScreenId();
+      if (hashScreen && hashScreen !== activeTabId) {
+        // If the tab exists, just switch to it; otherwise open it
+        const exists = tabs.some(t => t.id === hashScreen);
+        if (exists) {
+          setActiveTabId(hashScreen);
+        } else {
+          const component = getScreenComponent(hashScreen);
+          const meta = findNavMeta(hashScreen);
+          openTab({
+            id: hashScreen,
+            label: meta?.label ?? hashScreen,
+            icon: meta?.icon ?? 'article',
+            component,
+          });
+        }
+      }
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabs, activeTabId]);
 
   const openTab = useCallback((newTab: Tab) => {

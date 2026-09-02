@@ -8,6 +8,7 @@ dist-ssr/
 build/
 bin/
 out/
+target/
 .gradle/
 .vite/
 
@@ -29,3 +30,6 @@ graphify-out/
 
 # Runtime user uploads (company logos, documents, etc.)
 zygererp/uploads/
+zyger-erp-backend/uploads/
+uploads/
+

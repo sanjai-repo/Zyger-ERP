@@ -1,0 +1,112 @@
+spring:
+  application:
+    name: zygererp
+  profiles:
+    active: dev
+  cache:
+    type: com.github.benmanes.caffeine.cache.CaffeineCacheManager
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/zyger_erp}
+    username: ${DB_USERNAME:zyger}
+    password: ${DB_PASSWORD:zyger123}
+    hikari:
+      initialization-fail-timeout: -1
+      pool-name: zygdb-pool
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:20}
+      minimum-idle: ${DB_POOL_MIN_IDLE:4}
+      connection-timeout: ${DB_CONN_TIMEOUT:30000}
+      idle-timeout: ${DB_IDLE_TIMEOUT:600000}
+      max-lifetime: ${DB_MAX_LIFETIME:1800000}
+      validation-timeout: 3000
+      leak-detection-threshold: 60000
+      auto-commit: true
+  jackson:
+    deserialization:
+      fail-on-null-for-primitives: false
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-start: true
+    baseline-version: 0
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+  lifecycle:
+    timeout-per-shutdown-phase: 60s
+  mail:
+    host: ${SMTP_HOST:smtp.gmail.com}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USER:}
+    password: ${SMTP_PASS:}
+    default-encoding: UTF-8
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: 10000
+          timeout: 10000
+          writetimeout: 10000
+  app:
+    mail:
+      from-email: ${MAIL_FROM:}
+server:
+  port: ${SERVER_PORT:9090}
+  shutdown: graceful
+  tomcat:
+    threads:
+      max: ${TOMCAT_MAX_THREADS:200}
+      min-spare: ${TOMCAT_MIN_SPARE:10}
+    accept-count: ${TOMCAT_ACCEPT_COUNT:100}
+    max-connections: ${TOMCAT_MAX_CONNECTIONS:10000}
+    connection-timeout: 20000
+    keep-alive-timeout: 60000
+    max-keep-alive-requests: 200
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/css,text/javascript
+    min-response-size: 1024
+    compression-level: 6
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha
+  packages-to-scan: in.zygertechnology.zygererp.controller
+  default-produces-media-type: application/json
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:default-zyger-erp-jwt-secret-change-me-in-prod-256bit}
+    expiration-ms: ${JWT_EXPIRATION_MS:2592000000}
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:9091,http://localhost:5173}
+  security:
+    password-min-length: ${PASSWORD_MIN_LENGTH:8}
+    max-login-attempts: ${MAX_LOGIN_ATTEMPTS:5}
+    lockout-minutes: ${LOCKOUT_MINUTES:15}

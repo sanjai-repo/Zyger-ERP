@@ -472,7 +472,7 @@ export default function MainLayout() {
       {searchOpen && (
         <div className="search-pop" onClick={() => setSearchOpen(false)}>
           <div className="search-box" onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <div className="search-input-header">
               <span className="material-symbols-rounded" style={{ color: 'var(--muted)', fontSize: 22 }}>search</span>
               <input
                 ref={searchRef}
@@ -485,14 +485,13 @@ export default function MainLayout() {
                   if (searchResults.length > 0) openSearchResult(searchResults[0]);
                   else if (recordResults.length > 0) openRecord(recordResults[0]);
                 }}
-                style={{ flex: 1, fontSize: 15 }}
               />
               <button className="btn btn-sm" onClick={() => setSearchOpen(false)}>ESC</button>
             </div>
-            <div style={{ maxHeight: 360, overflow: 'auto' }}>
+            <div className="search-results-wrap">
               {!searchQuery.trim() ? (
-                <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-                  <span className="material-symbols-rounded" style={{ fontSize: 28, display: 'block', margin: '0 auto 6px', opacity: 0.4 }}>search</span>
+                <div className="search-empty-state">
+                  <span className="material-symbols-rounded">search</span>
                   Type to search screens and records...
                 </div>
               ) : (
@@ -500,52 +499,41 @@ export default function MainLayout() {
                   {searchResults.map((r, i) => (
                     <button
                       key={r.id}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '10px 12px',
-                        border: 'none', background: i === 0 ? 'var(--blue-bg)' : 'none', borderRadius: 8, cursor: 'pointer', textAlign: 'left',
-                        fontSize: 14, color: 'var(--text)',
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = i === 0 ? 'var(--blue-bg)' : 'none')}
+                      className={`search-result-btn${i === 0 ? ' active' : ''}`}
                       onClick={() => openSearchResult(r)}
                     >
-                      <span className="material-symbols-rounded" style={{ fontSize: 18, color: 'var(--muted)' }}>{r.icon}</span>
+                      <span className="material-symbols-rounded">{r.icon}</span>
                       {r.label}
-                      {i === 0 && <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 6px' }}>Enter ↵</span>}
+                      {i === 0 && <span className="search-kbd-hint">Enter ↵</span>}
                     </button>
                   ))}
                   {(recordResults.length > 0 || recordsLoading) && (
-                    <div style={{ padding: searchResults.length > 0 ? '12px 12px 4px' : '4px 12px', fontSize: 11, letterSpacing: 1, color: 'var(--muted)', textTransform: 'uppercase' }}>
+                    <div className={`search-section-label${searchResults.length === 0 ? ' first' : ''}`}>
                       Records{recordsLoading ? '…' : ''}
                     </div>
                   )}
                   {recordResults.map((r, i) => (
                     <button
                       key={r.key}
-                      style={{
-                        display: 'flex', alignItems: 'flex-start', gap: 10, width: '100%', padding: '8px 12px',
-                        border: 'none', background: 'none', borderRadius: 8, cursor: 'pointer', textAlign: 'left',
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-bg)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
+                      className="record-result-btn"
                       onClick={() => openRecord(r)}
                     >
-                      <span className="material-symbols-rounded" style={{ fontSize: 18, color: 'var(--muted)', marginTop: 2 }}>{r.icon}</span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <b style={{ fontSize: 13, color: 'var(--text)' }}>{r.title}</b>
-                          <span style={{ fontSize: 10, color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 999, padding: '1px 7px' }}>{r.typeLabel}</span>
-                          {searchResults.length === 0 && i === 0 && <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 6px' }}>Enter ↵</span>}
+                      <span className="material-symbols-rounded">{r.icon}</span>
+                      <div className="record-result-info">
+                        <div className="record-result-title-row">
+                          <b>{r.title}</b>
+                          <span className="record-type-badge">{r.typeLabel}</span>
+                          {searchResults.length === 0 && i === 0 && <span className="search-kbd-hint">Enter ↵</span>}
                         </div>
                         {r.subtitle && (
-                          <small style={{ display: 'block', color: 'var(--muted)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.subtitle}</small>
+                          <small className="record-result-subtitle">{r.subtitle}</small>
                         )}
                       </div>
                     </button>
                   ))}
                   {searchResults.length === 0 && recordResults.length === 0 && !recordsLoading && (
-                    <div style={{ padding: '30px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-                      <span className="material-symbols-rounded" style={{ fontSize: 32, display: 'block', margin: '0 auto 8px', opacity: 0.3 }}>search_off</span>
+                    <div className="search-no-results">
+                      <span className="material-symbols-rounded">search_off</span>
                       No results for "<b>{searchQuery}</b>"
                     </div>
                   )}
@@ -559,8 +547,8 @@ export default function MainLayout() {
       <header className="topbar">
         <div className="brand">
           {companyLogo ? (
-            <div className="brand-logo" style={{ borderRadius: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', boxShadow: 'none' }}>
-              <img src={companyLogo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain', background: 'transparent', borderRadius: 0 }} />
+            <div className="brand-logo brand-logo-img">
+              <img src={companyLogo} alt="Logo" />
             </div>
           ) : (
             <div className="brand-logo" style={{ borderRadius: 0 }}>Z</div>
@@ -593,14 +581,15 @@ export default function MainLayout() {
                 </div>
                 <hr />
                 {notifications.length === 0 ? (
-                  <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-                    <span className="material-symbols-rounded" style={{ fontSize: 28, display: 'block', margin: '0 auto 6px', opacity: 0.4 }}>notifications_off</span>
+                  <div className="notif-empty">
+                    <span className="material-symbols-rounded">notifications_off</span>
                     No pending notifications
                   </div>
                 ) : notifications.map((n) => (
                   <a
                     key={n.id}
                     href="#"
+                    className="notif-item"
                     onClick={(e) => {
                       e.preventDefault();
                       if (n.screenId) openNotifScreen(n.screenId);
@@ -609,8 +598,8 @@ export default function MainLayout() {
                   >
                     <span className="material-symbols-rounded" style={{ color: n.color }}>{n.icon}</span>
                     <div>
-                      <b style={{ fontSize: 12 }}>{n.message}</b>
-                      <small style={{ display: 'block', color: 'var(--muted)', fontSize: 11 }}>{n.detail}</small>
+                      <b>{n.message}</b>
+                      <small>{n.detail}</small>
                     </div>
                   </a>
                 ))}

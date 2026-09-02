@@ -3,17 +3,17 @@ services:
     image: postgres:16-alpine
     container_name: Zyger-ERP-Database
     environment:
-      POSTGRES_DB: zyger_erp
-      POSTGRES_USER: zyger
-      POSTGRES_PASSWORD: zyger123
+      POSTGRES_DB: ${DB_NAME:-zyger_erp}
+      POSTGRES_USER: ${DB_USERNAME:-zyger}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-zyger123}
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "5433:5432"
+      - "${DB_PORT:-5433}:5432"
     networks:
       - zyger-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U zyger -d zyger_erp"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-zyger} -d ${DB_NAME:-zyger_erp}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -21,24 +21,30 @@ services:
 
   backend:
     build:
-      context: ./zygererp
+      context: ./zyger-erp-backend
       target: runtime
     image: zygererp-backend
     container_name: Zyger-ERP-Backend
     depends_on:
       database:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9090/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      DB_URL: jdbc:postgresql://database:5432/zyger_erp
-      DB_USERNAME: zyger
-      DB_PASSWORD: zyger123
-      SERVER_PORT: "9090"
-      CORS_ORIGINS: http://localhost,http://localhost:8081,http://localhost:9091
-      JWT_SECRET: change-me-in-production-use-a-256-bit-random-string
-      JWT_EXPIRATION_MS: "3600000"
+      DB_URL: jdbc:postgresql://database:5432/${DB_NAME:-zyger_erp}
+      DB_USERNAME: ${DB_USERNAME:-zyger}
+      DB_PASSWORD: ${DB_PASSWORD:-zyger123}
+      SERVER_PORT: ${SERVER_PORT:-9090}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:8081}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-3600000}
     ports:
-      - "9090:9090"
+      - "${SERVER_PORT:-9090}:9090"
     networks:
       - zyger-net
     restart: unless-stopped
@@ -49,9 +55,16 @@ services:
     image: zygererp-frontend
     container_name: Zyger-ERP-Frontend
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     ports:
-      - "8081:80"
+      - "${FRONTEND_PORT:-9091}:80"
     networks:
       - zyger-net
     restart: unless-stopped

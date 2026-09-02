@@ -2504,3 +2504,223 @@ textarea.in {
     padding-top: 14px;
     border-top: 1px solid var(--border);
 }
+
+/* ==========================================================================
+   MAINLAYOUT SEARCH & NAVIGATION COMPONENTS
+   ========================================================================== */
+
+.search-input-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px
+}
+
+.search-input-header .in {
+    flex: 1;
+    font-size: 15px
+}
+
+.search-results-wrap {
+    max-height: 360px;
+    overflow: auto
+}
+
+.search-empty-state {
+    padding: 20px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px
+}
+
+.search-empty-state .material-symbols-rounded {
+    font-size: 28px;
+    display: block;
+    margin: 0 auto 6px;
+    opacity: .4
+}
+
+.search-result-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    border: none;
+    background: none;
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: left;
+    font-size: 14px;
+    color: var(--text);
+    transition: background .1s
+}
+
+.search-result-btn:hover {
+    background: var(--blue-bg)
+}
+
+.search-result-btn.active {
+    background: var(--blue-bg)
+}
+
+.search-result-btn .material-symbols-rounded {
+    font-size: 18px;
+    color: var(--muted)
+}
+
+.search-kbd-hint {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px
+}
+
+.search-section-label {
+    padding: 12px 12px 4px;
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: var(--muted);
+    text-transform: uppercase
+}
+
+.search-section-label.first {
+    padding: 4px 12px
+}
+
+.record-result-btn {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: none;
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: left;
+    transition: background .1s
+}
+
+.record-result-btn:hover {
+    background: var(--blue-bg)
+}
+
+.record-result-btn .material-symbols-rounded {
+    font-size: 18px;
+    color: var(--muted);
+    margin-top: 2px
+}
+
+.record-result-info {
+    flex: 1;
+    min-width: 0
+}
+
+.record-result-title-row {
+    display: flex;
+    align-items: center;
+    gap: 6px
+}
+
+.record-result-title-row b {
+    font-size: 13px;
+    color: var(--text)
+}
+
+.record-type-badge {
+    font-size: 10px;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 1px 7px
+}
+
+.record-result-subtitle {
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap
+}
+
+.search-no-results {
+    padding: 30px 20px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px
+}
+
+.search-no-results .material-symbols-rounded {
+    font-size: 32px;
+    display: block;
+    margin: 0 auto 8px;
+    opacity: .3
+}
+
+/* Brand logo with uploaded image */
+.brand-logo-img {
+    border-radius: 0 !important;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent !important;
+    box-shadow: none !important
+}
+
+.brand-logo-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: transparent;
+    border-radius: 0
+}
+
+/* Notification panel */
+.notif-empty {
+    padding: 20px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px
+}
+
+.notif-empty .material-symbols-rounded {
+    font-size: 28px;
+    display: block;
+    margin: 0 auto 6px;
+    opacity: .4
+}
+
+.notif-item {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 10px;
+    border-radius: 7px;
+    font-size: 13px;
+    transition: background .1s
+}
+
+.notif-item:hover {
+    background: var(--blue-bg);
+    color: var(--blue)
+}
+
+.notif-item .material-symbols-rounded {
+    font-size: 18px
+}
+
+.notif-item b {
+    font-size: 12px;
+    display: block
+}
+
+.notif-item small {
+    display: block;
+    color: var(--muted);
+    font-size: 11px
+}

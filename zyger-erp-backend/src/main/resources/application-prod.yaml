@@ -1,0 +1,58 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: false
+        use_sql_comments: false
+  flyway:
+    enabled: true
+    baseline-on-start: true
+    baseline-version: 0
+  datasource:
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX:20}
+      minimum-idle: ${DB_POOL_MIN:5}
+      idle-timeout: 300000
+      connection-timeout: 20000
+      max-lifetime: 1200000
+      leak-detection-threshold: 60000
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+server:
+  port: ${SERVER_PORT:9090}
+  shutdown: graceful
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/css,text/javascript
+    min-response-size: 1024
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+app:
+  jwt:
+    secret: ${JWT_SECRET}
+    expiration-ms: ${JWT_EXPIRATION_MS:2592000000}
+  cors:
+    allowed-origins: ${CORS_ORIGINS}
+  security:
+    password-min-length: ${PASSWORD_MIN_LENGTH:8}
+    max-login-attempts: ${MAX_LOGIN_ATTEMPTS:5}
+    lockout-minutes: ${LOCKOUT_MINUTES:15}
+logging:
+  level:
+    root: WARN
+    in.zygertechnology: INFO
+    org.springframework.security: WARN
