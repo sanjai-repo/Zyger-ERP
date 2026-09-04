@@ -143,11 +143,14 @@ public class StockService {
                               String location, String batchNo, String heatNo,
                               BigDecimal inQty, LocalDate txDate, String user,
                               String stockStatus) {
+        if (inQty == null || inQty.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Stock receipt quantity must be greater than zero. Received: " + inQty);
+        }
         if (stockStatus == null || stockStatus.isBlank()) stockStatus = "FREE";
         String loc = location != null ? location : "MAIN";
         String batch = batchNo != null ? batchNo : "";
         String heat = heatNo != null ? heatNo : "";
-        BigDecimal qty = inQty != null ? inQty : BigDecimal.ZERO;
+        BigDecimal qty = inQty;
 
         if (ledger.existsByDocNoAndDocType(docNo, docType)) {
             log.warn("Duplicate stock-in blocked: docNo={}, docType={}", docNo, docType);

@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import in.zygertechnology.zygererp.repo.PartyRepository;
 import in.zygertechnology.zygererp.repo.ItemRepository;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.*;
@@ -198,12 +199,12 @@ public class SalesService {
                             if (item.getTax() == null) item.setTax(BigDecimal.ZERO);
                             BigDecimal qty = item.getQty() == null ? BigDecimal.ZERO : item.getQty();
                             BigDecimal net = qty.multiply(item.getUnitPrice()).subtract(item.getDiscount());
-                            BigDecimal taxAmt = net.multiply(item.getTax()).divide(BigDecimal.valueOf(100));
+                            BigDecimal taxAmt = net.multiply(item.getTax()).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP).setScale(2, RoundingMode.HALF_UP);
                             item.setTaxAmount(taxAmt);
-                            item.setNetAmount(net.add(taxAmt));
+                            item.setNetAmount(net.add(taxAmt).setScale(2, RoundingMode.HALF_UP));
                             total = total.add(net.add(taxAmt));
                         }
-                        pi.setTotalAmount(total);
+                        pi.setTotalAmount(total.setScale(2, RoundingMode.HALF_UP));
                     }
                 }
             }
@@ -223,14 +224,14 @@ public class SalesService {
                             if (item.getTax() == null) item.setTax(BigDecimal.ZERO);
                             BigDecimal qty = item.getQty() == null ? BigDecimal.ZERO : item.getQty();
                             BigDecimal net = qty.multiply(item.getUnitPrice()).subtract(item.getDiscount());
-                            BigDecimal taxAmt = net.multiply(item.getTax()).divide(BigDecimal.valueOf(100));
+                            BigDecimal taxAmt = net.multiply(item.getTax()).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP).setScale(2, RoundingMode.HALF_UP);
                             item.setTaxAmount(taxAmt);
-                            item.setNetAmount(net.add(taxAmt));
+                            item.setNetAmount(net.add(taxAmt).setScale(2, RoundingMode.HALF_UP));
                             total = total.add(net.add(taxAmt));
                             totalTax = totalTax.add(taxAmt);
                         }
-                        si.setTotalAmount(total);
-                        si.setTaxAmount(totalTax);
+                        si.setTotalAmount(total.setScale(2, RoundingMode.HALF_UP));
+                        si.setTaxAmount(totalTax.setScale(2, RoundingMode.HALF_UP));
                     }
                 }
             }
