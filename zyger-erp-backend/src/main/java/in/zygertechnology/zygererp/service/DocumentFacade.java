@@ -650,6 +650,15 @@ public class DocumentFacade {
         if (!List.of("DRAFT", "REJECTED").contains(old.getStatus()))
             throw new IllegalStateException("Only DRAFT/REJECTED documents can be edited");
 
+        if (body.containsKey("version") && body.get("version") != null) {
+            Long incomingVersion = Long.valueOf(body.get("version").toString());
+            if (old.getVersion() != null && !Objects.equals(old.getVersion(), incomingVersion)) {
+                throw new jakarta.persistence.OptimisticLockException(
+                    "Document " + old.getDocNo() + " version mismatch (expected " + old.getVersion() + " but received " + incomingVersion + "). Concurrent modification detected."
+                );
+            }
+        }
+
         DocTypes.DocDef def = DocTypes.get(key);
 
         normalizeLines(body, key);

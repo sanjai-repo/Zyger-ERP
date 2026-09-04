@@ -1409,6 +1409,7 @@ public class MasterController {
     private final UserRepository userRepo;
     private final PasswordEncoder passwordEncoder;
 
+    @RequirePermission(module = "ADMIN", screen = "USER", action = "READ")
     @GetMapping("/api/master/users")
     List<Map<String,Object>> userList() {
         return userRepo.findAll().stream()
@@ -1424,6 +1425,7 @@ public class MasterController {
         }).toList();
     }
 
+    @RequirePermission(module = "ADMIN", screen = "USER", action = "READ")
     @GetMapping("/api/master/users/{id}")
     Map<String,Object> getUser(@PathVariable Long id) {
         AppUser u = userRepo.findById(id).orElseThrow(() -> new RuntimeException("User not found"));
@@ -1436,6 +1438,7 @@ public class MasterController {
         return m;
     }
 
+    @RequirePermission(module = "ADMIN", screen = "USER", action = "WRITE")
     @PostMapping("/api/master/users")
     Map<String,Object> createUser(@RequestBody Map<String,Object> body, Principal principal) {
         String username = (String) body.getOrDefault("username", "");
@@ -1465,6 +1468,7 @@ public class MasterController {
         return out;
     }
 
+    @RequirePermission(module = "ADMIN", screen = "USER", action = "WRITE")
     @PutMapping("/api/master/users/{id}")
     Map<String,Object> updateUser(@PathVariable Long id, @RequestBody Map<String,Object> body, Principal principal) {
         AppUser u = userRepo.findById(id).orElseThrow(() -> new RuntimeException("User not found"));
@@ -1498,6 +1502,7 @@ public class MasterController {
         return out;
     }
 
+    @RequirePermission(module = "ADMIN", screen = "USER", action = "WRITE")
     @DeleteMapping("/api/master/users/{id}")
     void deleteUser(@PathVariable Long id) {
         AppUser target = userRepo.findById(id).orElse(null);
