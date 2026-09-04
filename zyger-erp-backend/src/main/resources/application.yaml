@@ -82,6 +82,11 @@ server:
     include-message: never
     include-stacktrace: never
     include-binding-errors: never
+production:
+  normalized-ops:
+    enabled: ${PROD_NORMALIZED_OPS_ENABLED:false}
+  backfill:
+    enabled: ${PROD_BACKFILL_ENABLED:false}
 management:
   endpoints:
     web:
