@@ -500,7 +500,7 @@ export default function LoginPage() {
           {/* Logo Container — Displays full uncropped company logo without radius clipping */}
           <div className="lgp-logo-container">
             <img
-              src={companyLogoUrl && !logoError ? companyLogoUrl : '/Zyger_Logo.svg'}
+              src={logoError ? '/Zyger_Logo.svg' : (companyLogoUrl || '/Zyger_Logo.svg')}
               alt={companyName}
               className="lgp-logo-img"
               onError={() => setLogoError(true)}

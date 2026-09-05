@@ -9,6 +9,7 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 import tools.jackson.databind.JsonNode;
 import in.zygertechnology.zygererp.security.RequirePermission;
+import in.zygertechnology.zygererp.security.PublicAccess;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -17,6 +18,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import java.security.Principal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 
 import java.security.Principal;
@@ -160,6 +162,7 @@ public class MasterController {
         return out;
     }
 
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PostMapping("/api/master/items") @Transactional ItemMaster create(@RequestBody Map<String,Object> body){
         ItemMaster i = new ItemMaster();
         applyItemFields(i, body);
@@ -171,6 +174,7 @@ public class MasterController {
     @GetMapping("/api/master/items/{id}") ItemMaster getItem(@PathVariable Long id) {
         return items.findById(id).orElseThrow(() -> new RuntimeException("Item not found"));
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PutMapping("/api/master/items/{id}") @Transactional ItemMaster update(@PathVariable Long id, @RequestBody Map<String,Object> body){
         ItemMaster e = items.findById(id).orElseThrow(() -> new RuntimeException("Item not found"));
         applyItemFields(e, body);
@@ -369,6 +373,7 @@ public class MasterController {
         }
         return m;
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @DeleteMapping("/api/master/items/{id}") void del(@PathVariable Long id){ items.findById(id).ifPresent(i -> { i.setActive(false); items.save(i); }); }
 
     @GetMapping("/api/master/items/{code}/bom")
@@ -376,6 +381,7 @@ public class MasterController {
         return bomRepo.findByParentItemCodeOrderByIdAsc(code);
     }
 
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PostMapping("/api/master/items/{code}/bom")
     @Transactional
     public List<ItemBomComponent> saveItemBom(@PathVariable String code, @RequestBody List<ItemBomComponent> components) {
@@ -392,6 +398,7 @@ public class MasterController {
         return itemSupplierRepo.findByItemCodeOrderByIdAsc(code);
     }
 
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PostMapping("/api/master/items/{code}/suppliers")
     @Transactional
     public List<ItemSupplier> saveItemSuppliers(@PathVariable String code, @RequestBody List<ItemSupplier> suppliers) {
@@ -404,8 +411,8 @@ public class MasterController {
     }
 
 
-    @Cacheable("masterRefs") @GetMapping("/api/master/suppliers") List<Party> sup(){ return parties.findByKind("SUPPLIER").stream().filter(Party::isActive).toList(); }
-    @Cacheable("masterRefs") @GetMapping("/api/master/customers") List<Party> cus(){ return parties.findByKind("CUSTOMER").stream().filter(Party::isActive).toList(); }
+    @Cacheable(value = "masterRefs", key = "'suppliers'") @GetMapping("/api/master/suppliers") List<Party> sup(){ return parties.findByKind("SUPPLIER").stream().filter(Party::isActive).toList(); }
+    @Cacheable(value = "masterRefs", key = "'customers'") @GetMapping("/api/master/customers") List<Party> cus(){ return parties.findByKind("CUSTOMER").stream().filter(Party::isActive).toList(); }
 
     // ---- Party CRUD (suppliers & customers) ----
     @GetMapping("/api/master/parties/{id}")
@@ -443,6 +450,7 @@ public class MasterController {
         return out;
     }
 
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PostMapping("/api/master/parties") Party createParty(@RequestBody Party p, Principal principal) {
         p.setId(null);
         p.setCode(docNumbers.allocate(partyDocType(p)));
@@ -460,6 +468,7 @@ public class MasterController {
         };
     }
 
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PutMapping("/api/master/parties/{id}") @Transactional Party updateParty(@PathVariable Long id, @RequestBody ObjectNode body, Principal principal) {
         Party e = parties.findById(id).orElseThrow(() -> new RuntimeException("Party not found"));
         Party merged = mergePatch(e, body);
@@ -468,12 +477,14 @@ public class MasterController {
         return parties.save(merged);
     }
 
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @DeleteMapping("/api/master/parties/{id}") void delParty(@PathVariable Long id) { parties.findById(id).ifPresent(p -> { p.setActive(false); parties.save(p); }); }
 
     // ---- Location CRUD ----
     @GetMapping("/api/inventory/locations") List<LocationMaster> loc(){ return locs.findAll().stream().filter(LocationMaster::isActive).toList(); }
     @GetMapping("/api/inventory/locations/{id}") LocationMaster getLoc(@PathVariable Long id){ return locs.findById(id).orElseThrow(); }
 
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PostMapping("/api/inventory/locations") LocationMaster createLoc(@RequestBody LocationMaster l, Principal principal) {
         l.setId(null);
         l.setCode(docNumbers.allocate("location"));
@@ -482,6 +493,7 @@ public class MasterController {
         return locs.save(l);
     }
 
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PutMapping("/api/inventory/locations/{id}") @Transactional LocationMaster updateLoc(@PathVariable Long id, @RequestBody ObjectNode body, Principal principal) {
         LocationMaster e = locs.findById(id).orElseThrow(() -> new RuntimeException("Location not found"));
         LocationMaster merged = mergePatch(e, body);
@@ -490,6 +502,7 @@ public class MasterController {
         return locs.save(merged);
     }
 
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @DeleteMapping("/api/inventory/locations/{id}") void delLoc(@PathVariable Long id) { locs.findById(id).ifPresent(l -> { l.setActive(false); locs.save(l); }); }
 
     @GetMapping("/api/master/departments") List<String> depts(){ return List.of("Production","Maintenance","Quality","Tool Room","Stores"); }
@@ -498,44 +511,58 @@ public class MasterController {
     @GetMapping("/api/labour-orders") List<RefDoc> lo(){ return refs.findByKind("LO"); }
 
     // ---- Work Centers ----
-    @Cacheable("masterRefs") @GetMapping("/api/master/work-centers") List<WorkCenter> workCenters(){ return workCenters.findAll().stream().filter(WorkCenter::isActive).toList(); }
+    @Cacheable(value = "masterRefs", key = "'work-centers'") @GetMapping("/api/master/work-centers") List<WorkCenter> workCenters(){ return workCenters.findAll().stream().filter(WorkCenter::isActive).toList(); }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PostMapping("/api/master/work-centers") WorkCenter createWC(@RequestBody WorkCenter wc){ wc.setId(null); wc.setCode(docNumbers.allocate("work-center")); return workCenters.save(wc); }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PutMapping("/api/master/work-centers/{id}") @Transactional WorkCenter updateWC(@PathVariable Long id, @RequestBody ObjectNode body){
         WorkCenter e = workCenters.findById(id).orElseThrow(() -> new RuntimeException("Work Center not found"));
         WorkCenter merged = mergePatch(e, body);
         merged.setId(id); merged.setVersion(e.getVersion());
         return workCenters.save(merged); }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @DeleteMapping("/api/master/work-centers/{id}") void delWC(@PathVariable Long id){ workCenters.findById(id).ifPresent(w -> { w.setActive(false); workCenters.save(w); }); }
 
     // ---- Machines ----
-    @Cacheable("masterRefs") @GetMapping("/api/master/machines") List<MachineMaster> machines(){ return machines.findAll().stream().filter(MachineMaster::isActive).toList(); }
+    @Cacheable(value = "masterRefs", key = "'machines'") @GetMapping("/api/master/machines") List<MachineMaster> machines(){ return machines.findAll().stream().filter(MachineMaster::isActive).toList(); }
     @GetMapping("/api/master/machines/{id}") MachineMaster getMachine(@PathVariable Long id){ return machines.findById(id).orElseThrow(); }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PostMapping("/api/master/machines") MachineMaster createMachine(@RequestBody MachineMaster m){ m.setId(null); m.setCode(docNumbers.allocate("machine")); return machines.save(m); }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PutMapping("/api/master/machines/{id}") @Transactional MachineMaster updateMachine(@PathVariable Long id, @RequestBody ObjectNode body){
         MachineMaster e = machines.findById(id).orElseThrow(() -> new RuntimeException("Machine not found"));
         MachineMaster merged = mergePatch(e, body);
         merged.setId(id); merged.setVersion(e.getVersion());
         return machines.save(merged); }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @DeleteMapping("/api/master/machines/{id}") void delMachine(@PathVariable Long id){ machines.findById(id).ifPresent(m -> { m.setActive(false); machines.save(m); }); }
 
     // ---- Operations ----
-    @Cacheable("masterRefs") @GetMapping("/api/master/operations") List<OperationMaster> operations(){ return operations.findAll().stream().filter(OperationMaster::isActive).toList(); }
+    @Cacheable(value = "masterRefs", key = "'operations'") @GetMapping("/api/master/operations") List<OperationMaster> operations(){ return operations.findAll().stream().filter(OperationMaster::isActive).toList(); }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PostMapping("/api/master/operations") OperationMaster createOp(@RequestBody OperationMaster o){ o.setId(null); o.setCode(docNumbers.allocate("operation")); return operations.save(o); }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PutMapping("/api/master/operations/{id}") @Transactional OperationMaster updateOp(@PathVariable Long id, @RequestBody ObjectNode body){
         OperationMaster e = operations.findById(id).orElseThrow(() -> new RuntimeException("Operation not found"));
         OperationMaster merged = mergePatch(e, body);
         merged.setId(id); merged.setVersion(e.getVersion());
         return operations.save(merged); }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @DeleteMapping("/api/master/operations/{id}") void delOp(@PathVariable Long id){ operations.findById(id).ifPresent(o -> { o.setActive(false); operations.save(o); }); }
 
     // ---- Shift Calendar ----
-    @Cacheable("masterRefs") @GetMapping("/api/master/shifts") List<ShiftCalendar> shifts(){ return shifts.findAll().stream().filter(ShiftCalendar::isActive).toList(); }
+    @GetMapping("/api/master/shifts/next-code")
+    Map<String,String> nextShiftCode() { return Map.of("code", "SH"+String.format("%03d", shifts.count()+1)); }
+    @Cacheable(value = "masterRefs", key = "'shifts'") @GetMapping("/api/master/shifts") List<ShiftCalendar> shifts(){ return shifts.findAll().stream().filter(ShiftCalendar::isActive).toList(); }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PostMapping("/api/master/shifts") ShiftCalendar createShift(@RequestBody ShiftCalendar s){ s.setId(null); return shifts.save(s); }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PutMapping("/api/master/shifts/{id}") @Transactional ShiftCalendar updateShift(@PathVariable Long id, @RequestBody ObjectNode body){
         ShiftCalendar e = shifts.findById(id).orElseThrow(() -> new RuntimeException("Shift not found"));
         ShiftCalendar merged = mergePatch(e, body);
         merged.setId(id); merged.setVersion(e.getVersion());
         return shifts.save(merged); }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @DeleteMapping("/api/master/shifts/{id}") void delShift(@PathVariable Long id){ shifts.findById(id).ifPresent(s -> { s.setActive(false); shifts.save(s); }); }
 
     // ================================================================
@@ -552,7 +579,7 @@ public class MasterController {
     private final MasterAuditLogRepository auditLogs;
 
     // ---- UOM Master ----
-    @Cacheable("masterRefs")
+    @Cacheable(value = "masterRefs", key = "'uoms'")
     @GetMapping("/api/master/uoms")
     List<Map<String,Object>> uomList() {
         return uoms.findAll().stream().filter(UOMMaster::isActive).map(u -> {
@@ -566,13 +593,16 @@ public class MasterController {
     @GetMapping("/api/master/uoms/{id}") UOMMaster getUom(@PathVariable Long id){
         return uoms.findById(id).orElseThrow(() -> new RuntimeException("UOM not found"));
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PostMapping("/api/master/uoms") UOMMaster createUom(@RequestBody UOMMaster u){ u.setId(null); u.setCode(docNumbers.allocate("uom")); return uoms.save(u); }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PutMapping("/api/master/uoms/{id}") @Transactional UOMMaster updateUom(@PathVariable Long id, @RequestBody ObjectNode body){
         UOMMaster e = uoms.findById(id).orElseThrow(() -> new RuntimeException("UOM not found"));
         UOMMaster merged = mergePatch(e, body);
         merged.setId(id); merged.setVersion(e.getVersion());
         return uoms.save(merged);
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @DeleteMapping("/api/master/uoms/{id}") void delUom(@PathVariable Long id){ uoms.findById(id).ifPresent(u -> { u.setActive(false); uoms.save(u); }); }
 
     // ---- Item Group ----
@@ -617,6 +647,7 @@ public class MasterController {
         };
     }
 
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PostMapping("/api/master/item-groups") ItemGroup createItemGroup(@RequestBody ItemGroup g, Principal principal){
         g.setId(null); g.setCode(docNumbers.allocate("item-group"));
         g.setItemType(resolveGroupItemType(g));
@@ -624,6 +655,7 @@ public class MasterController {
         g.setCreatedAt(java.time.Instant.now()); g.setUpdatedAt(java.time.Instant.now());
         return itemGroups.save(g);
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PutMapping("/api/master/item-groups/{id}") @Transactional ItemGroup updateItemGroup(@PathVariable Long id, @RequestBody ObjectNode body, Principal principal){
         ItemGroup e = itemGroups.findById(id).orElseThrow(() -> new RuntimeException("Item Group not found"));
         ItemGroup merged = mergePatch(e, body);
@@ -637,6 +669,7 @@ public class MasterController {
         }
         return itemGroups.save(merged);
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @DeleteMapping("/api/master/item-groups/{id}") @Transactional Map<String,Object> delItemGroup(@PathVariable Long id){
         ItemGroup g = itemGroups.findById(id).orElseThrow(() -> new RuntimeException("Item Group not found"));
         Map<String,Object> out = new LinkedHashMap<>();
@@ -714,6 +747,7 @@ public class MasterController {
         return buildBomMappingEditorView(b);
     }
 
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PostMapping("/api/master/bom-mappings") @Transactional
     Map<String,Object> createBomMapping(@RequestBody JsonNode body) {
         String name = text(body.get("name"));
@@ -730,6 +764,7 @@ public class MasterController {
         return buildBomMappingEditorView(b);
     }
 
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PutMapping("/api/master/bom-mappings/{id}") @Transactional
     Map<String,Object> updateBomMapping(@PathVariable Long id, @RequestBody JsonNode body) {
         BomMapping b = bomMappings.findById(id).orElseThrow(() -> new IllegalArgumentException("BOM Mapping not found"));
@@ -748,6 +783,7 @@ public class MasterController {
         return buildBomMappingEditorView(b);
     }
 
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @DeleteMapping("/api/master/bom-mappings/{id}") @Transactional
     Map<String,Object> delBomMapping(@PathVariable Long id) {
         deleteBomMappingChildren(id);
@@ -953,6 +989,7 @@ public class MasterController {
         }).toList();
     }
 
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PostMapping("/api/master/racks") @Transactional RackMaster createRack(@RequestBody Map<String,Object> body){
         RackMaster r = new RackMaster();
         r.setCode(docNumbers.allocate("rack"));
@@ -965,6 +1002,7 @@ public class MasterController {
         if (body.get("storeId") != null) r.setStore(stores.findById(Long.valueOf(body.get("storeId").toString())).orElse(null));
         return rackMasters.save(r);
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PutMapping("/api/master/racks/{id}") @Transactional RackMaster updateRack(@PathVariable Long id, @RequestBody Map<String,Object> body){
         RackMaster e = rackMasters.findById(id).orElseThrow(() -> new RuntimeException("Rack not found"));
         if (body.containsKey("name")) e.setName((String) body.get("name"));
@@ -976,6 +1014,7 @@ public class MasterController {
         if (body.containsKey("storeId")) e.setStore(body.get("storeId") != null ? stores.findById(Long.valueOf(body.get("storeId").toString())).orElse(null) : null);
         return rackMasters.save(e);
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @DeleteMapping("/api/master/racks/{id}") void delRack(@PathVariable Long id){ rackMasters.findById(id).ifPresent(r -> { r.setActive(false); rackMasters.save(r); }); }
 
     // ---- Bin Master ----
@@ -1011,6 +1050,7 @@ public class MasterController {
         }).toList();
     }
 
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PostMapping("/api/master/bins") @Transactional BinMaster createBin(@RequestBody Map<String,Object> body){
         BinMaster b = new BinMaster();
         b.setCode(docNumbers.allocate("bin"));
@@ -1024,6 +1064,7 @@ public class MasterController {
         if (body.get("rackId") != null) b.setRack(rackMasters.findById(Long.valueOf(body.get("rackId").toString())).orElse(null));
         return binMasters.save(b);
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PutMapping("/api/master/bins/{id}") @Transactional BinMaster updateBin(@PathVariable Long id, @RequestBody Map<String,Object> body){
         BinMaster e = binMasters.findById(id).orElseThrow(() -> new RuntimeException("Bin not found"));
         if (body.containsKey("name")) e.setName((String) body.get("name"));
@@ -1036,6 +1077,7 @@ public class MasterController {
         if (body.containsKey("rackId")) e.setRack(body.get("rackId") != null ? rackMasters.findById(Long.valueOf(body.get("rackId").toString())).orElse(null) : null);
         return binMasters.save(e);
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @DeleteMapping("/api/master/bins/{id}") void delBin(@PathVariable Long id){ binMasters.findById(id).ifPresent(b -> { b.setActive(false); binMasters.save(b); }); }
 
     // ---- Store Master ----
@@ -1044,7 +1086,7 @@ public class MasterController {
         return stores.findById(id).orElseThrow(() -> new IllegalArgumentException("Store not found"));
     }
 
-    @Cacheable("masterRefs")
+    @Cacheable(value = "masterRefs", key = "'stores'")
     @GetMapping("/api/master/stores")
     List<Map<String,Object>> storeList() {
         return stores.findAll().stream().filter(StoreMaster::isActive).map(s -> {
@@ -1061,16 +1103,19 @@ public class MasterController {
             return m;
         }).toList();
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PostMapping("/api/master/stores") @Transactional StoreMaster createStore(@RequestBody Map<String,Object> body){
         StoreMaster s = new StoreMaster();
         applyStoreFields(s, body);
         return stores.save(s);
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PutMapping("/api/master/stores/{id}") @Transactional StoreMaster updateStore(@PathVariable Long id, @RequestBody Map<String,Object> body){
         StoreMaster e = stores.findById(id).orElseThrow(() -> new RuntimeException("Store not found"));
         applyStoreFields(e, body);
         return stores.save(e);
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @DeleteMapping("/api/master/stores/{id}") void delStore(@PathVariable Long id){ stores.findById(id).ifPresent(s -> { s.setActive(false); stores.save(s); }); }
 
     private void applyStoreFields(StoreMaster s, Map<String,Object> b) {
@@ -1108,15 +1153,18 @@ public class MasterController {
     @GetMapping("/api/master/process-groups/{id}") ProcessGroup getProcessGroup(@PathVariable Long id){
         return processGroups.findById(id).orElseThrow(() -> new RuntimeException("Process Group not found"));
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PostMapping("/api/master/process-groups") ProcessGroup createProcessGroup(@RequestBody ProcessGroup g){
         g.setId(null); g.setCode(docNumbers.allocate("process-group")); return processGroups.save(g);
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PutMapping("/api/master/process-groups/{id}") @Transactional ProcessGroup updateProcessGroup(@PathVariable Long id, @RequestBody ObjectNode body){
         ProcessGroup e = processGroups.findById(id).orElseThrow(() -> new RuntimeException("Process Group not found"));
         ProcessGroup merged = mergePatch(e, body);
         merged.setId(id); merged.setVersion(e.getVersion());
         return processGroups.save(merged);
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @DeleteMapping("/api/master/process-groups/{id}") void delProcessGroup(@PathVariable Long id){ processGroups.findById(id).ifPresent(g -> { g.setActive(false); processGroups.save(g); }); }
 
     // ---- Process Master ----
@@ -1144,6 +1192,7 @@ public class MasterController {
         m.put("department", p.getDepartment());
         return m;
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PostMapping("/api/master/processes") @Transactional
     Map<String, Object> createProcess(@RequestBody ObjectNode body) {
         ProcessMaster p = new ProcessMaster();
@@ -1175,6 +1224,7 @@ public class MasterController {
         ProcessMaster saved = processMasters.save(p);
         return toProcessMap(saved);
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PutMapping("/api/master/processes/{id}") @Transactional ProcessMaster updateProcess(@PathVariable Long id, @RequestBody ObjectNode body){
         ProcessMaster e = processMasters.findById(id).orElseThrow(() -> new RuntimeException("Process not found"));
         ProcessMaster merged = mergePatch(e, body);
@@ -1197,6 +1247,7 @@ public class MasterController {
         deriveResourceFields(merged);
         return processMasters.save(merged);
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @DeleteMapping("/api/master/processes/{id}") @Transactional void delProcess(@PathVariable Long id){
         Long count = em.createQuery("SELECT COUNT(ro) FROM RouteOperation ro WHERE ro.process.id = :processId", Long.class)
                 .setParameter("processId", id).getSingleResult();
@@ -1227,7 +1278,7 @@ public class MasterController {
     }
 
     // ---- Instrument Master ----
-    @Cacheable("masterRefs")
+    @Cacheable(value = "masterRefs", key = "'instruments'")
     @GetMapping("/api/master/instruments")
     List<Map<String,Object>> instrumentList() {
         return instruments.findAll().stream().filter(InstrumentMaster::isActive).map(i -> {
@@ -1246,17 +1297,20 @@ public class MasterController {
     @GetMapping("/api/master/instruments/{id}") InstrumentMaster getInstrument(@PathVariable Long id){
         return instruments.findById(id).orElseThrow(() -> new RuntimeException("Instrument not found"));
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PostMapping("/api/master/instruments") InstrumentMaster createInstrument(@RequestBody InstrumentMaster i){ i.setId(null); i.setCode(docNumbers.allocate("instrument")); return instruments.save(i); }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PutMapping("/api/master/instruments/{id}") @Transactional InstrumentMaster updateInstrument(@PathVariable Long id, @RequestBody ObjectNode body){
         InstrumentMaster e = instruments.findById(id).orElseThrow(() -> new RuntimeException("Instrument not found"));
         InstrumentMaster merged = mergePatch(e, body);
         merged.setId(id); merged.setVersion(e.getVersion());
         return instruments.save(merged);
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @DeleteMapping("/api/master/instruments/{id}") void delInstrument(@PathVariable Long id){ instruments.findById(id).ifPresent(i -> { i.setActive(false); instruments.save(i); }); }
 
     // ---- Tool Master ----
-    @Cacheable("masterRefs")
+    @Cacheable(value = "masterRefs", key = "'tools'")
     @GetMapping("/api/master/tools")
     List<Map<String,Object>> toolList() {
         return toolMasters.findAll().stream().filter(ToolMaster::isActive).map(t -> {
@@ -1277,16 +1331,20 @@ public class MasterController {
     @GetMapping("/api/master/tools/{id}") ToolMaster getTool(@PathVariable Long id){
         return toolMasters.findById(id).orElseThrow(() -> new RuntimeException("Tool not found"));
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PostMapping("/api/master/tools") ToolMaster createTool(@RequestBody ToolMaster t){ t.setId(null); t.setCode(docNumbers.allocate("tool")); return toolMasters.save(t); }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PutMapping("/api/master/tools/{id}") @Transactional ToolMaster updateTool(@PathVariable Long id, @RequestBody ObjectNode body){
         ToolMaster e = toolMasters.findById(id).orElseThrow(() -> new RuntimeException("Tool not found"));
         ToolMaster merged = mergePatch(e, body);
         merged.setId(id); merged.setVersion(e.getVersion());
         return toolMasters.save(merged);
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @DeleteMapping("/api/master/tools/{id}") void delTool(@PathVariable Long id){ toolMasters.findById(id).ifPresent(t -> { t.setActive(false); toolMasters.save(t); }); }
 
     // ---- Company Info (singleton, id=1) ----
+    @PublicAccess
     @GetMapping("/api/master/company-info")
     CompanyInfo getCompanyInfo() {
         return companyInfos.findById(1L).orElseGet(() -> {
@@ -1295,6 +1353,7 @@ public class MasterController {
             return companyInfos.save(ci);
         });
     }
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PutMapping("/api/master/company-info")
     @Transactional
     CompanyInfo updateCompanyInfo(@RequestBody ObjectNode body) {
@@ -1453,6 +1512,7 @@ public class MasterController {
     }
 
     @RequirePermission(module = "ADMIN", screen = "USER", action = "WRITE")
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PostMapping("/api/master/users")
     Map<String,Object> createUser(@RequestBody Map<String,Object> body, Principal principal) {
         String username = (String) body.getOrDefault("username", "");
@@ -1483,6 +1543,7 @@ public class MasterController {
     }
 
     @RequirePermission(module = "ADMIN", screen = "USER", action = "WRITE")
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PutMapping("/api/master/users/{id}")
     Map<String,Object> updateUser(@PathVariable Long id, @RequestBody Map<String,Object> body, Principal principal) {
         AppUser u = userRepo.findById(id).orElseThrow(() -> new RuntimeException("User not found"));
@@ -1517,6 +1578,7 @@ public class MasterController {
     }
 
     @RequirePermission(module = "ADMIN", screen = "USER", action = "WRITE")
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @DeleteMapping("/api/master/users/{id}")
     void deleteUser(@PathVariable Long id) {
         AppUser target = userRepo.findById(id).orElse(null);
@@ -1541,6 +1603,7 @@ public class MasterController {
     @GetMapping("/api/master/resources/{id}")
     ResourceMaster getResource(@PathVariable Long id) { return resourceMasters.findById(id).orElseThrow(); }
 
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PostMapping("/api/master/resources")
     @Transactional ResourceMaster createResource(@RequestBody ResourceMaster r) {
         r.setId(null);
@@ -1566,6 +1629,7 @@ public class MasterController {
         return resourceMasters.save(r);
     }
 
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PutMapping("/api/master/resources/{id}")
     @Transactional ResourceMaster updateResource(@PathVariable Long id, @RequestBody ResourceMaster r) {
         ResourceMaster existing = resourceMasters.findById(id).orElseThrow();
@@ -1593,6 +1657,7 @@ public class MasterController {
         return resourceMasters.save(existing);
     }
 
+    @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @DeleteMapping("/api/master/resources/{id}")
     void deleteResource(@PathVariable Long id) {
         resourceMasters.findById(id).ifPresent(r -> {

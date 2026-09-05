@@ -1,6 +1,7 @@
 package in.zygertechnology.zygererp.service;
 
 import in.zygertechnology.zygererp.entity.AppUser;
+import in.zygertechnology.zygererp.entity.Role;
 import in.zygertechnology.zygererp.entity.Screen;
 import in.zygertechnology.zygererp.entity.UserScreenPermission;
 import in.zygertechnology.zygererp.repo.RoleRepository;
@@ -72,6 +73,11 @@ public class UserApprovalService {
         u.setRole(role);
         u.setApprovedAt(Instant.now());
         // approvedBy set by AuditLogService actor resolution via Request scope
+        boolean roleAttached = false;
+        for (Role r : u.getRoles()) { if (r.isActive() && (r.getName().equalsIgnoreCase(role) || "ADMIN".equalsIgnoreCase(r.getName()) && "ADMIN".equalsIgnoreCase(role))) { roleAttached = true; break; } }
+        if (!roleAttached && role != null && !role.isBlank()) {
+            roles.findByName(role).ifPresent(r -> u.getRoles().add(r));
+        }
         users.save(u);
 
         Map<String,Object> meta = new LinkedHashMap<>();
@@ -188,6 +194,22 @@ public class UserApprovalService {
     }
 
     /**
+     * True if the user has {@code action} on ANY screen within {@code module}.
+     * Mirrors the controller-level RBAC which is enforced at module granularity.
+     */
+    private boolean moduleHasAction(Set<String> codes, String module, String action) {
+        for (String code : codes) {
+            String[] parts = code.split(":");
+            if (parts.length == 3) {
+                if (parts[0].equalsIgnoreCase(module) && parts[2].equalsIgnoreCase(action)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * Effective per-screen access for a user, used to drive UI visibility.
      * Strict allow-list: for normal users only {@code user_screen_permissions} grants count
      * (empty matrix = no access). ADMIN users bypass and see every screen fully granted.
@@ -225,27 +247,37 @@ public class UserApprovalService {
             } else {
                 String mod = s.getModule() != null ? s.getModule().toUpperCase() : "";
                 String scrKey = s.getScreenKey() != null ? s.getScreenKey().toUpperCase() : "";
+                String scrKeyNorm = scrKey.replaceAll("[^A-Z0-9]", "");
 
                 boolean roleCanView = userPermCodes.contains(mod + ":" + scrKey + ":VIEW")
+                        || userPermCodes.contains(mod + ":" + scrKeyNorm + ":VIEW")
                         || userPermCodes.contains(mod + ":*:VIEW")
                         || userPermCodes.contains(mod + ":*:*")
                         || userPermCodes.contains("*:*:*");
                 boolean roleCanCreate = userPermCodes.contains(mod + ":" + scrKey + ":CREATE")
+                        || userPermCodes.contains(mod + ":" + scrKeyNorm + ":CREATE")
                         || userPermCodes.contains(mod + ":*:CREATE")
                         || userPermCodes.contains(mod + ":*:*")
                         || userPermCodes.contains("*:*:*");
                 boolean roleCanEdit = userPermCodes.contains(mod + ":" + scrKey + ":EDIT")
+                        || userPermCodes.contains(mod + ":" + scrKeyNorm + ":EDIT")
                         || userPermCodes.contains(mod + ":*:EDIT")
                         || userPermCodes.contains(mod + ":*:*")
                         || userPermCodes.contains("*:*:*");
                 boolean roleCanDelete = userPermCodes.contains(mod + ":" + scrKey + ":DELETE")
+                        || userPermCodes.contains(mod + ":" + scrKeyNorm + ":DELETE")
                         || userPermCodes.contains(mod + ":*:DELETE")
                         || userPermCodes.contains(mod + ":*:*")
                         || userPermCodes.contains("*:*:*");
                 boolean roleCanExport = userPermCodes.contains(mod + ":" + scrKey + ":EXPORT")
+                        || userPermCodes.contains(mod + ":" + scrKeyNorm + ":EXPORT")
                         || userPermCodes.contains(mod + ":*:EXPORT")
                         || userPermCodes.contains(mod + ":*:*")
                         || userPermCodes.contains("*:*:*");
+
+                if (!roleCanView && !mod.isEmpty() && moduleHasAction(userPermCodes, mod, "VIEW")) {
+                    roleCanView = true;
+                }
 
                 row.put("canView", (p != null && p.isCanView()) || roleCanView);
                 row.put("canCreate", (p != null && p.isCanCreate()) || roleCanCreate);

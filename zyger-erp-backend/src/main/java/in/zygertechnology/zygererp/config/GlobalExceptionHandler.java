@@ -115,6 +115,28 @@ public class GlobalExceptionHandler {
         return pd;
     }
 
+    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException.class)
+    public ProblemDetail handleMissingParam(org.springframework.web.bind.MissingServletRequestParameterException ex) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST, "Required request parameter '" + ex.getParameterName() + "' is missing");
+        pd.setTitle("Bad Request");
+        pd.setType(URI.create("/errors/bad-request"));
+        pd.setProperty("code", "MISSING_PARAMETER");
+        pd.setProperty("parameter", ex.getParameterName());
+        return pd;
+    }
+
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    public ProblemDetail handleTypeMismatch(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST, "Parameter '" + ex.getName() + "' has an invalid value");
+        pd.setTitle("Bad Request");
+        pd.setType(URI.create("/errors/bad-request"));
+        pd.setProperty("code", "INVALID_PARAMETER");
+        pd.setProperty("parameter", ex.getName());
+        return pd;
+    }
+
     @ExceptionHandler(org.springframework.web.servlet.NoHandlerFoundException.class)
     public ProblemDetail handleNotFound(org.springframework.web.servlet.NoHandlerFoundException ex) {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(
@@ -123,6 +145,70 @@ public class GlobalExceptionHandler {
         pd.setType(URI.create("/errors/not-found"));
         pd.setProperty("code", "NOT_FOUND");
         return pd;
+    }
+
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    public ProblemDetail handleNoResourceFound(org.springframework.web.servlet.resource.NoResourceFoundException ex) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(
+                HttpStatus.NOT_FOUND, "The requested resource was not found");
+        pd.setTitle("Not Found");
+        pd.setType(URI.create("/errors/not-found"));
+        pd.setProperty("code", "NOT_FOUND");
+        return pd;
+    }
+
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    public ProblemDetail handleMethodNotSupported(org.springframework.web.HttpRequestMethodNotSupportedException ex) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(
+                HttpStatus.METHOD_NOT_ALLOWED, "HTTP method " + ex.getMethod() + " is not supported for this resource");
+        pd.setTitle("Method Not Allowed");
+        pd.setType(URI.create("/errors/method-not-allowed"));
+        pd.setProperty("code", "METHOD_NOT_ALLOWED");
+        return pd;
+    }
+
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ProblemDetail handleAccessDenied(org.springframework.security.access.AccessDeniedException ex) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(
+                HttpStatus.FORBIDDEN, "Access denied: " + ex.getMessage());
+        pd.setTitle("Access Denied");
+        pd.setType(URI.create("/errors/access-denied"));
+        pd.setProperty("code", "FORBIDDEN");
+        return pd;
+    }
+
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ProblemDetail handleDataIntegrity(org.springframework.dao.DataIntegrityViolationException ex) {
+        log.warn("Data integrity violation: {}", ex.getMostSpecificCause().getMessage());
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNPROCESSABLE_CONTENT, "The request violates a data constraint");
+        pd.setTitle("Data Constraint Violation");
+        pd.setType(URI.create("/errors/data-integrity"));
+        pd.setProperty("code", "DATA_CONSTRAINT_VIOLATION");
+        return pd;
+    }
+
+    @ExceptionHandler(java.util.NoSuchElementException.class)
+    public ProblemDetail handleNoSuchElement(java.util.NoSuchElementException ex) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(
+                HttpStatus.NOT_FOUND, "The requested resource was not found");
+        pd.setTitle("Not Found");
+        pd.setType(URI.create("/errors/not-found"));
+        pd.setProperty("code", "NOT_FOUND");
+        return pd;
+    }
+
+    @ExceptionHandler(java.lang.RuntimeException.class)
+    public ProblemDetail handleNotFoundRuntime(RuntimeException ex) {
+        if (ex.getMessage() != null && ex.getMessage().toLowerCase().contains("not found")) {
+            ProblemDetail pd = ProblemDetail.forStatusAndDetail(
+                    HttpStatus.NOT_FOUND, ex.getMessage());
+            pd.setTitle("Not Found");
+            pd.setType(URI.create("/errors/not-found"));
+            pd.setProperty("code", "NOT_FOUND");
+            return pd;
+        }
+        return handleGeneral(ex);
     }
 
     @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)

@@ -75,6 +75,7 @@ public class SecurityConfig {
                 .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
                 .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/api-docs/**", "/v3/api-docs/**").permitAll()
                 .requestMatchers("/api/master/company-info/logo/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/master/company-info").permitAll()
                 .requestMatchers("/actuator/**").denyAll()
                 .anyRequest().authenticated())
             .exceptionHandling(ex -> ex

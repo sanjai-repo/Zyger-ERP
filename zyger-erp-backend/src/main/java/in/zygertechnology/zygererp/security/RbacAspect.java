@@ -18,13 +18,16 @@ public class RbacAspect {
 
     @Before("@annotation(in.zygertechnology.zygererp.security.RequirePermission) || @within(in.zygertechnology.zygererp.security.RequirePermission)")
     public void checkPermission(JoinPoint joinPoint) {
+        MethodSignature signature = (MethodSignature) joinPoint.getSignature();
+        Method method = signature.getMethod();
+        if (method.getAnnotation(PublicAccess.class) != null) {
+            return;
+        }
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
             throw new AccessDeniedException("Authentication is required to access this resource");
         }
 
-        MethodSignature signature = (MethodSignature) joinPoint.getSignature();
-        Method method = signature.getMethod();
         RequirePermission targetPerm = method.getAnnotation(RequirePermission.class);
         if (targetPerm == null) {
             targetPerm = joinPoint.getTarget().getClass().getAnnotation(RequirePermission.class);
