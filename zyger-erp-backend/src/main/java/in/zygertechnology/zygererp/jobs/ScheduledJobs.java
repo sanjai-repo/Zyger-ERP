@@ -345,6 +345,7 @@ public class ScheduledJobs {
      */
     @Scheduled(cron = "${zyger.scheduling.oee-populate:0 0 1 * * *}")
     @Transactional
+    @SuppressWarnings("unchecked")
     public void populateOeeDaily() {
         try {
             LocalDate yesterday = LocalDate.now().minusDays(1);
@@ -443,6 +444,7 @@ public class ScheduledJobs {
      */
     @Scheduled(cron = "${zyger.scheduling.meter-anomaly:0 30 7 * * *}")
     @Transactional
+    @SuppressWarnings("unchecked")
     public void checkMeterAnomalies() {
         try {
             List<Object[]> readings = em.createNativeQuery(

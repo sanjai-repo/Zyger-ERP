@@ -80,6 +80,13 @@ export default function ItemMasterScreen() {
 
   const set = (k: string, v: unknown) => setForm((c) => ({ ...c, [k]: v }));
 
+  const visibleGroups = groupRows.filter((g) => {
+    const it = String(form.itemType ?? '').toUpperCase();
+    if (it === 'RAW') return g.itemType === 'PURCHASABLE' || g.itemType === 'RAW_MATERIAL';
+    if (it === 'FG' || it === 'SFG') return g.itemType === 'MANUFACTURING' || g.itemType === 'FG' || g.itemType === 'SEMI_FG';
+    return true;
+  });
+
   return (
     <>
       <div className="pg-head">
@@ -126,7 +133,7 @@ export default function ItemMasterScreen() {
               <label className="fld"><span>Item Group</span>
                 <select className="in" value={String(form.itemGroupId ?? '')} onChange={(e) => set('itemGroupId', e.target.value ? Number(e.target.value) : null)}>
                   <option value="">Select...</option>
-                  {groupRows.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                  {visibleGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                 </select>
               </label>
               <label className="fld"><span>Item Type</span>

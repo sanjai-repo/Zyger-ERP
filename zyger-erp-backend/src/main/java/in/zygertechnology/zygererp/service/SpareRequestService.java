@@ -130,7 +130,10 @@ public class SpareRequestService {
         List<?> lineList = body.get("lines") instanceof List ? (List<?>) body.get("lines") : List.of();
         for (Object o : lineList) {
             if (!(o instanceof Map<?, ?> lm)) continue;
-            Map<String, Object> line = (Map<String, Object>) lm;
+            Map<String, Object> line = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> e : lm.entrySet()) {
+                if (e.getKey() != null) line.put(e.getKey().toString(), e.getValue());
+            }
             String itemCode = str(line.get("itemCode"));
             if (itemCode == null || itemCode.isBlank()) continue;
             BigDecimal qty = new BigDecimal(line.get("requestedQty") == null ? "0" : line.get("requestedQty").toString());

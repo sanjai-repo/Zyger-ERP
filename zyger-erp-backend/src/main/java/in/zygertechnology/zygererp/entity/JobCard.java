@@ -25,6 +25,12 @@ public class JobCard {
     @Column(name = "work_order_number", length = 60)
     private String workOrderNumber;
 
+    @Column(name = "work_order_id")
+    private Long workOrderId;
+
+    @Column(name = "route_operation_id")
+    private Long routeOperationId;
+
     @Column(name = "part_code", length = 60)
     private String partCode;
 

@@ -591,16 +591,30 @@ public class MasterController {
     @GetMapping("/api/master/item-groups/{id}") ItemGroup getItemGroup(@PathVariable Long id){
         return itemGroups.findById(id).orElseThrow(() -> new RuntimeException("Item Group not found"));
     }
-    /** When no item type is supplied, assign one from the group's name, else default to PURCHASABLE. */
+    /** When no item type is supplied, assign one from the group's name, else default to PURCHASABLE. Canonical values preserve MANUFACTURING (do not fold into FG) so typed group pickers can filter on it. */
     private String resolveGroupItemType(ItemGroup g) {
         String t = g.getItemType();
-        if (t != null && !t.isBlank()) return groupToItemType(g);
+        if (t != null && !t.isBlank()) return normalizeGroupType(t);
         String n = (g.getName() == null ? "" : g.getName()).trim().toUpperCase().replace("-", "_").replace(" ", "_");
         if (n.equals("SEMI_FG") || n.equals("SFG")) return "SEMI_FG";
         if (n.equals("RM") || n.equals("RAW_MATERIAL")) return "RAW_MATERIAL";
         if (n.equals("FG")) return "FG";
+        if (n.equals("MANUFACTURING") || n.equals("MANUFACTURING_ITEM")) return "MANUFACTURING";
         if (n.equals("CUSTOMER_SUPPLIED")) return "CUSTOMER_SUPPLIED";
         return "PURCHASABLE";
+    }
+
+    /** Canonicalizes a group item type, keeping the three user-facing kinds (and legacy values) distinct. */
+    private String normalizeGroupType(String t) {
+        String v = t.trim().toUpperCase().replace("-", "_").replace(" ", "_");
+        return switch (v) {
+            case "RAW_MATERIAL", "RM" -> "RAW_MATERIAL";
+            case "SEMI_FG", "SFG" -> "SEMI_FG";
+            case "FG" -> "FG";
+            case "MANUFACTURING", "MANUFACTURING_ITEM" -> "MANUFACTURING";
+            case "CUSTOMER_SUPPLIED", "CUSTOMER_SUPPLIED_ITEM" -> "CUSTOMER_SUPPLIED";
+            default -> "PURCHASABLE";
+        };
     }
 
     @PostMapping("/api/master/item-groups") ItemGroup createItemGroup(@RequestBody ItemGroup g, Principal principal){
@@ -908,7 +922,7 @@ public class MasterController {
     }
 
     private String text(JsonNode n) {
-        return n == null || n.isNull() || !n.isValueNode() ? null : n.asText();
+        return n == null || n.isNull() || !n.isValueNode() ? null : n.asString();
     }
 
     // ---- Rack Master ----
@@ -1134,10 +1148,10 @@ public class MasterController {
     Map<String, Object> createProcess(@RequestBody ObjectNode body) {
         ProcessMaster p = new ProcessMaster();
         p.setCode(docNumbers.allocate("process"));
-        if (body.has("name")) p.setName(body.get("name").asText());
-        if (body.has("description")) p.setDescription(body.get("description").asText());
-        if (body.has("processType")) p.setProcessType(body.get("processType").asText());
-        if (body.has("department")) p.setDepartment(body.get("department").isNull() ? null : body.get("department").asText());
+        if (body.has("name")) p.setName(body.get("name").asString());
+        if (body.has("description")) p.setDescription(body.get("description").asString());
+        if (body.has("processType")) p.setProcessType(body.get("processType").asString());
+        if (body.has("department")) p.setDepartment(body.get("department").isNull() ? null : body.get("department").asString());
         if (body.has("cycleTime") && !body.get("cycleTime").isNull()) p.setCycleTime(body.get("cycleTime").decimalValue());
         if (body.has("setupTime") && !body.get("setupTime").isNull()) p.setSetupTime(body.get("setupTime").decimalValue());
         if (body.has("unitRate") && !body.get("unitRate").isNull()) p.setUnitRate(body.get("unitRate").decimalValue());
@@ -1296,51 +1310,51 @@ public class MasterController {
 
         // Sync dual-named fields so address and statutory numbers are never lost regardless of frontend key
         if (body.hasNonNull("registeredAddress")) {
-            String regAdd = body.get("registeredAddress").asText();
+            String regAdd = body.get("registeredAddress").asString();
             merged.setRegisteredAddress(regAdd);
             merged.setAddressLine1(regAdd);
         } else if (body.hasNonNull("addressLine1")) {
-            String line1 = body.get("addressLine1").asText();
+            String line1 = body.get("addressLine1").asString();
             merged.setAddressLine1(line1);
             merged.setRegisteredAddress(line1);
         }
 
         if (body.hasNonNull("deliveryAddress")) {
-            String delAdd = body.get("deliveryAddress").asText();
+            String delAdd = body.get("deliveryAddress").asString();
             merged.setDeliveryAddress(delAdd);
             merged.setAddressLine2(delAdd);
         } else if (body.hasNonNull("addressLine2")) {
-            String line2 = body.get("addressLine2").asText();
+            String line2 = body.get("addressLine2").asString();
             merged.setAddressLine2(line2);
             merged.setDeliveryAddress(line2);
         }
 
         if (body.hasNonNull("gstin")) {
-            String g = body.get("gstin").asText();
+            String g = body.get("gstin").asString();
             merged.setGstin(g);
             merged.setGstNumber(g);
         } else if (body.hasNonNull("gstNumber")) {
-            String g = body.get("gstNumber").asText();
+            String g = body.get("gstNumber").asString();
             merged.setGstNumber(g);
             merged.setGstin(g);
         }
 
         if (body.hasNonNull("pan")) {
-            String p = body.get("pan").asText();
+            String p = body.get("pan").asString();
             merged.setPan(p);
             merged.setPanNumber(p);
         } else if (body.hasNonNull("panNumber")) {
-            String p = body.get("panNumber").asText();
+            String p = body.get("panNumber").asString();
             merged.setPanNumber(p);
             merged.setPan(p);
         }
 
         if (body.hasNonNull("cin")) {
-            String c = body.get("cin").asText();
+            String c = body.get("cin").asString();
             merged.setCin(c);
             merged.setCinNumber(c);
         } else if (body.hasNonNull("cinNumber")) {
-            String c = body.get("cinNumber").asText();
+            String c = body.get("cinNumber").asString();
             merged.setCinNumber(c);
             merged.setCin(c);
         }

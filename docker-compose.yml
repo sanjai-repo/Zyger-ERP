@@ -29,13 +29,13 @@ services:
       database:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9090/actuator/health"]
-      interval: 30s
+      test: ["CMD", "curl", "-f", "http://localhost:9090/actuator/health/liveness"]
+      interval: 15s
       timeout: 10s
-      retries: 3
-      start_period: 60s
+      retries: 5
+      start_period: 90s
     environment:
-      SPRING_PROFILES_ACTIVE: prod
+      SPRING_PROFILES_ACTIVE: dev
       DB_URL: jdbc:postgresql://database:5432/${DB_NAME:-zyger_erp}
       DB_USERNAME: ${DB_USERNAME:-zyger}
       DB_PASSWORD: ${DB_PASSWORD:-zyger123}
@@ -43,6 +43,8 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:8081}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-3600000}
+      MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: always
+      MANAGEMENT_HEALTH_MAIL_ENABLED: "false"
     ports:
       - "${SERVER_PORT:-9090}:9090"
     networks:
@@ -52,13 +54,15 @@ services:
   frontend:
     build:
       context: ./zyger-erp-frontend
+      args:
+        VITE_API_BASE_URL: /api
     image: zygererp-frontend
     container_name: Zyger-ERP-Frontend
     depends_on:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -74,4 +78,4 @@ volumes:
 
 networks:
   zyger-net:
-    name: zyger-net
+    name: zygererp-zyger-net

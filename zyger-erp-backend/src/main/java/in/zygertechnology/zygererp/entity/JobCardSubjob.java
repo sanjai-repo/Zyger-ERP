@@ -51,6 +51,9 @@ public class JobCardSubjob {
 
     @Column(name = "route_detail_id") Long routeDetailId;
 
+    @Column(name = "route_operation_id")
+    private Long routeOperationId;
+
     @Column(name = "completed_qty_computed", precision = 18, scale = 4, insertable = false, updatable = false)
     private BigDecimal completedQtyComputed;
 

@@ -14,17 +14,16 @@ export interface ItemGroup {
 export const defaultForm = (): Record<string, unknown> => ({
   code: '',
   name: '',
+  itemType: '',
   description: '',
   parentId: null,
   active: true,
 });
 
-export const ITEM_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: 'RAW_MATERIAL', label: 'RM (Raw Material)' },
-  { value: 'SEMI_FG', label: 'Semi FG' },
-  { value: 'FG', label: 'FG (Finished Goods)' },
+export const ITEM_GROUP_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'PURCHASABLE', label: 'Purchasable Item' },
   { value: 'CUSTOMER_SUPPLIED', label: 'Customer Supplied' },
+  { value: 'MANUFACTURING', label: 'Manufacturing Item' },
 ];
 
 export const itemTypeLabel = (t?: string): string => {
@@ -32,8 +31,9 @@ export const itemTypeLabel = (t?: string): string => {
     case 'SEMI_FG': case 'SFG': return 'Semi FG';
     case 'RAW_MATERIAL': case 'RM': return 'RM';
     case 'FG': return 'FG';
-    case 'PURCHASABLE': return 'Purchasable';
-    case 'CUSTOMER_SUPPLIED': return 'Customer Supplied';
+    case 'MANUFACTURING': case 'MANUFACTURING_ITEM': return 'Manufacturing Item';
+    case 'PURCHASABLE': case 'PURCHASABLE_ITEM': return 'Purchasable Item';
+    case 'CUSTOMER_SUPPLIED': case 'CUSTOMER_SUPPLIED_ITEM': return 'Customer Supplied';
     default: return t || '—';
   }
 };

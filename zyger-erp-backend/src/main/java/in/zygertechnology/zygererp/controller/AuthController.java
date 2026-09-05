@@ -28,7 +28,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 @RestController @RequestMapping("/api/auth") @RequiredArgsConstructor
 public class AuthController {
-    private static final long ACCESS_TOKEN_TTL_MS = 15 * 60 * 1000L;
     private static final Duration REFRESH_TOKEN_TTL = Duration.ofDays(7);
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
@@ -101,7 +100,9 @@ public class AuthController {
         users.save(u);
 
         String role = u.getRole() == null ? "USER" : u.getRole();
-        String accessToken = jwt.generate(u.getUsername(), role, ACCESS_TOKEN_TTL_MS);
+        // Access-token TTL comes from the configured app.jwt.expiration-ms (default 60 min),
+        // NOT a hardcoded value — so the session stays alive for the configured duration.
+        String accessToken = jwt.generate(u.getUsername(), role);
         String refreshToken = issueRefreshToken(u.getId());
 
         Map<String,Object> response = new LinkedHashMap<>();
@@ -133,7 +134,7 @@ public class AuthController {
         refreshTokens.save(rt);
 
         String role = u.getRole() == null ? "USER" : u.getRole();
-        String accessToken = jwt.generate(u.getUsername(), role, ACCESS_TOKEN_TTL_MS);
+        String accessToken = jwt.generate(u.getUsername(), role);
         String newRefreshToken = issueRefreshToken(u.getId());
 
         Map<String,Object> response = new LinkedHashMap<>();

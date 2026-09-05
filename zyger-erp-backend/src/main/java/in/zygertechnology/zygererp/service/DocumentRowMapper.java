@@ -3,6 +3,7 @@ package in.zygertechnology.zygererp.service;
 import in.zygertechnology.zygererp.entity.*;
 import in.zygertechnology.zygererp.repo.PartyRepository;
 import in.zygertechnology.zygererp.repo.SupplierInvoiceAttachmentRepository;
+import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -72,7 +73,7 @@ public class DocumentRowMapper {
      */
     @Transactional(readOnly = true)
     public Map<String, Object> toRow(DocEntity e, String docKey) {
-        Map<String, Object> converted = mapper.convertValue(e, LinkedHashMap.class);
+        Map<String, Object> converted = mapper.convertValue(e, new TypeReference<Map<String, Object>>() {});
         final Map<String, Object> r = converted != null ? converted : new LinkedHashMap<>();
         String dStr = e.getDocDate() == null ? "" : e.getDocDate().toString();
         r.put("date", dStr);
@@ -93,7 +94,7 @@ public class DocumentRowMapper {
 
         List<Map<String, Object>> lineRows = new ArrayList<>();
         for (LineEntity l : L) {
-            Map<String, Object> lm = mapper.convertValue(l, LinkedHashMap.class);
+            Map<String, Object> lm = mapper.convertValue(l, new TypeReference<Map<String, Object>>() {});
             if (lm == null) lm = new LinkedHashMap<>();
             lm.remove("doc");
             lm.put("itemDesc", itemCache.findByCode(l.getItemCode())

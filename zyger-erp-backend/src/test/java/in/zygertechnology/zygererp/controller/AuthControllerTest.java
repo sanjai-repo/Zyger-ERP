@@ -75,7 +75,7 @@ class AuthControllerTest {
 
         when(userRepository.findByUsername("testuser")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("password123", "hashedPassword")).thenReturn(true);
-        when(jwtService.generate(eq("testuser"), eq("ADMIN"), anyLong())).thenReturn("mock-access-token");
+        when(jwtService.generate(eq("testuser"), eq("ADMIN"))).thenReturn("mock-access-token");
 
         String jsonPayload = """
                 {

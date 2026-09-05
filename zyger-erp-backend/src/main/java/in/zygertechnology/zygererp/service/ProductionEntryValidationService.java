@@ -8,7 +8,9 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -19,6 +21,7 @@ public class ProductionEntryValidationService {
     private final JobCardSubjobRepository subjobRepo;
     private final MachineMasterRepository machineRepo;
     private final ProductionEntryRepository productionEntryRepo;
+    private final ItemRepository itemRepo;
 
     public void validate(ProductionEntry entry) {
         List<String> errors = new ArrayList<>();
@@ -132,8 +135,72 @@ public class ProductionEntryValidationService {
             }
         }
 
+        validateAdditionalOutputs(entry, errors);
+
         if (!errors.isEmpty()) {
             throw new IllegalArgumentException(String.join(" ", errors));
+        }
+    }
+
+    /**
+     * P8 Capability A — Additional (co/by-product) output validation
+     * (FR-PROD-ENTRY-003, BK-013, DOCUMENT_58 §8). Additive rule set; a single-output
+     * entry with no additional outputs is unaffected.
+     *
+     * <p>Co/by-product rows are RECORDING-ONLY facts: they enter NO principal contract
+     * (WIP/pending/produced), so no upper bound is imposed against process_qty — the
+     * committed V-07 reconciliation covers the PRIMARY stage quantities only, and no
+     * approved decision binds co/by-product yield to the primary input. This boundary is
+     * documented in DOCUMENT_58 as an open business question, not silently decided.</p>
+     */
+    private void validateAdditionalOutputs(ProductionEntry entry, List<String> errors) {
+        List<ProductionEntryOutput> outputs = entry.getAdditionalOutputs();
+        if (outputs == null || outputs.isEmpty()) {
+            return;
+        }
+        Set<String> seen = new HashSet<>();
+        for (ProductionEntryOutput o : outputs) {
+            if (o == null) {
+                errors.add("Additional output line cannot be empty.");
+                continue;
+            }
+            String type = o.getOutputType();
+            if (type == null || type.isBlank()) {
+                errors.add("Additional output type is mandatory (CO_PRODUCT or BY_PRODUCT).");
+            } else if (!"CO_PRODUCT".equals(type) && !"BY_PRODUCT".equals(type)) {
+                errors.add("Additional output type must be CO_PRODUCT or BY_PRODUCT.");
+            }
+
+            String itemCode = o.getItemCode();
+            if (itemCode == null || itemCode.isBlank()) {
+                errors.add("Additional output item code is mandatory.");
+            } else if (!itemRepo.existsByCode(itemCode)) {
+                errors.add("Additional output item '" + itemCode + "' does not exist in the item master.");
+            }
+
+            String location = o.getLocation();
+            if (location == null || location.isBlank()) {
+                errors.add("Additional output location is mandatory.");
+            }
+
+            BigDecimal qty = o.getQuantity();
+            if (qty == null) {
+                errors.add("Additional output quantity is mandatory.");
+            } else if (qty.signum() <= 0) {
+                errors.add("Additional output quantity must be greater than zero.");
+            }
+
+            BigDecimal weight = o.getWeight();
+            if (weight != null && weight.signum() < 0) {
+                errors.add("Additional output weight cannot be negative.");
+            }
+
+            if (type != null && itemCode != null && location != null) {
+                String key = type + "|" + itemCode + "|" + location;
+                if (!seen.add(key)) {
+                    errors.add("Duplicate additional output (" + type + ", " + itemCode + ", " + location + ") is not allowed.");
+                }
+            }
         }
     }
 

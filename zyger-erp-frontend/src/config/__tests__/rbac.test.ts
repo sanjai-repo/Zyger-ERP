@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getRolePermissions, normalizeRole, ROLE_PERMISSIONS } from '../rbac';
+import { getRolePermissions, normalizeRole, ROLE_PERMISSIONS, type PermissionModule } from '../rbac';
 
 describe('RBAC', () => {
   describe('normalizeRole', () => {
@@ -29,7 +29,7 @@ describe('RBAC', () => {
   describe('getRolePermissions', () => {
     it('Admin has all permissions', () => {
       const perms = getRolePermissions('ADMIN');
-      const expectedModules = ['master', 'inventory', 'purchase', 'sales', 'planning', 'production', 'quality', 'maintenance'];
+      const expectedModules: PermissionModule[] = ['master', 'inventory', 'purchase', 'sales', 'planning', 'production', 'quality', 'maintenance'];
       for (const mod of expectedModules) {
         expect(perms.has(`${mod}:View` as const), `Admin missing ${mod}:View`).toBe(true);
         expect(perms.has(`${mod}:Create` as const), `Admin missing ${mod}:Create`).toBe(true);

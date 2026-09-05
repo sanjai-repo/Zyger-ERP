@@ -187,6 +187,10 @@ public class ProductionEntry {
     @Builder.Default
     private List<ProductionEntryBatch> batchAllocations = new ArrayList<>();
 
+    @OneToMany(mappedBy = "productionEntry", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @Builder.Default
+    private List<ProductionEntryOutput> additionalOutputs = new ArrayList<>();
+
     public void setOperators(List<ProductionEntryOperator> list) {
         this.operators.clear();
         if (list != null) {
@@ -233,6 +237,16 @@ public class ProductionEntry {
             for (ProductionEntryBatch b : list) {
                 b.setProductionEntry(this);
                 this.batchAllocations.add(b);
+            }
+        }
+    }
+
+    public void setAdditionalOutputs(List<ProductionEntryOutput> list) {
+        this.additionalOutputs = new ArrayList<>();
+        if (list != null) {
+            for (ProductionEntryOutput o : list) {
+                o.setProductionEntry(this);
+                this.additionalOutputs.add(o);
             }
         }
     }

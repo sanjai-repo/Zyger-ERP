@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import apiClient from '../../../api/axiosClient';
 import { useToast } from '../../../contexts/ToastContext';
 import { getApiErrorMessage } from '../../../utils/apiError';
-import { defaultForm } from './itemGroupTypes';
+import { defaultForm, ITEM_GROUP_TYPE_OPTIONS } from './itemGroupTypes';
 
 interface Props {
   itemGroupId: number | null;
@@ -61,6 +61,7 @@ export default function ItemGroupForm({ itemGroupId, viewOnly = false, onBack, o
     e.preventDefault();
     if (!String(form.code ?? '').trim()) { toast('Group ID is required.', 'error'); return; }
     if (!String(form.name ?? '').trim()) { toast('Group Name is required.', 'error'); return; }
+    if (!String(form.itemType ?? '').trim()) { toast('Item Group Type is required.', 'error'); return; }
     setBusy(true);
     try {
       if (editId) {
@@ -133,6 +134,22 @@ export default function ItemGroupForm({ itemGroupId, viewOnly = false, onBack, o
                   onChange={(e) => updateForm('name', e.target.value)}
                   disabled={viewOnly}
                 />
+              </label>
+
+              <label className="fld">
+                <span>ITEM GROUP TYPE *</span>
+                <select
+                  className="in"
+                  required
+                  value={String(form.itemType ?? '')}
+                  onChange={(e) => updateForm('itemType', e.target.value)}
+                  disabled={viewOnly}
+                >
+                  <option value="">Select Type...</option>
+                  {ITEM_GROUP_TYPE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
               </label>
 
               <label className="fld">

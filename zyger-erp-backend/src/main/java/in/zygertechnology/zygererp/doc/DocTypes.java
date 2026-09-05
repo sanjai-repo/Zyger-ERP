@@ -106,6 +106,19 @@ reg("process",                 "PRC", Effect.NONE,  "PROCESS",                nu
         reg("route-sheet",               "RT",   Effect.NONE,  "ROUTE_SHEET",            null, true);
         reg("work-order",                "WO",   Effect.NONE,  "WORK_ORDER",             null, true);
         reg("shop-floor-entry",          "SFE",  Effect.NONE,  "SHOP_FLOOR_ENTRY",       null, false);
+        // Production Material Request + Consumption (P6, DOC 07 §21.2, DOC 13 API-MREQ)
+        reg("material-request",          "PM",   Effect.NONE,  "MATERIAL_REQUEST",       null, true);
+        reg("production-consumption",    "PC",   Effect.OUT,   "PRODUCTION_CONSUMPTION", "consumedQty", true);
+        // Batch Card (P10, DOC 07 §21.2, ADR-PROD-004): recording-only, no stock effect
+        reg("batch-card",                "BC",   Effect.NONE,  "BATCH_CARD",             null, true);
+        // Production Return (P12, DOC 07 §21.2, CLAR-PROD-003, D-C1, D-C2): stock-in on RECEIVE
+        // PREFIX aligned to the V2 numbering_config seed ('PR') so the config is the single
+        // source of truth (F11; legacy DocTypes 'PRR' fallback removed). Effect/tx unchanged.
+        reg("production-return",         "PR",   Effect.IN,    "RETURN_RECEIPT",         "quantity", false);
+        // Product Conversion (P13, DOC_57 §4 #15): CV prefix (FRS canonical, supersedes legacy PC).
+        // Header-only registration (Effect.NONE) — conversion posting is bidirectional and is
+        // performed explicitly by ProductConversionService via the Inventory service boundary.
+        reg("product-conversion",        "CV",   Effect.NONE,  "CONVERSION",             null, false);
     }
 
     private DocTypes() {}

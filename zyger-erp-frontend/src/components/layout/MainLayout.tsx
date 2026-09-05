@@ -439,7 +439,7 @@ export default function MainLayout() {
     } catch { /* best-effort */ }
 
     try {
-      const res = await apiClient.get('/api/v1/notifications');
+      const res = await apiClient.get('/v1/notifications');
       const list = Array.isArray(res.data) ? (res.data as Record<string, unknown>[]) : [];
       for (const n of list) {
         const sev = String(n.severity ?? 'INFO');
@@ -546,13 +546,9 @@ export default function MainLayout() {
 
       <header className="topbar">
         <div className="brand">
-          {companyLogo ? (
-            <div className="brand-logo brand-logo-img">
-              <img src={companyLogo} alt="Logo" />
-            </div>
-          ) : (
-            <div className="brand-logo" style={{ borderRadius: 0 }}>Z</div>
-          )}
+          <div className="brand-logo brand-logo-img">
+            <img src={companyLogo || '/Zyger_Logo.svg'} alt={companyName} />
+          </div>
           <div className="brand-titles">
             <b>{companyName}</b>
             <small>Precision Manufacturing ERP</small>

@@ -11,7 +11,6 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@SuppressWarnings("deprecation")
 class GlobalExceptionHandlerTest {
 
     private GlobalExceptionHandler exceptionHandler;
@@ -24,7 +23,7 @@ class GlobalExceptionHandlerTest {
     @Test
     @DisplayName("Should handle OptimisticLockException with 409 CONFLICT")
     void testHandleOptimisticLock() {
-        OptimisticLockException ex = new OptimisticLockException("Stale data");
+        OptimisticLockException ex = new OptimisticLockException("Stale data", null);
         ProblemDetail pd = exceptionHandler.handleOptimisticLock(ex);
 
         assertEquals(HttpStatus.CONFLICT.value(), pd.getStatus());
@@ -54,12 +53,12 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    @DisplayName("Should handle BusinessRuleException with 422 UNPROCESSABLE_ENTITY")
+    @DisplayName("Should handle BusinessRuleException with 422 UNPROCESSABLE_CONTENT")
     void testHandleBusinessRuleException() {
         BusinessRuleException ex = new BusinessRuleException("STOCK_DEPLETED", "Insufficient stock available", Map.of("itemId", 101L));
         ProblemDetail pd = exceptionHandler.handleBusinessRule(ex);
 
-        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY.value(), pd.getStatus());
+        assertEquals(HttpStatus.UNPROCESSABLE_CONTENT.value(), pd.getStatus());
         assertEquals("Business Rule Violation", pd.getTitle());
         assertEquals("STOCK_DEPLETED", pd.getProperties().get("code"));
         assertEquals(101L, pd.getProperties().get("itemId"));

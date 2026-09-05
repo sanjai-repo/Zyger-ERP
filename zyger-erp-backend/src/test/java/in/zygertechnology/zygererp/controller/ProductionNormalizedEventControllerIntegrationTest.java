@@ -46,6 +46,30 @@ class ProductionNormalizedEventControllerIntegrationTest extends AbstractPostgre
     private JdbcTemplate jdbc;
 
     @Test
+    @DisplayName("GET /entries/next-number previews the next PE number without consuming (BR-NUM-001)")
+    void nextEntryNumberPreviewIsReadOnly() throws Exception {
+        String token = adminToken();
+
+        MvcResult first = mockMvc.perform(get("/api/v1/production/entries/next-number")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nextNumber").isNotEmpty())
+                .andReturn();
+        JsonNode firstBody = objectMapper.readTree(first.getResponse().getContentAsString());
+        String firstNumber = firstBody.get("nextNumber").asText();
+        assertTrue(firstNumber.startsWith("PE-"), "nextNumber should use the PE- prefix: " + firstNumber);
+
+        // A second preview (no intervening save) yields the SAME number -> refresh does not consume.
+        MvcResult second = mockMvc.perform(get("/api/v1/production/entries/next-number")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn();
+        String secondNumber = objectMapper.readTree(second.getResponse().getContentAsString()).get("nextNumber").asText();
+        assertEquals(firstNumber, secondNumber,
+                "refreshing the preview must not advance/consume the sequence");
+    }
+
+    @Test
     @DisplayName("create -> POST -> REVERSE via API keeps legacy authority and projects events (P3-01/02/06)")
     void entryLifecycleProjectsEventsAndStaysLegacyAuthoritative() throws Exception {
         String token = adminToken();

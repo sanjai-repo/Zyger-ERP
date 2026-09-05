@@ -1,34 +1,50 @@
-# ---- Build stage: compile and package the Spring Boot jar ----
-FROM gradle:9.5.1-jdk25 AS build
+# ---- Build stage: compile and package the Spring Boot executable JAR ----
+FROM eclipse-temurin:25-jdk AS build
 WORKDIR /app
 
-# Cache gradle deps: copy wrapper + build files first
-COPY settings.gradle build.gradle gradlew ./
+# Install gradle wrapper deps and cache dependencies first (better layer caching)
+# --chmod=755 makes gradlew executable regardless of host file permissions
+# (required because FileZilla uploads may not preserve the executable bit).
+COPY settings.gradle build.gradle ./
+COPY --chmod=755 gradlew ./
 COPY gradle gradle
-RUN gradle --no-daemon dependencies > /dev/null 2>&1 || true
+RUN ./gradlew --no-daemon dependencies > /dev/null 2>&1 || true
 
-# Copy sources and build the boot jar
+# Copy sources and build the executable JAR (bootJar)
 COPY src src
-RUN gradle --no-daemon bootJar
+RUN ./gradlew --no-daemon bootJar -x test
 
-# ---- Runtime stage ----
+# ---- Runtime stage: minimal Java runtime only ----
 FROM eclipse-temurin:25-jre AS runtime
+
+# Install curl for the container health check only (minimal increase)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser
 
 WORKDIR /app
-COPY --from=build /app/build/libs/*-SNAPSHOT.jar app.jar
+
+# Create uploads directory (mounted as a persistent volume at runtime)
+RUN mkdir -p /app/uploads && chown -R appuser:appuser /app
+
+# Copy the Spring Boot executable JAR as app.jar
+COPY --from=build /app/build/libs/app.jar /app/app.jar
 
 # Set ownership and switch to non-root user
-RUN chown -R appuser:appuser /app
+RUN chown appuser:appuser /app/app.jar
 USER appuser
 
-ENV SPRING_PROFILES_ACTIVE=prod
+ENV SPRING_PROFILES_ACTIVE=staging \
+    TZ=Asia/Kolkata \
+    SERVER_PORT=9090
+
 EXPOSE 9090
 
-# Health check using Spring Boot Actuator
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD curl -f http://localhost:9090/actuator/health || exit 1
+# Health check using Spring Boot Actuator (health is exposed on the internal network only)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=5 \
+  CMD curl -fsS http://127.0.0.1:9090/actuator/health || exit 1
 
-ENTRYPOINT ["java", "-Xmx512m", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-Xmx512m", "-jar", "/app/app.jar"]

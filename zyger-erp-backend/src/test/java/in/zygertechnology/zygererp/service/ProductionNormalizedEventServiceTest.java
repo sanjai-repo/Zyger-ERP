@@ -8,6 +8,7 @@ import in.zygertechnology.zygererp.repo.ProdOutputEventRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -15,6 +16,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -22,6 +24,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentCaptor.*;
 
 /**
  * P3 — ProductionNormalizedEventService unit tests (gate: projection consistency,
@@ -296,5 +299,133 @@ class ProductionNormalizedEventServiceTest {
         assertTrue(s.findSessionByEntryNumber("PE-100").isEmpty());
         assertTrue(s.findSessionsByJobCard("JC-1").isEmpty());
         verifyNoInteractions(sessionRepo);
+    }
+
+    // ---- P8 Capability A: additional (co/by-product) outputs ----
+
+    private ProductionEntry entryWithAdditionalOutputs() {
+        ProductionEntry e = entry();
+        List<ProductionEntryOutput> outputs = new ArrayList<>();
+        outputs.add(ProductionEntryOutput.builder()
+                .outputType(ProductionNormalizedEventService.OUT_CO_PRODUCT)
+                .itemCode("CO-1").location("STORE")
+                .quantity(new BigDecimal("30.0000")).build());
+        outputs.add(ProductionEntryOutput.builder()
+                .outputType(ProductionNormalizedEventService.OUT_BY_PRODUCT)
+                .itemCode("SW-1").location("SWARD")
+                .quantity(new BigDecimal("5.0000")).weight(new BigDecimal("4.0000")).build());
+        e.setAdditionalOutputs(outputs);
+        return e;
+    }
+
+    @Test
+    @DisplayName("P8: POST projects primary 4 + one row per additional output with its own item/location")
+    void postProjectionEmitsAdditionalOutputRows() {
+        when(properties.isEnabled()).thenReturn(true);
+        ProdExecutionSession existing = new ProdExecutionSession();
+        existing.setId(7L);
+        when(sessionRepo.findByEntryNumber("PE-100")).thenReturn(Optional.of(existing));
+        ProdOperationEvent op = new ProdOperationEvent();
+        op.setId(9L);
+        when(operationRepo.findBySessionIdAndSubjobNumberAndOperationCodeAndSeq(any(), any(), any(), any()))
+                .thenReturn(Optional.of(op));
+        when(outputRepo.findBySessionIdAndOperationEventIdAndOutputTypeAndItemCodeAndLocation(any(), any(), any(), any(), any()))
+                .thenReturn(Optional.empty());
+        when(outputRepo.saveAndFlush(any())).thenAnswer(i -> i.getArgument(0));
+
+        ProductionNormalizedEventService s = svc();
+        s.project(entryWithAdditionalOutputs(), ProductionNormalizedEventService.EventKind.POST, "u1");
+
+        // 6 output rows: ACCEPTED, REJECTED, REWORK, SCRAP + CO_PRODUCT, BY_PRODUCT
+        long emitted = mockingDetails(outputRepo).getInvocations().stream()
+                .filter(i -> i.getMethod().getName().equals("saveAndFlush")).count();
+        assertEquals(6L, emitted);
+
+        ArgumentCaptor<ProdOutputEvent> captor = ArgumentCaptor.forClass(ProdOutputEvent.class);
+        verify(outputRepo, times((int) emitted)).saveAndFlush(captor.capture());
+        List<ProdOutputEvent> saved = captor.getAllValues();
+        List<ProdOutputEvent> additional = saved.stream()
+                .filter(o -> ProductionNormalizedEventService.OUT_CO_PRODUCT.equals(o.getOutputType())
+                        || ProductionNormalizedEventService.OUT_BY_PRODUCT.equals(o.getOutputType()))
+                .toList();
+        assertEquals(2, additional.size());
+        ProdOutputEvent cop = additional.stream().filter(o -> ProductionNormalizedEventService.OUT_CO_PRODUCT.equals(o.getOutputType())).findFirst().orElse(null);
+        ProdOutputEvent byp = additional.stream().filter(o -> ProductionNormalizedEventService.OUT_BY_PRODUCT.equals(o.getOutputType())).findFirst().orElse(null);
+        assertNotNull(cop);
+        assertEquals("CO-1", cop.getItemCode());
+        assertEquals("STORE", cop.getLocation());
+        assertEquals(0, new BigDecimal("30.0000").compareTo(cop.getQuantity()));
+        assertNotNull(byp);
+        assertEquals("SW-1", byp.getItemCode());
+        assertEquals("SWARD", byp.getLocation());
+        assertEquals(0, new BigDecimal("5.0000").compareTo(byp.getQuantity()));
+
+        // WIP contract unchanged: still over primary quantities only (100-98=2)
+        assertEquals(0, new BigDecimal("2.0000").compareTo(existing.getWip()));
+    }
+
+    @Test
+    @DisplayName("P8: REVERSE projects negated additional output rows on the compensating mirror")
+    void reverseProjectionEmitsNegatedAdditionalRows() {
+        when(properties.isEnabled()).thenReturn(true);
+        ProdExecutionSession existing = new ProdExecutionSession();
+        existing.setId(7L);
+        when(sessionRepo.findByEntryNumber("PE-REV-200")).thenReturn(Optional.of(existing));
+        ProdOperationEvent op = new ProdOperationEvent();
+        op.setId(9L);
+        when(operationRepo.findBySessionIdAndSubjobNumberAndOperationCodeAndSeq(any(), any(), any(), any()))
+                .thenReturn(Optional.of(op));
+        when(outputRepo.findBySessionIdAndOperationEventIdAndOutputTypeAndItemCodeAndLocation(any(), any(), any(), any(), any()))
+                .thenReturn(Optional.empty());
+        when(outputRepo.saveAndFlush(any())).thenAnswer(i -> i.getArgument(0));
+
+        ProductionEntry reversal = entry();
+        reversal.setEntryNumber("PE-REV-200");
+        reversal.setIsReversal(true);
+        reversal.setGoodQuantity(new BigDecimal("-85.0000"));
+        reversal.setRejectedQuantity(new BigDecimal("-5.0000"));
+        reversal.setReworkQuantity(new BigDecimal("-6.0000"));
+        reversal.setScrapQuantity(new BigDecimal("-2.0000"));
+        List<ProductionEntryOutput> outputs = new ArrayList<>();
+        outputs.add(ProductionEntryOutput.builder()
+                .outputType(ProductionNormalizedEventService.OUT_CO_PRODUCT)
+                .itemCode("CO-1").location("STORE")
+                .quantity(new BigDecimal("-30.0000")).build());
+        reversal.setAdditionalOutputs(outputs);
+
+        ProductionNormalizedEventService s = svc();
+        s.project(reversal, ProductionNormalizedEventService.EventKind.REVERSE, "u1");
+
+        org.mockito.ArgumentCaptor<ProdOutputEvent> captor = org.mockito.ArgumentCaptor.forClass(ProdOutputEvent.class);
+        verify(outputRepo, atLeastOnce()).saveAndFlush(captor.capture());
+        ProdOutputEvent negated = captor.getAllValues().stream()
+                .filter(o -> ProductionNormalizedEventService.OUT_CO_PRODUCT.equals(o.getOutputType()))
+                .findFirst().orElse(null);
+        assertNotNull(negated);
+        assertEquals(0, new BigDecimal("-30.0000").compareTo(negated.getQuantity()),
+                "reversal must carry the negated additional-output quantity");
+    }
+
+    @Test
+    @DisplayName("P8: an entry without additional outputs still projects exactly the 4 primary rows")
+    void noAdditionalOutputsKeepsFourPrimaryRows() {
+        when(properties.isEnabled()).thenReturn(true);
+        ProdExecutionSession existing = new ProdExecutionSession();
+        existing.setId(7L);
+        when(sessionRepo.findByEntryNumber("PE-100")).thenReturn(Optional.of(existing));
+        ProdOperationEvent op = new ProdOperationEvent();
+        op.setId(9L);
+        when(operationRepo.findBySessionIdAndSubjobNumberAndOperationCodeAndSeq(any(), any(), any(), any()))
+                .thenReturn(Optional.of(op));
+        when(outputRepo.findBySessionIdAndOperationEventIdAndOutputTypeAndItemCodeAndLocation(any(), any(), any(), any(), any()))
+                .thenReturn(Optional.empty());
+        when(outputRepo.saveAndFlush(any())).thenAnswer(i -> i.getArgument(0));
+
+        ProductionNormalizedEventService s = svc();
+        s.project(entry(), ProductionNormalizedEventService.EventKind.POST, "u1");
+
+        long emitted = mockingDetails(outputRepo).getInvocations().stream()
+                .filter(i -> i.getMethod().getName().equals("saveAndFlush")).count();
+        assertEquals(4L, emitted);
     }
 }

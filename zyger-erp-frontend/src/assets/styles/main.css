@@ -707,7 +707,7 @@ li.fly-left>.submenu {
     border: 1px solid var(--border);
     border-radius: 12px;
     box-shadow: var(--sh-sm);
-    margin-bottom: 20px;
+    margin-bottom: 16px;
     transition: background .2s
 }
 
@@ -716,7 +716,7 @@ li.fly-left>.submenu {
     gap: 10px;
     align-items: center;
     flex-wrap: wrap;
-    padding: 14px 16px;
+    padding: 10px 14px;
     border-bottom: 1px solid var(--border)
 }
 
@@ -730,13 +730,13 @@ li.fly-left>.submenu {
 }
 
 .in {
-    padding: 9px 12px;
+    padding: 6px 10px;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 7px;
     background: var(--card);
     color: var(--text);
     font: inherit;
-    font-size: .82rem
+    font-size: .78rem
 }
 
 select.in {
@@ -776,12 +776,12 @@ select.in {
     align-items: center;
     justify-content: center;
     gap: 8px;
-    padding: 9px 16px;
+    padding: 7px 14px;
     border-radius: 8px;
     border: 1px solid var(--border);
     background: var(--card);
     color: var(--text);
-    font-size: .83rem;
+    font-size: .8rem;
     font-weight: 600;
     cursor: pointer;
     user-select: none;
@@ -1333,24 +1333,24 @@ td.result-FAIL {
 /* FORM */
 .fgrid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 16px 20px;
-    padding: 20px
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px 14px;
+    padding: 16px 18px
 }
 
 .fld {
     display: flex;
     flex-direction: column;
-    gap: 6px
+    gap: 5px
 }
 
 .fld>span {
-    font-size: .72rem;
+    font-size: .7rem;
     font-weight: 800;
-    letter-spacing: .05em;
+    letter-spacing: .04em;
     text-transform: uppercase;
     color: #1e3a8a;
-    margin-bottom: 2px
+    margin-bottom: 1px
 }
 
 [data-theme="dark"] .fld>span {
@@ -1366,14 +1366,15 @@ td.result-FAIL {
 
 .fld .in {
     width: 100%;
-    height: 40px;
-    padding: 9px 13px;
+    max-width: 320px;
+    height: 33px;
+    padding: 6px 10px;
     border: 1px solid #bfdbfe;
-    border-radius: 9px;
+    border-radius: 7px;
     background: var(--card);
     color: var(--text);
     font: inherit;
-    font-size: .85rem;
+    font-size: .8rem;
     font-weight: 500;
     transition: border-color .15s, box-shadow .15s
 }
@@ -1462,7 +1463,7 @@ select.in {
 
 textarea.in {
     resize: vertical;
-    min-height: 75px;
+    min-height: 56px;
     height: auto
 }
 
@@ -1471,18 +1472,18 @@ textarea.in {
 }
 
 .fld input[type="file"].in {
-    padding: 7px 10px;
+    padding: 4px 8px;
     height: auto;
     cursor: pointer
 }
 
 .fld input[type="file"].in::file-selector-button {
     font: inherit;
-    font-size: .78rem;
+    font-size: .74rem;
     font-weight: 600;
-    padding: 4px 10px;
+    padding: 3px 8px;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 5px;
     background: var(--body);
     color: var(--text);
     cursor: pointer;
@@ -1658,7 +1659,7 @@ textarea.in {
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding: 14px 20px;
+    padding: 10px 16px;
     border-bottom: 1px solid #e0e7ff;
     flex-wrap: wrap
 }
@@ -1682,8 +1683,8 @@ textarea.in {
 
 .lines .in {
     min-width: 86px;
-    padding: 7px 8px;
-    font-size: .78rem
+    padding: 5px 6px;
+    font-size: .74rem
 }
 
 .lines .w-i {
@@ -1695,7 +1696,7 @@ textarea.in {
     gap: 8px;
     justify-content: flex-end;
     align-items: center;
-    padding: 14px 16px;
+    padding: 10px 14px;
     border-top: 1px solid var(--border);
     flex-wrap: wrap;
     position: sticky;
@@ -2223,10 +2224,10 @@ textarea.in {
 
 .modal textarea {
     width: 100%;
-    min-height: 70px;
-    padding: 10px;
+    min-height: 56px;
+    padding: 7px;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 7px;
     background: var(--body);
     color: var(--text);
     font: inherit
@@ -2241,7 +2242,7 @@ textarea.in {
 
 @media (max-width:1000px) {
     .fgrid {
-        grid-template-columns: repeat(2, 1fr)
+        grid-template-columns: repeat(3, 1fr)
     }
 
     .g2,
@@ -2518,7 +2519,7 @@ textarea.in {
 
 .search-input-header .in {
     flex: 1;
-    font-size: 15px
+    font-size: 13px
 }
 
 .search-results-wrap {

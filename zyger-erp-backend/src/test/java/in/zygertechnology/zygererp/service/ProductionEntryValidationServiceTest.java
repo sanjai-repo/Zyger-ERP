@@ -39,6 +39,9 @@ class ProductionEntryValidationServiceTest {
     @Mock
     private ProductionEntryRepository productionEntryRepo;
 
+    @Mock
+    private ItemRepository itemRepo;
+
     @InjectMocks
     private ProductionEntryValidationService validationService;
 
@@ -78,12 +81,110 @@ class ProductionEntryValidationServiceTest {
     }
 
     @Test
+    @DisplayName("V-03: Route Sheet operation context (Work Order / Job Card) is mandatory")
+    void testMissingOperationContext() {
+        validEntry.setJobCardNumber(null);
+        validEntry.setWorkOrderNumber(null);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> validationService.validate(validEntry));
+        assertTrue(ex.getMessage().contains("Route Sheet operation context is mandatory"));
+    }
+
+    @Test
+    @DisplayName("V-04: Process / Operation is mandatory")
+    void testMissingOperationCode() {
+        validEntry.setOperationCode(null);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> validationService.validate(validEntry));
+        assertTrue(ex.getMessage().contains("Process is mandatory"));
+    }
+
+    @Test
     @DisplayName("V-05: Process quantity must be greater than zero")
     void testZeroProcessQuantity() {
         validEntry.setProcessQty(BigDecimal.ZERO);
         validEntry.setProducedQuantity(BigDecimal.ZERO);
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> validationService.validate(validEntry));
         assertTrue(ex.getMessage().contains("Process quantity must be greater than zero"));
+    }
+
+    @Test
+    @DisplayName("V-07: Accepted + rejected + rework + scrap cannot exceed process quantity")
+    void testAllocationExceedsProcessQty() {
+        // 100 process, but 30 good + 10 reject + 20 rework + 50 scrap = 110 > 100
+        validEntry.setGoodQuantity(new BigDecimal("30"));
+        validEntry.setRejectedQuantity(new BigDecimal("10"));
+        validEntry.setReworkQuantity(new BigDecimal("20"));
+        validEntry.setScrapQuantity(new BigDecimal("50"));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> validationService.validate(validEntry));
+        assertTrue(ex.getMessage().contains("Accepted, rejected and rework quantities cannot exceed process quantity"));
+    }
+
+    @Test
+    @DisplayName("V-09: Rework quantity requires a rework reason")
+    void testReworkReasonMandatory() {
+        validEntry.setGoodQuantity(new BigDecimal("80"));
+        validEntry.setReworkQuantity(new BigDecimal("20"));
+        validEntry.setRejectedQuantity(BigDecimal.ZERO);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> validationService.validate(validEntry));
+        assertTrue(ex.getMessage().contains("Rework reason is mandatory"));
+    }
+
+    @Test
+    @DisplayName("V-11: End time cannot be earlier than start time")
+    void testEndBeforeStart() {
+        Instant start = Instant.now();
+        Instant end = start.minusSeconds(600);
+        validEntry.setStartTime(start);
+        validEntry.setEndTime(end);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> validationService.validate(validEntry));
+        assertTrue(ex.getMessage().contains("End time cannot be earlier than start time"));
+    }
+
+    @Test
+    @DisplayName("V-13: Idle reason is mandatory when idle time is positive")
+    void testIdleReasonMandatory() {
+        Instant start = Instant.now();
+        Instant end = start.plusSeconds(3600); // 60 mins
+        validEntry.setStartTime(start);
+        validEntry.setEndTime(end);
+        validEntry.setIdleTime(new BigDecimal("10"));
+        validEntry.setIdleReason(null);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> validationService.validate(validEntry));
+        assertTrue(ex.getMessage().contains("Idle reason is mandatory"));
+    }
+
+    @Test
+    @DisplayName("V-15 & V-16: Selected machine must exist and be active")
+    void testInactiveMachine() {
+        validEntry.setMachineCode("MISSING");
+        when(machineRepo.existsByCode("MISSING")).thenReturn(false);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> validationService.validate(validEntry));
+        assertTrue(ex.getMessage().contains("Selected machine is inactive or does not exist"));
+    }
+
+    @Test
+    @DisplayName("V-19: Consumed RM quantity cannot exceed available quantity")
+    void testMaterialConsumptionExceedsAvailable() {
+        ProductionEntryMaterial mat = ProductionEntryMaterial.builder()
+                .rmCode("RM01")
+                .consumedQty(new BigDecimal("50"))
+                .availableQty(new BigDecimal("30"))
+                .build();
+        validEntry.setMaterials(List.of(mat));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> validationService.validate(validEntry));
+        assertTrue(ex.getMessage().contains("exceeds available quantity"));
+    }
+
+    @Test
+    @DisplayName("V-20: Batch allocation must equal good or process quantity")
+    void testIncompleteBatchAllocation() {
+        validEntry.setGoodQuantity(new BigDecimal("100"));
+        ProductionEntryBatch batch = ProductionEntryBatch.builder()
+                .batchNumber("B001")
+                .allocatedQty(new BigDecimal("40"))
+                .build();
+        validEntry.setBatchAllocations(List.of(batch));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> validationService.validate(validEntry));
+        assertTrue(ex.getMessage().contains("Batch allocation is incomplete"));
     }
 
     @Test
@@ -163,5 +264,82 @@ class ProductionEntryValidationServiceTest {
         validEntry.setProcessQty(new BigDecimal("30"));
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> validationService.validateSequenceAndPending(validEntry));
         assertTrue(ex.getMessage().contains("exceeds the available pending quantity"));
+    }
+
+    // ---- P8 Capability A: additional (co/by-product) outputs (DOCUMENT_58 §8) ----
+
+    private ProductionEntryOutput output(String type, String item, String location, String qty) {
+        return ProductionEntryOutput.builder()
+                .outputType(type)
+                .itemCode(item)
+                .location(location)
+                .quantity(qty == null ? null : new BigDecimal(qty))
+                .build();
+    }
+
+    @Test
+    @DisplayName("P8: valid additional outputs pass primary reconciliation unchanged")
+    void validAdditionalOutputsPass() {
+        when(itemRepo.existsByCode("CO-1")).thenReturn(true);
+        when(itemRepo.existsByCode("SW-1")).thenReturn(true);
+        validEntry.setAdditionalOutputs(new ArrayList<>(List.of(
+                output("CO_PRODUCT", "CO-1", "STORE", "30.0000"),
+                output("BY_PRODUCT", "SW-1", "SWARD", "5.0000"))));
+        assertDoesNotThrow(() -> validationService.validate(validEntry));
+    }
+
+    @Test
+    @DisplayName("P8: additional output quantity must be greater than zero")
+    void additionalOutputZeroOrNegativeRejected() {
+        validEntry.setAdditionalOutputs(new ArrayList<>(List.of(output("CO_PRODUCT", "CO-1", "STORE", "0"))));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> validationService.validate(validEntry));
+        assertTrue(ex.getMessage().contains("greater than zero"));
+
+        validEntry.setAdditionalOutputs(new ArrayList<>(List.of(output("CO_PRODUCT", "CO-1", "STORE", "-5"))));
+        ex = assertThrows(IllegalArgumentException.class, () -> validationService.validate(validEntry));
+        assertTrue(ex.getMessage().contains("greater than zero"));
+    }
+
+    @Test
+    @DisplayName("P8: additional output item code is mandatory and must exist in item master")
+    void additionalOutputItemRequiredAndKnown() {
+        validEntry.setAdditionalOutputs(new ArrayList<>(List.of(output("CO_PRODUCT", "", "STORE", "10"))));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> validationService.validate(validEntry));
+        assertTrue(ex.getMessage().contains("item code is mandatory"));
+
+        when(itemRepo.existsByCode("UNKNOWN-1")).thenReturn(false);
+        validEntry.setAdditionalOutputs(new ArrayList<>(List.of(output("CO_PRODUCT", "UNKNOWN-1", "STORE", "10"))));
+        ex = assertThrows(IllegalArgumentException.class, () -> validationService.validate(validEntry));
+        assertTrue(ex.getMessage().contains("does not exist in the item master"));
+    }
+
+    @Test
+    @DisplayName("P8: additional output type restricted to CO_PRODUCT / BY_PRODUCT")
+    void additionalOutputTypeRestricted() {
+        validEntry.setAdditionalOutputs(new ArrayList<>(List.of(output("SCRAP", "CO-1", "STORE", "10"))));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> validationService.validate(validEntry));
+        assertTrue(ex.getMessage().contains("CO_PRODUCT or BY_PRODUCT"));
+    }
+
+    @Test
+    @DisplayName("P8: duplicate (outputType, itemCode, location) within one entry is rejected")
+    void additionalOutputDuplicateRejected() {
+        when(itemRepo.existsByCode("CO-1")).thenReturn(true);
+        validEntry.setAdditionalOutputs(new ArrayList<>(List.of(
+                output("CO_PRODUCT", "CO-1", "STORE", "10"),
+                output("CO_PRODUCT", "CO-1", "STORE", "10"))));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> validationService.validate(validEntry));
+        assertTrue(ex.getMessage().contains("Duplicate additional output"));
+    }
+
+    @Test
+    @DisplayName("P8: additional output weight cannot be negative")
+    void additionalOutputNegativeWeightRejected() {
+        when(itemRepo.existsByCode("CO-1")).thenReturn(true);
+        ProductionEntryOutput o = output("CO_PRODUCT", "CO-1", "STORE", "10");
+        o.setWeight(new BigDecimal("-2"));
+        validEntry.setAdditionalOutputs(new ArrayList<>(List.of(o)));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> validationService.validate(validEntry));
+        assertTrue(ex.getMessage().contains("weight cannot be negative"));
     }
 }

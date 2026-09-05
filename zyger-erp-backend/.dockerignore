@@ -13,3 +13,8 @@ uploads/
 
 # Logs
 *.log
+
+# Secrets (never baked into the image)
+.env
+.env.*
+secrets/

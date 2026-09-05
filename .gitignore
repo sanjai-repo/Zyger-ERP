@@ -12,10 +12,17 @@ target/
 .gradle/
 .vite/
 
-# Environment files
+# Environment files (real secrets — never commit)
 .env
 .env.local
+.env.staging
+.env.production
 .env.*.local
+
+# TLS / secrets
+*.pem
+*.key
+secrets/
 
 # IDE & OS
 .idea/
@@ -32,4 +39,9 @@ graphify-out/
 zygererp/uploads/
 zyger-erp-backend/uploads/
 uploads/
+
+# Database backups (contain data — never commit)
+backups/
+*.dump
+*.dump.gz
 

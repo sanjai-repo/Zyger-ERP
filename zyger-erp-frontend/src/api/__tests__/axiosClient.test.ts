@@ -34,7 +34,7 @@ describe('axiosClient', () => {
 
     // The request interceptor should have been set up
     // Verify it tries to read the token
-    expect(apiClient.interceptors.request.handlers.length).toBeGreaterThan(0);
+    expect(apiClient.interceptors.request.handlers?.length ?? 0).toBeGreaterThan(0);
   });
 
   it('handles missing token gracefully', async () => {

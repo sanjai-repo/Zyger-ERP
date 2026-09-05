@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
@@ -14,7 +14,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'icons.svg'],
+      includeAssets: ['favicon.svg', 'Zyger_Logo.svg', 'icons.svg'],
       manifest: {
         name: 'Zyger ERP — Precision Manufacturing ERP',
         short_name: 'Zyger ERP',
@@ -33,6 +33,9 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // The Zyger_Logo.svg asset is large; raise the precache limit so
+        // `vite build` does not fail on it. Tune to the largest asset size.
+        maximumFileSizeToCacheInBytes: 1024 * 1024 * 10,
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [

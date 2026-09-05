@@ -475,8 +475,8 @@ export default function CompanyInfoScreen() {
                     <img src={logoPreviewUrl(form.companyLogoUrl)} alt="Company Logo" style={{ width: '100%', height: '100%', objectFit: 'contain', background: 'transparent' }} />
                   </div>
                 ) : (
-                  <div style={{ width: '64px', height: '64px', margin: '0 auto 12px', background: '#eff6ff', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <span className="material-symbols-rounded" style={{ fontSize: '32px', color: '#3b82f6' }}>image</span>
+                  <div style={{ width: '64px', height: '64px', margin: '0 auto 12px', background: '#eff6ff', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                    <img src="/Zyger_Logo.svg" alt="Default Zyger Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                   </div>
                 )}
                 <button type="button" className="btn btn-sm btn-secondary" disabled={uploadingLogo === 'company'} onClick={() => companyLogoRef.current?.click()} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginBottom: '8px' }}>

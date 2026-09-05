@@ -27,7 +27,16 @@ interface ProductionReturn {
   location: string;
   status: string;
   remarks: string;
+  version?: number;
 }
+
+const DISPOSITIONS: Array<{ value: string; label: string }> = [
+  { value: 'GOOD', label: 'Good' },
+  { value: 'QC_HOLD', label: 'QC Hold' },
+  { value: 'REJECTED', label: 'Rejected' },
+  { value: 'SCRAP', label: 'Scrap' },
+  { value: 'REWORK', label: 'Rework' },
+];
 
 const SC: Record<string, { color: string; bg: string }> = {
   DRAFT: { color: '#888', bg: '#e9ecef' }, SUBMITTED: { color: '#6f42c1', bg: '#e8daef' },
@@ -47,6 +56,7 @@ export default function ProductionReturnScreen() {
   const [deleteTarget, setDeleteTarget] = useState<ProductionReturn | null>(null);
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
+  const [actionBusyId, setActionBusyId] = useState<number | null>(null);
   const [tab, setTab] = useState<'list' | 'form'>('list');
   const [items, setItems] = useState<Array<{ code: string; name: string; uom?: string }>>([]);
   const [entryOptions, setEntryOptions] = useState<Array<{ id: number; entryNumber: string; workOrderNumber: string; jobCardNumber: string; partCode: string; partDescription: string }>>([]);
@@ -101,10 +111,13 @@ export default function ProductionReturnScreen() {
 
   const save = async () => {
     if (!String(form.itemCode ?? '').trim()) { toast('Item Code is required.', 'error'); return; }
+    const qty = Number(form.quantity ?? 0);
+    if (!(qty > 0)) { toast('Return quantity must be greater than zero.', 'error'); return; }
     setBusy(true);
     try {
-      if (editId) { await apiClient.put(`/v1/production/returns/${editId}`, form); toast('Return updated.'); }
-      else { await apiClient.post('/v1/production/returns', form); toast('Return created.'); }
+      const payload = { ...form, version: editId ? (form.version ?? undefined) : undefined };
+      if (editId) { await apiClient.put(`/v1/production/returns/${editId}`, payload); toast('Return updated.'); }
+      else { await apiClient.post('/v1/production/returns', payload); toast('Return created.'); }
       setForm({}); setEditId(null); setTab('list'); load();
     } catch (e) { toast(getApiErrorMessage(e, 'Save failed.'), 'error'); }
     setBusy(false);
@@ -119,8 +132,11 @@ export default function ProductionReturnScreen() {
   };
 
   const action = async (id: number, act: string) => {
+    if (actionBusyId !== null) return;
+    setActionBusyId(id);
     try { await apiClient.post(`/v1/production/returns/${id}/actions/${act}`); toast(`Return ${act}.`); load(); }
     catch (e) { toast(getApiErrorMessage(e, 'Action failed.'), 'error'); }
+    setActionBusyId(null);
   };
 
   const set = (k: string, v: unknown) => setForm((c) => ({ ...c, [k]: v }));
@@ -173,7 +189,7 @@ export default function ProductionReturnScreen() {
             <label className="fld"><span>Return Reason</span><input className="in" value={String(form.returnReason ?? '')} onChange={(e) => set('returnReason', e.target.value)} /></label>
             <label className="fld"><span>Condition</span>
               <select className="in" value={String(form.condition ?? 'GOOD')} onChange={(e) => set('condition', e.target.value)}>
-                <option value="GOOD">Good</option><option value="REWORK">Rework</option><option value="SCRAP">Scrap</option>
+                {DISPOSITIONS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
               </select>
             </label>
             <label className="fld"><span>Warehouse</span><input className="in" value={String(form.warehouse ?? '')} onChange={(e) => set('warehouse', e.target.value)} /></label>
@@ -221,9 +237,9 @@ export default function ProductionReturnScreen() {
                       <td>{r.condition ?? '-'}</td>
                       <td><StatusBadge status={r.status} variant={SC} /></td>
                       <td>
-                        {r.status === 'DRAFT' && can('production', 'Approve') && <button className="ibtn" title="Verify" onClick={() => action(r.id, 'verify')}><span className="material-symbols-rounded">fact_check</span></button>}
-                        {r.status === 'VERIFIED' && can('production', 'Approve') && <button className="ibtn" title="Receive" onClick={() => action(r.id, 'receive')}><span className="material-symbols-rounded">inventory_2</span></button>}
-                        {r.status !== 'RECEIVED' && can('production', 'Cancel') && <button className="ibtn" title="Cancel" onClick={() => action(r.id, 'cancel')}><span className="material-symbols-rounded">block</span></button>}
+                        {r.status === 'DRAFT' && can('production', 'Approve') && <button className="ibtn" title="Verify" disabled={actionBusyId === r.id} onClick={() => action(r.id, 'verify')}><span className="material-symbols-rounded">fact_check</span></button>}
+                        {r.status === 'VERIFIED' && can('production', 'Approve') && <button className="ibtn" title="Receive" disabled={actionBusyId === r.id} onClick={() => action(r.id, 'receive')}><span className="material-symbols-rounded">inventory_2</span></button>}
+                        {r.status !== 'RECEIVED' && can('production', 'Cancel') && <button className="ibtn" title="Cancel" disabled={actionBusyId === r.id} onClick={() => action(r.id, 'cancel')}><span className="material-symbols-rounded">block</span></button>}
                         {can('production', 'Edit') && <button className="ibtn" title="Edit" onClick={() => { setForm(r as unknown as Record<string, unknown>); setEditId(r.id); setTab('form'); }}><span className="material-symbols-rounded">edit</span></button>}
                         <button className="ibtn" title="Print" onClick={() => printDocument(r.id, 'print')}><span className="material-symbols-rounded">print</span></button>
                         <button className="ibtn" title="Download PDF" onClick={() => printDocument(r.id, 'download')}><span className="material-symbols-rounded">download</span></button>

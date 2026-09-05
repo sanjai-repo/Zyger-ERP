@@ -18,7 +18,6 @@ interface AuthContextType {
   hasModule: (mod: PermissionModule) => boolean;
   canScreen: (screenKey: string, action?: ScreenAction) => boolean;
   login: (data: LoginRequest) => Promise<void>;
-  loginDemo: () => Promise<void>;
   logout: () => void;
 }
 
@@ -139,10 +138,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await loadScreens();
   };
 
-  const loginDemo = async () => {
-    await login({ username: 'demo', password: 'demo123' });
-  };
-
   const logout = () => {
     clearSession();
     setUser(null);
@@ -181,7 +176,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, screenPerms, screensLoaded, can, canAny, hasModule, canScreen, login, loginDemo, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, screenPerms, screensLoaded, can, canAny, hasModule, canScreen, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

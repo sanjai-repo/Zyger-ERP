@@ -3,6 +3,7 @@ import apiClient from '../../../api/axiosClient';
 import { useToast } from '../../../contexts/ToastContext';
 import { getApiErrorMessage } from '../../../utils/apiError';
 import ConfirmActionModal from '../../../components/common/ConfirmActionModal';
+import { itemTypeLabel } from './itemGroupTypes';
 import type { ItemGroup } from './itemGroupTypes';
 
 const PAGE_SIZE = 20;
@@ -125,6 +126,7 @@ export default function ItemGroupList({ onAdd, onEdit }: Props) {
                 <tr>
                   <th>GROUP ID</th>
                   <th>GROUP NAME</th>
+                  <th>TYPE</th>
                   <th>DESCRIPTION</th>
                   <th>STATUS</th>
                   <th>ACTIONS</th>
@@ -133,7 +135,7 @@ export default function ItemGroupList({ onAdd, onEdit }: Props) {
               <tbody>
                 {filteredRows.length === 0 ? (
                   <tr>
-                    <td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>
+                    <td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>
                       No item groups found.
                     </td>
                   </tr>
@@ -142,6 +144,11 @@ export default function ItemGroupList({ onAdd, onEdit }: Props) {
                     <tr key={r.id}>
                       <td style={{ fontWeight: 700, color: '#0f172a' }}>{r.code}</td>
                       <td style={{ fontWeight: 600 }}>{r.name}</td>
+                      <td>
+                        <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: '999px', backgroundColor: '#eff6ff', color: '#1d4ed8', fontSize: '0.75rem', fontWeight: 600 }}>
+                          {itemTypeLabel(r.itemType)}
+                        </span>
+                      </td>
                       <td style={{ color: '#64748b' }}>{r.description || '-'}</td>
                       <td>
                         <span style={{ fontWeight: 700, color: r.active ? '#166534' : '#dc2626' }}>

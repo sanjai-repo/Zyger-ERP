@@ -11,6 +11,7 @@ import { useTabs } from '../../../contexts/TabsContext';
 
 interface ProductConversion {
   id: number;
+  version?: number;
   conversionNumber: string;
   conversionDate: string;
   conversionType: string;
@@ -38,8 +39,7 @@ interface ProductConversion {
 const SC: Record<string, { color: string; bg: string }> = {
   DRAFT: { color: '#888', bg: '#e9ecef' }, SUBMITTED: { color: '#6f42c1', bg: '#e8daef' },
   VERIFIED: { color: '#2563eb', bg: '#dbeafe' }, POSTED: { color: '#22c55e', bg: '#d4edda' },
-  COMPLETED: { color: '#22c55e', bg: '#d4edda' },
-  CANCELLED: { color: '#991b1b', bg: '#fde2e2' },
+  REJECTED: { color: '#c0392b', bg: '#fdecea' }, CANCELLED: { color: '#991b1b', bg: '#fde2e2' },
 };
 
 export default function ProductConversionScreen() {
@@ -54,6 +54,7 @@ export default function ProductConversionScreen() {
   const [deleteTarget, setDeleteTarget] = useState<ProductConversion | null>(null);
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
+  const [actionBusyId, setActionBusyId] = useState<number | null>(null);
   const [tab, setTab] = useState<'list' | 'form'>('list');
   const [items, setItems] = useState<Array<{ code: string; name: string; uom?: string }>>([]);
 
@@ -80,10 +81,19 @@ export default function ProductConversionScreen() {
   const save = async () => {
     if (!String(form.inputItemCode ?? '').trim()) { toast('Input Item Code is required.', 'error'); return; }
     if (!String(form.outputItemCode ?? '').trim()) { toast('Output Item Code is required.', 'error'); return; }
+    const iq = Number(form.inputQuantity ?? 0);
+    const oq = Number(form.outputQuantity ?? 0);
+    const loss = Number(form.processLossQty ?? 0);
+    const scrap = Number(form.scrapQty ?? 0);
+    if (iq <= 0) { toast('Input quantity must be > 0.', 'error'); return; }
+    if (oq <= 0) { toast('Output quantity must be > 0.', 'error'); return; }
+    if (loss < 0 || scrap < 0) { toast('Loss / scrap quantities cannot be negative.', 'error'); return; }
+    if (oq + loss + scrap > iq) { toast('Output + loss + scrap cannot exceed input quantity.', 'error'); return; }
     setBusy(true);
     try {
-      if (editId) { await apiClient.put(`/v1/production/conversions/${editId}`, form); toast('Conversion updated.'); }
-      else { await apiClient.post('/v1/production/conversions', form); toast('Conversion created.'); }
+      const payload = { ...form, version: editId ? (form.version ?? undefined) : undefined };
+      if (editId) { await apiClient.put(`/v1/production/conversions/${editId}`, payload); toast('Conversion updated.'); }
+      else { await apiClient.post('/v1/production/conversions', payload); toast('Conversion created.'); }
       setForm({}); setEditId(null); setTab('list'); load();
     } catch (e) { toast(getApiErrorMessage(e, 'Save failed.'), 'error'); }
     setBusy(false);
@@ -98,8 +108,11 @@ export default function ProductConversionScreen() {
   };
 
   const action = async (id: number, act: string) => {
+    if (actionBusyId !== null) return;
+    setActionBusyId(id);
     try { await apiClient.post(`/v1/production/conversions/${id}/actions/${act}`); toast(`Conversion ${act}.`); load(); }
     catch (e) { toast(getApiErrorMessage(e, 'Action failed.'), 'error'); }
+    setActionBusyId(null);
   };
 
   const set = (k: string, v: unknown) => setForm((c) => ({ ...c, [k]: v }));
@@ -162,7 +175,7 @@ export default function ProductConversionScreen() {
             </div>
             <div className="rgt">
               {editId && <button className="btn btn-sm" onClick={() => { setForm({}); setEditId(null); setTab('list'); }} disabled={busy}>Cancel</button>}
-              <button className="btn btn-sm btn-p" onClick={save} disabled={busy}>{editId ? 'Update' : 'Create'}</button>
+              <button className="btn btn-sm btn-p" onClick={save} disabled={busy || !can('production', 'Edit')}>{editId ? 'Update' : 'Create'}</button>
             </div>
           </div>
         </div>
@@ -200,9 +213,12 @@ export default function ProductConversionScreen() {
                       <td>{r.processLossQty ?? 0}</td>
                       <td><StatusBadge status={r.status} variant={SC} /></td>
                       <td>
-                        {r.status === 'DRAFT' && can('production', 'Approve') && <button className="ibtn" title="Complete" onClick={() => action(r.id, 'complete')}><span className="material-symbols-rounded">check_circle</span></button>}
-                        {r.status === 'DRAFT' && can('production', 'Cancel') && <button className="ibtn" title="Cancel" onClick={() => action(r.id, 'cancel')}><span className="material-symbols-rounded">block</span></button>}
-                        {can('production', 'Edit') && <button className="ibtn" title="Edit" onClick={() => { setForm(r as unknown as Record<string, unknown>); setEditId(r.id); setTab('form'); }}><span className="material-symbols-rounded">edit</span></button>}
+                        {r.status === 'DRAFT' && can('production', 'Approve') && <button className="ibtn" title="Submit" disabled={actionBusyId === r.id} onClick={() => action(r.id, 'submit')}><span className="material-symbols-rounded">send</span></button>}
+                        {r.status === 'SUBMITTED' && can('production', 'Approve') && <button className="ibtn" title="Verify" disabled={actionBusyId === r.id} onClick={() => action(r.id, 'verify')}><span className="material-symbols-rounded">verified</span></button>}
+                        {r.status === 'VERIFIED' && can('production', 'Approve') && <button className="ibtn" title="Post (stock in/out)" disabled={actionBusyId === r.id} onClick={() => action(r.id, 'post')}><span className="material-symbols-rounded">check_circle</span></button>}
+                        {r.status === 'SUBMITTED' && can('production', 'Approve') && <button className="ibtn danger" title="Reject" disabled={actionBusyId === r.id} onClick={() => action(r.id, 'reject')}><span className="material-symbols-rounded">cancel</span></button>}
+                        {r.status === 'DRAFT' && can('production', 'Cancel') && <button className="ibtn danger" title="Cancel" disabled={actionBusyId === r.id} onClick={() => action(r.id, 'cancel')}><span className="material-symbols-rounded">block</span></button>}
+                        {can('production', 'Edit') && r.status === 'DRAFT' && <button className="ibtn" title="Edit" onClick={() => { setForm(r as unknown as Record<string, unknown>); setEditId(r.id); setTab('form'); }}><span className="material-symbols-rounded">edit</span></button>}
                         <button className="ibtn" title="Print" onClick={() => printDocument(r.id, 'print')}><span className="material-symbols-rounded">print</span></button>
                         <button className="ibtn" title="Download PDF" onClick={() => printDocument(r.id, 'download')}><span className="material-symbols-rounded">download</span></button>
                         {r.status === 'DRAFT' && can('production', 'Delete') && <button className="ibtn danger" title="Delete" onClick={() => setDeleteTarget(r)}><span className="material-symbols-rounded">delete</span></button>}

@@ -51,6 +51,12 @@ class QualityInspectionServiceTest {
     @Mock
     private QualityCharacteristicMeasurementRepository spcRepo;
 
+    @Mock
+    private in.zygertechnology.zygererp.repo.QualityInspectionStatusHistoryRepository statusHistoryRepo;
+
+    @Mock
+    private in.zygertechnology.zygererp.repo.QualityDispositionRepository dispositionRepo;
+
     @InjectMocks
     private QualityInspectionService qualityInspectionService;
 
@@ -85,5 +91,25 @@ class QualityInspectionServiceTest {
         when(documentFacade.get("quality-inspection", 999L)).thenThrow(new RuntimeException("Inspection document not found"));
 
         assertThrows(RuntimeException.class, () -> qualityInspectionService.get(999L));
+    }
+
+    @Test
+    @DisplayName("RTV auto-SCAR fails closed on duplicate check error (no duplicate SCAR creation)")
+    void testHasScarFailsClosedPreventsDuplicateScar() {
+        QualityInspection ins = new QualityInspection();
+        ins.setId(55L);
+        ins.setDocNo("IQC/25-26/00099");
+        ins.setInspectionType(in.zygertechnology.zygererp.entity.QualityInspectionType.IQC);
+        ins.setInspectionStatus("FAIL");
+        when(documentFacade.get("quality-inspection", 55L)).thenReturn(ins);
+
+        // The duplicate-SCAR existence query fails on the database.
+        when(em.createQuery(anyString(), eq(Long.class)))
+                .thenThrow(new jakarta.persistence.PersistenceException("connection lost"));
+
+        // autoCreateScar's controlled catch boundary absorbs the failure: no SCAR is
+        // created, the disposition flow still completes, and no duplicate is possible.
+        assertDoesNotThrow(() -> qualityInspectionService.setDisposition(55L, "RTV", "Vendor defect", "qc-user"));
+        verify(documentFacade, never()).create(eq("quality-scar"), any(), any());
     }
 }

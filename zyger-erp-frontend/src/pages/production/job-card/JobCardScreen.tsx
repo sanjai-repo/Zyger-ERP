@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import apiClient from '../../../api/axiosClient';
+import { productionApi } from '../../../services/production-api';
+import type { JobCard, JobCardSubjob } from '../../../types/production/production.types';
 import { useToast } from '../../../contexts/ToastContext';
 import { useAuth } from '../../../contexts/AuthContext';
 import { getApiErrorMessage } from '../../../utils/apiError';
@@ -9,56 +11,6 @@ import AuditHistoryDrawer from '../../../components/common/AuditHistoryDrawer';
 import { printDocument as printDoc } from '../../../utils/printDocument';
 import { exportToCsv } from '../../../utils/csvExport';
 import { useTabs } from '../../../contexts/TabsContext';
-
-interface JobCard {
-  id: number;
-  jobCardNumber: string;
-  workOrderNumber: string;
-  partCode: string;
-  partDescription: string;
-  revision: string;
-  plannedQuantity: number;
-  completedQuantity: number;
-  reworkQuantity: number;
-  rejectedQuantity: number;
-  scrapQuantity: number;
-  priority: string;
-  plannedStartDate: string;
-  plannedEndDate: string;
-  actualStartDate: string;
-  actualEndDate: string;
-  routeSheetNumber: string;
-  bomNumber: string;
-  customerCode: string;
-  status: string;
-  completionStatus: string;
-  releaseRemarks: string;
-  completeRemarks: string;
-  holdReason: string;
-  remarks: string;
-  subjobs?: Subjob[];
-}
-
-interface Subjob {
-  id: number;
-  subjobNumber: string;
-  operationCode: string;
-  operationDescription: string;
-  sequenceNo: number;
-  machineCode: string;
-  workCenterCode: string;
-  operatorCode: string;
-  plannedQuantity: number;
-  completedQuantity: number;
-  reworkQuantity: number;
-  rejectedQuantity: number;
-  scrapQuantity: number;
-  startTime: string;
-  endTime: string;
-  status: string;
-  inspectionRequired: boolean;
-  remarks: string;
-}
 
 interface CompletionCheck {
   jobCardNumber: string;
@@ -85,13 +37,14 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
   const [editId, setEditId] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<JobCard | null>(null);
   const [busy, setBusy] = useState(false);
+  const [subActionBusyId, setSubActionBusyId] = useState<number | null>(null);
   const [search, setSearch] = useState(initialSearch ?? '');
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [subjobs, setSubjobs] = useState<Subjob[]>([]);
+  const [subjobs, setSubjobs] = useState<JobCardSubjob[]>([]);
   const [loadingSubs, setLoadingSubs] = useState(false);
   const [subForm, setSubForm] = useState<Record<string, unknown>>({});
   const [editSubId, setEditSubId] = useState<number | null>(null);
-  const [deleteSubTarget, setDeleteSubTarget] = useState<Subjob | null>(null);
+  const [deleteSubTarget, setDeleteSubTarget] = useState<JobCardSubjob | null>(null);
   const [tab, setTab] = useState<'list' | 'form' | 'from-wo'>('list');
   const [woNumber, setWoNumber] = useState('');
   const [compCheck, setCompCheck] = useState<CompletionCheck | null>(null);
@@ -133,8 +86,8 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
   const load = async () => {
     setLoading(true);
     try {
-      const { data } = await apiClient.get('/v1/production/job-cards');
-      setRows(Array.isArray(data) ? data : data.content ?? []);
+      const page = await productionApi.listJobCards({ page: 0, size: 1000 });
+      setRows(Array.isArray(page) ? page : (page.content ?? []));
     } catch (e) { toast(getApiErrorMessage(e, 'Load failed.'), 'error'); }
     setLoading(false);
   };
@@ -201,10 +154,10 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
     setBusy(true);
     try {
       if (editId) {
-        await apiClient.put(`/v1/production/job-cards/${editId}`, form);
+        await productionApi.updateJobCard(editId, form);
         toast('Job Card updated.');
       } else {
-        await apiClient.post('/v1/production/job-cards', form);
+        await productionApi.createJobCard(form);
         toast('Job Card created.');
       }
       setForm({}); setEditId(null); setTab('list'); load();
@@ -216,7 +169,7 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
     if (!woNumber.trim()) { toast('Work Order Number is required.', 'error'); return; }
     setBusy(true);
     try {
-      const { data } = await apiClient.post('/v1/production/job-cards/from-work-order', { workOrderNumber: woNumber });
+      const data = (await productionApi.createJobCardFromWorkOrder(woNumber)) as { success?: boolean; errors?: string[]; jobCardNumber?: string; jobCard?: { jobCardNumber?: string } };
       if (data.success === false) {
         toast(data.errors?.join(', ') || 'Failed to create from Work Order.', 'error');
       } else {
@@ -231,16 +184,17 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
     if (!deleteTarget) return;
     setBusy(true);
     try {
-      await apiClient.delete(`/v1/production/job-cards/${deleteTarget.id}`);
+      await productionApi.deleteJobCard(deleteTarget.id);
       toast('Job Card deleted.'); setDeleteTarget(null); load();
     } catch (e) { toast(getApiErrorMessage(e, 'Delete failed.'), 'error'); }
     setBusy(false);
   };
 
   const action = async (id: number, act: string, note?: string) => {
+    if (busy) return; // double-submit guard (duplicate action re-fire)
     setBusy(true);
     try {
-      const { data } = await apiClient.post(`/v1/production/job-cards/${id}/actions/${act}`, note ? { note } : undefined);
+      const data = (await productionApi.jobCardAction(id, act, note)) as { success?: boolean; errors?: string[] };
       if (data.success === false) {
         toast(data.errors?.join('\n') || 'Action failed.', 'error');
       } else {
@@ -254,7 +208,7 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
 
   const loadCompCheck = async (id: number) => {
     try {
-      const { data } = await apiClient.get(`/v1/production/job-cards/${id}/completion-check`);
+      const data = (await productionApi.completionCheck(id)) as CompletionCheck;
       setCompCheck(data);
       setShowCompCheck(true);
     } catch (e) { toast(getApiErrorMessage(e, 'Completion check failed.'), 'error'); }
@@ -265,8 +219,8 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
     setExpandedId(id);
     setLoadingSubs(true);
     try {
-      const { data } = await apiClient.get(`/v1/production/job-cards/${id}/subjobs`);
-      setSubjobs(Array.isArray(data) ? data : data.content ?? []);
+      const data = await productionApi.listJobCardSubjobs(id);
+      setSubjobs(Array.isArray(data) ? data : (data as unknown as { content?: JobCardSubjob[] }).content ?? []);
     } catch (e) { toast(getApiErrorMessage(e, 'Failed to load subjobs.'), 'error'); setSubjobs([]); }
     setLoadingSubs(false);
   };
@@ -277,10 +231,10 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
     setBusy(true);
     try {
       if (editSubId) {
-        await apiClient.put(`/v1/production/job-cards/subjobs/${editSubId}`, subForm);
+        await productionApi.updateJobCardSubjob(editSubId, subForm);
         toast('Subjob updated.');
       } else {
-        await apiClient.post(`/v1/production/job-cards/${expandedId}/subjobs`, subForm);
+        await productionApi.createJobCardSubjob(expandedId, subForm);
         toast('Subjob added.');
       }
       setSubForm({}); setEditSubId(null); loadSubjobs(expandedId);
@@ -292,7 +246,7 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
     if (!deleteSubTarget) return;
     setBusy(true);
     try {
-      await apiClient.delete(`/v1/production/job-cards/subjobs/${deleteSubTarget.id}`);
+      await productionApi.deleteJobCardSubjob(deleteSubTarget.id);
       toast('Subjob deleted.'); setDeleteSubTarget(null);
       if (expandedId) loadSubjobs(expandedId);
     } catch (e) { toast(getApiErrorMessage(e, 'Delete failed.'), 'error'); }
@@ -300,10 +254,13 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
   };
 
   const subAction = async (lineId: number, act: string) => {
+    if (subActionBusyId !== null) return;
+    setSubActionBusyId(lineId);
     try {
-      await apiClient.post(`/v1/production/job-cards/subjobs/${lineId}/actions/${act}`);
+      await productionApi.jobCardSubjobAction(lineId, act);
       toast(`Subjob ${act}.`); if (expandedId) loadSubjobs(expandedId);
     } catch (e) { toast(getApiErrorMessage(e, 'Action failed.'), 'error'); }
+    setSubActionBusyId(null);
   };
 
   const set = (k: string, v: unknown) => setForm((c) => ({ ...c, [k]: v }));
@@ -507,8 +464,8 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
                         <td>{r.partCode}</td>
                         <td>{r.plannedQuantity}</td>
                         <td style={{ color: '#22c55e', fontWeight: 600 }}>{r.completedQuantity}</td>
-                        <td style={{ color: r.reworkQuantity > 0 ? '#f59e0b' : undefined }}>{r.reworkQuantity}</td>
-                        <td style={{ color: r.scrapQuantity > 0 ? '#ef4444' : undefined }}>{r.scrapQuantity}</td>
+                        <td style={{ color: (r.reworkQuantity ?? 0) > 0 ? '#f59e0b' : undefined }}>{r.reworkQuantity}</td>
+                        <td style={{ color: (r.scrapQuantity ?? 0) > 0 ? '#ef4444' : undefined }}>{r.scrapQuantity}</td>
                         <td>{r.priority ?? '-'}</td>
                         <td><StatusBadge status={r.status} variant={SC} /></td>
                         <td style={{ position: 'relative' }}>
@@ -561,18 +518,18 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
                                         <td>{s.operatorCode ?? '-'}</td>
                                         <td>{s.plannedQuantity}</td>
                                         <td style={{ color: '#22c55e', fontWeight: 600 }}>{s.completedQuantity}</td>
-                                        <td style={{ color: s.reworkQuantity > 0 ? '#f59e0b' : undefined }}>{s.reworkQuantity}</td>
-                                        <td style={{ color: s.rejectedQuantity > 0 ? '#ef4444' : undefined }}>{s.rejectedQuantity}</td>
-                                        <td style={{ color: s.scrapQuantity > 0 ? '#ef4444' : undefined }}>{s.scrapQuantity}</td>
+                                        <td style={{ color: (s.reworkQuantity ?? 0) > 0 ? '#f59e0b' : undefined }}>{s.reworkQuantity}</td>
+                                        <td style={{ color: (s.rejectedQuantity ?? 0) > 0 ? '#ef4444' : undefined }}>{s.rejectedQuantity}</td>
+                                        <td style={{ color: (s.scrapQuantity ?? 0) > 0 ? '#ef4444' : undefined }}>{s.scrapQuantity}</td>
                                         <td><StatusBadge status={s.status} variant={SC} /></td>
                                         <td>
-                                          {s.status === 'PENDING' && can('production', 'Approve') && <button className="ibtn" title="Release" onClick={() => subAction(s.id, 'release')}><span className="material-symbols-rounded">play_arrow</span></button>}
-                                          {s.status === 'RELEASED' && <button className="ibtn" title="Start" onClick={() => subAction(s.id, 'start')}><span className="material-symbols-rounded">play_circle</span></button>}
+                                          {s.status === 'PENDING' && can('production', 'Approve') && <button className="ibtn" title="Release" disabled={subActionBusyId === s.id} onClick={() => subAction(s.id, 'release')}><span className="material-symbols-rounded">play_arrow</span></button>}
+                                          {s.status === 'RELEASED' && <button className="ibtn" title="Start" disabled={subActionBusyId === s.id} onClick={() => subAction(s.id, 'start')}><span className="material-symbols-rounded">play_circle</span></button>}
                                           {s.status === 'IN_PROGRESS' && <>
-                                            <button className="ibtn" title="Quality Hold" onClick={() => subAction(s.id, 'quality-hold')}><span className="material-symbols-rounded">pause_circle</span></button>
-                                            <button className="ibtn" title="Complete" onClick={() => subAction(s.id, 'complete')}><span className="material-symbols-rounded">check_circle</span></button>
+                                            <button className="ibtn" title="Quality Hold" disabled={subActionBusyId === s.id} onClick={() => subAction(s.id, 'quality-hold')}><span className="material-symbols-rounded">pause_circle</span></button>
+                                            <button className="ibtn" title="Complete" disabled={subActionBusyId === s.id} onClick={() => subAction(s.id, 'complete')}><span className="material-symbols-rounded">check_circle</span></button>
                                           </>}
-                                          {(s.status === 'ON_HOLD' || s.status === 'QUALITY_HOLD') && <button className="ibtn" title="Resume" onClick={() => subAction(s.id, 'resume')}><span className="material-symbols-rounded">play_circle</span></button>}
+                                          {(s.status === 'ON_HOLD' || s.status === 'QUALITY_HOLD') && <button className="ibtn" title="Resume" disabled={subActionBusyId === s.id} onClick={() => subAction(s.id, 'resume')}><span className="material-symbols-rounded">play_circle</span></button>}
                                           <button className="ibtn" title="Edit" onClick={() => { setSubForm(s as unknown as Record<string, unknown>); setEditSubId(s.id); }}><span className="material-symbols-rounded">edit</span></button>
                                           {(s.status === 'PENDING' || s.status === 'RELEASED') && <button className="ibtn danger" title="Delete" onClick={() => setDeleteSubTarget(s)}><span className="material-symbols-rounded">delete</span></button>}
                                         </td>

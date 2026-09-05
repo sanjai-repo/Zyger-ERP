@@ -30,11 +30,11 @@ vi.mock('react-router-dom', async () => {
 });
 
 // Mock fetch for company info
-global.fetch = vi.fn(() =>
+globalThis.fetch = vi.fn(() =>
   Promise.resolve({
     ok: true,
     json: () => Promise.resolve({ companyName: 'Test ERP' }),
-  })
+  } as unknown as Response)
 );
 
 function renderLoginPage() {

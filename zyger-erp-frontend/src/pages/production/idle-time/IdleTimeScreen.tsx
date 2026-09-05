@@ -48,6 +48,7 @@ export default function IdleTimeScreen() {
   const [deleteTarget, setDeleteTarget] = useState<IdleTime | null>(null);
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
+  const [actionBusyId, setActionBusyId] = useState<number | null>(null);
   const [tab, setTab] = useState<'list' | 'form'>('list');
   const [machines, setMachines] = useState<Array<{ code: string; name: string }>>([]);
   const [users, setUsers] = useState<Array<{ username: string; fullName: string }>>([]);
@@ -124,8 +125,11 @@ export default function IdleTimeScreen() {
   };
 
   const action = async (id: number, act: string) => {
+    if (actionBusyId !== null) return;
+    setActionBusyId(id);
     try { await apiClient.post(`/v1/production/idle-time/${id}/actions/${act}`); toast(`Idle time ${act}.`); load(); }
     catch (e) { toast(getApiErrorMessage(e, 'Action failed.'), 'error'); }
+    setActionBusyId(null);
   };
 
   const set = (k: string, v: unknown) => setForm((c) => ({ ...c, [k]: v }));
@@ -227,8 +231,8 @@ export default function IdleTimeScreen() {
                       <td>{r.workOrderNumber ?? '-'}</td>
                       <td><StatusBadge status={r.status} variant={SC} /></td>
                       <td>
-                        {r.status === 'DRAFT' && can('production', 'Approve') && <button className="ibtn" title="Verify" onClick={() => action(r.id, 'verify')}><span className="material-symbols-rounded">fact_check</span></button>}
-                        {r.status === 'DRAFT' && can('production', 'Cancel') && <button className="ibtn" title="Cancel" onClick={() => action(r.id, 'cancel')}><span className="material-symbols-rounded">block</span></button>}
+                        {r.status === 'DRAFT' && can('production', 'Approve') && <button className="ibtn" title="Verify" disabled={actionBusyId === r.id} onClick={() => action(r.id, 'verify')}><span className="material-symbols-rounded">fact_check</span></button>}
+                        {r.status === 'DRAFT' && can('production', 'Cancel') && <button className="ibtn" title="Cancel" disabled={actionBusyId === r.id} onClick={() => action(r.id, 'cancel')}><span className="material-symbols-rounded">block</span></button>}
                         {can('production', 'Edit') && <button className="ibtn" title="Edit" onClick={() => { setForm(r as unknown as Record<string, unknown>); setEditId(r.id); setTab('form'); }}><span className="material-symbols-rounded">edit</span></button>}
                         {r.status === 'DRAFT' && can('production', 'Delete') && <button className="ibtn danger" title="Delete" onClick={() => setDeleteTarget(r)}><span className="material-symbols-rounded">delete</span></button>}
                       </td>

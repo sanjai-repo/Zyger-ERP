@@ -57,6 +57,7 @@ export default function ProductionLogScreen() {
   const [deleteTarget, setDeleteTarget] = useState<LogSheet | null>(null);
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
+  const [actionBusyId, setActionBusyId] = useState<number | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loadingActs, setLoadingActs] = useState(false);
@@ -125,8 +126,11 @@ export default function ProductionLogScreen() {
   };
 
   const action = async (id: number, act: string) => {
+    if (actionBusyId !== null) return;
+    setActionBusyId(id);
     try { await apiClient.post(`/v1/production/log-sheets/${id}/actions/${act}`); toast(`Log sheet ${act}.`); load(); }
     catch (e) { toast(getApiErrorMessage(e, 'Action failed.'), 'error'); }
+    setActionBusyId(null);
   };
 
   const loadActivities = async (id: number) => {
@@ -247,9 +251,9 @@ export default function ProductionLogScreen() {
                         <td>{r.shiftCode ?? '-'}</td>
                         <td><StatusBadge status={r.status} variant={SC} /></td>
                         <td>
-                          {r.status === 'DRAFT' && can('production', 'Approve') && <button className="ibtn" title="Verify" onClick={(e) => { e.stopPropagation(); action(r.id, 'verify'); }}><span className="material-symbols-rounded">fact_check</span></button>}
-                          {r.status === 'VERIFIED' && can('production', 'Approve') && <button className="ibtn" title="Close" onClick={(e) => { e.stopPropagation(); action(r.id, 'close'); }}><span className="material-symbols-rounded">lock</span></button>}
-                          {r.status !== 'CLOSED' && can('production', 'Cancel') && <button className="ibtn" title="Cancel" onClick={(e) => { e.stopPropagation(); action(r.id, 'cancel'); }}><span className="material-symbols-rounded">block</span></button>}
+                          {r.status === 'DRAFT' && can('production', 'Approve') && <button className="ibtn" title="Verify" disabled={actionBusyId === r.id} onClick={(e) => { e.stopPropagation(); action(r.id, 'verify'); }}><span className="material-symbols-rounded">fact_check</span></button>}
+                          {r.status === 'VERIFIED' && can('production', 'Approve') && <button className="ibtn" title="Close" disabled={actionBusyId === r.id} onClick={(e) => { e.stopPropagation(); action(r.id, 'close'); }}><span className="material-symbols-rounded">lock</span></button>}
+                          {r.status !== 'CLOSED' && can('production', 'Cancel') && <button className="ibtn" title="Cancel" disabled={actionBusyId === r.id} onClick={(e) => { e.stopPropagation(); action(r.id, 'cancel'); }}><span className="material-symbols-rounded">block</span></button>}
                           {can('production', 'Edit') && <button className="ibtn" title="Edit" onClick={(e) => { e.stopPropagation(); setForm(r as unknown as Record<string, unknown>); setEditId(r.id); setTab('form'); }}><span className="material-symbols-rounded">edit</span></button>}
                           <button className="ibtn" title="Print" onClick={(e) => { e.stopPropagation(); printDocument(r.id, 'print'); }}><span className="material-symbols-rounded">print</span></button>
                           <button className="ibtn" title="Download PDF" onClick={(e) => { e.stopPropagation(); printDocument(r.id, 'download'); }}><span className="material-symbols-rounded">download</span></button>

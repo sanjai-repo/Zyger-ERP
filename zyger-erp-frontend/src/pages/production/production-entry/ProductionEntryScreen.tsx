@@ -20,6 +20,7 @@ import ProductionSummaryReportModal from './ProductionSummaryReportModal';
 interface ProductionEntryItem {
   id?: number;
   entryNumber?: string;
+  version?: number;
   entryType?: string;
   productionType?: string;
   supervisorCode?: string;
@@ -66,6 +67,20 @@ interface ProductionEntryItem {
   reworkReasons?: ReworkReasonItem[];
   materials?: Array<{ rmCode: string; reqQty: number; totalIssuedQty: number; availableQty: number; consumedQty: number; scrapQty: number; rpQty: number; deviationQty: number; returnQty: number; rate: number; batchNumber: string }>;
   batchAllocations?: Array<{ batchNumber: string; allocatedQty: number; warehouseCode?: string; batchType?: string }>;
+  additionalOutputs?: AdditionalOutput[];
+}
+
+export interface AdditionalOutput {
+  id?: number;
+  outputType: 'CO_PRODUCT' | 'BY_PRODUCT';
+  itemCode: string;
+  itemName?: string;
+  uom?: string;
+  location?: string;
+  quantity: number;
+  weight?: number;
+  destinationStageCode?: string;
+  remarks?: string;
 }
 
 interface MasterOption { id: number; code: string; name?: string; }
@@ -155,9 +170,9 @@ export default function ProductionEntryScreen() {
   const fetchMasters = useCallback(async () => {
     try {
       const [mRes, sRes, uRes] = await Promise.allSettled([
-        apiClient.get('/api/master/machines', { params: { size: 200 } }),
-        apiClient.get('/api/v2/master/shifts').catch(() => ({ data: [] })),
-        apiClient.get('/api/auth/signup').catch(() => ({ data: [] })),
+        apiClient.get('/master/machines', { params: { size: 200 } }),
+        apiClient.get('/master/shifts', { params: { size: 100 } }).catch(() => ({ data: [] })),
+        apiClient.get('/master/users', { params: { size: 200 } }).catch(() => ({ data: [] })),
       ]);
       if (mRes.status === 'fulfilled') {
         const list = Array.isArray(mRes.value.data) ? mRes.value.data : mRes.value.data.content ?? [];
@@ -238,6 +253,55 @@ export default function ProductionEntryScreen() {
     toast('Added operation entry to transaction summary.');
   };
 
+  // --- P8 Capability A: Additional (co/by-product) outputs (FR-PROD-ENTRY-003) --//
+  const additionalOutputs = form.additionalOutputs ?? [];
+
+  const addAdditionalOutput = () => {
+    const lines = [...additionalOutputs, { outputType: 'CO_PRODUCT' as const, itemCode: '', location: 'STORE', quantity: 0 }];
+    set('additionalOutputs', lines);
+  };
+
+  const updateAdditionalOutput = (idx: number, field: keyof AdditionalOutput, v: unknown) => {
+    const lines = additionalOutputs.map((line, i) => (i === idx ? { ...line, [field]: v } : line));
+    set('additionalOutputs', lines);
+  };
+
+  const removeAdditionalOutput = (idx: number) => {
+    set('additionalOutputs', additionalOutputs.filter((_, i) => i !== idx));
+  };
+
+  const validateAdditionalOutputs = () => {
+    if (additionalOutputs.length === 0) return true;
+    const seen = new Set<string>();
+    for (let i = 0; i < additionalOutputs.length; i++) {
+      const line = additionalOutputs[i];
+      if (!line.itemCode || !line.itemCode.trim()) {
+        toast(`Additional output line ${i + 1}: Item Code is mandatory.`, 'error');
+        return false;
+      }
+      const qty = Number(line.quantity ?? 0);
+      if (!(qty > 0)) {
+        toast(`Additional output line ${i + 1}: Quantity must be greater than zero.`, 'error');
+        return false;
+      }
+      if (!line.location || !line.location.trim()) {
+        toast(`Additional output line ${i + 1}: Location is mandatory.`, 'error');
+        return false;
+      }
+      if (Number(line.weight ?? 0) < 0) {
+        toast(`Additional output line ${i + 1}: Weight cannot be negative.`, 'error');
+        return false;
+      }
+      const key = `${line.outputType}|${line.itemCode.trim()}|${line.location.trim()}`;
+      if (seen.has(key)) {
+        toast(`Additional output line ${i + 1}: Duplicate (type, item, location) is not allowed.`, 'error');
+        return false;
+      }
+      seen.add(key);
+    }
+    return true;
+  };
+
   const save = async (actionStatus: 'DRAFT' | 'POSTED' = 'DRAFT') => {
     if (!form.productionType) { toast('Production Type is mandatory (V-01).', 'error'); return; }
     if (!form.supervisorCode) { toast('Supervisor is mandatory (V-02).', 'error'); return; }
@@ -261,12 +325,19 @@ export default function ProductionEntryScreen() {
       return;
     }
 
+    if (!validateAdditionalOutputs()) return;
+
+    const payload: Record<string, unknown> = {
+      ...form,
+      version: editId ? (form.version ?? undefined) : undefined,
+    };
+
     if (!navigator.onLine) {
       const id = await enqueue({
         type: 'production-entry',
         endpoint: editId ? `/v1/production/entries/${editId}` : '/v1/production/entries',
         method: editId ? 'PUT' : 'POST',
-        body: form as Record<string, unknown>,
+        body: payload,
       });
       toast(`Queued for sync (${id.id}). Will submit when online.`, 'success');
       setForm({}); setEditId(null); setTab('list');
@@ -277,11 +348,11 @@ export default function ProductionEntryScreen() {
     try {
       let result: ProductionEntryItem;
       if (editId) {
-        const { data } = await apiClient.put(`/v1/production/entries/${editId}`, form);
+        const { data } = await apiClient.put(`/v1/production/entries/${editId}`, payload);
         result = data;
         toast('Production Entry draft updated.');
       } else {
-        const { data } = await apiClient.post('/v1/production/entries', form);
+        const { data } = await apiClient.post('/v1/production/entries', payload);
         result = data;
         toast('Production Entry created.');
       }
@@ -540,6 +611,53 @@ export default function ProductionEntryScreen() {
             </div>
           </div>
 
+          {/* 3A. Additional Outputs (P8 Capability A — FR-PROD-ENTRY-003) */}
+          <div style={{ background: '#f8fafc', padding: 16, borderRadius: 8, border: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#334155' }}>
+                3A. Additional Outputs (Co/By-Products) {' '}
+                <span style={{ fontWeight: 400, fontSize: 12, color: '#64748b' }}>Optional — records co-part / swarf / by-product output of this operation (recording only, no stock posting)</span>
+              </h4>
+              <button className="btn btn-sm" type="button" onClick={addAdditionalOutput}>+ Add Output</button>
+            </div>
+
+            {additionalOutputs.length === 0 ? (
+              <div style={{ padding: '10px 12px', fontSize: 13, color: '#94a3b8', background: '#fff', borderRadius: 6, border: '1px dashed #cbd5e1' }}>
+                No additional outputs. A machining operation that yields only the primary part stays single-output.
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      <th>Type</th><th>Item Code *</th><th>Quantity *</th><th>Location *</th><th>Weight</th><th>UoM</th><th>Dest. Stage</th><th>Remarks</th><th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {additionalOutputs.map((line, idx) => (
+                      <tr key={idx}>
+                        <td>
+                          <select className="in" value={line.outputType} onChange={(e) => updateAdditionalOutput(idx, 'outputType', e.target.value)}>
+                            <option value="CO_PRODUCT">CO_PRODUCT</option>
+                            <option value="BY_PRODUCT">BY_PRODUCT</option>
+                          </select>
+                        </td>
+                        <td><input className="in" placeholder="Item Code" value={String(line.itemCode ?? '')} onChange={(e) => updateAdditionalOutput(idx, 'itemCode', e.target.value)} /></td>
+                        <td><input className="in" type="number" value={String(line.quantity ?? '')} onChange={(e) => updateAdditionalOutput(idx, 'quantity', Number(e.target.value))} /></td>
+                        <td><input className="in" value={String(line.location ?? 'STORE')} onChange={(e) => updateAdditionalOutput(idx, 'location', e.target.value)} /></td>
+                        <td><input className="in" type="number" value={String(line.weight ?? '')} onChange={(e) => updateAdditionalOutput(idx, 'weight', Number(e.target.value))} /></td>
+                        <td><input className="in" value={String(line.uom ?? '')} onChange={(e) => updateAdditionalOutput(idx, 'uom', e.target.value)} /></td>
+                        <td><input className="in" placeholder="Next op / FG / SFG" value={String(line.destinationStageCode ?? '')} onChange={(e) => updateAdditionalOutput(idx, 'destinationStageCode', e.target.value)} /></td>
+                        <td><input className="in" value={String(line.remarks ?? '')} onChange={(e) => updateAdditionalOutput(idx, 'remarks', e.target.value)} /></td>
+                        <td><button className="ibtn danger" title="Remove output" onClick={() => removeAdditionalOutput(idx)}><span className="material-symbols-rounded">delete</span></button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
           {/* 3.5 Added Items / Posting Summary Grid */}
           <div style={{ background: '#f8fafc', padding: 16, borderRadius: 8, border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -656,7 +774,7 @@ export default function ProductionEntryScreen() {
                       <td>{r.partCode}</td>
                       <td>{r.machineCode ?? '-'}</td>
                       <td>{r.operatorCode ?? '-'}</td>
-                      <td>{r.processQty || r.producedQuantity}</td>
+                      <td>{r.processQty || r.producedQuantity}{Array.isArray(r.additionalOutputs) && r.additionalOutputs.length > 0 && <span style={{ display: 'inline-flex', marginLeft: 6, padding: '1px 6px', fontSize: 11, borderRadius: 8, background: '#ede9fe', color: '#6d28d9' }}>{r.additionalOutputs.length} addl.</span>}</td>
                       <td style={{ color: '#22c55e', fontWeight: 600 }}>{r.goodQuantity}</td>
                       <td style={{ color: Number(r.scrapQuantity) > 0 ? '#ef4444' : undefined }}>{r.scrapQuantity}</td>
                       <td><StatusBadge status={r.status || 'DRAFT'} variant={SC} /></td>

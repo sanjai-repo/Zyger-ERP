@@ -11,7 +11,7 @@ export default function LoginPage() {
   const [mounted, setMounted] = useState(false);
 
   // Company logo & name state
-  const [companyLogoUrl, setCompanyLogoUrl] = useState<string | null>(null);
+  const [companyLogoUrl, setCompanyLogoUrl] = useState<string>('/Zyger_Logo.svg');
   const [companyName, setCompanyName] = useState<string>('Zyger ERP');
   const [logoError, setLogoError] = useState<boolean>(false);
 
@@ -42,7 +42,6 @@ export default function LoginPage() {
   useEffect(() => {
     const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
     const cleanBase = baseUrl.replace(/\/$/, '');
-    const directLogoUrl = `${cleanBase}/master/company-info/logo/company`;
 
     // Ensure favicon element exists in head
     let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
@@ -51,8 +50,7 @@ export default function LoginPage() {
       link.rel = 'icon';
       document.head.appendChild(link);
     }
-    link.href = directLogoUrl;
-    setCompanyLogoUrl(directLogoUrl);
+    link.href = '/favicon.svg';
 
     // Fetch company info to check for specific companyLogoUrl and name
     fetch(`${cleanBase}/master/company-info`)
@@ -68,7 +66,7 @@ export default function LoginPage() {
         }
       })
       .catch(() => {
-        // Fallback to direct endpoint URL
+        // Fallback to default /Zyger_Logo.svg and /favicon.svg
       });
   }, []);
 
@@ -501,18 +499,12 @@ export default function LoginPage() {
         <div className="lgp-blue-panel">
           {/* Logo Container — Displays full uncropped company logo without radius clipping */}
           <div className="lgp-logo-container">
-            {companyLogoUrl && !logoError ? (
-              <img
-                src={companyLogoUrl}
-                alt={companyName}
-                className="lgp-logo-img"
-                onError={() => setLogoError(true)}
-              />
-            ) : (
-              <div className="lgp-logo-fallback-badge">
-                <span className="material-symbols-rounded lgp-logo-icon">rocket_launch</span>
-              </div>
-            )}
+            <img
+              src={companyLogoUrl && !logoError ? companyLogoUrl : '/Zyger_Logo.svg'}
+              alt={companyName}
+              className="lgp-logo-img"
+              onError={() => setLogoError(true)}
+            />
           </div>
 
           <div className="lgp-hero-title">Welcome to</div>

@@ -1,0 +1,82 @@
+# ===================================================================
+# Zyger ERP — Staging profile
+# Production-like, isolated staging environment.
+# - Never seeds demo data (seeding is restricted to the dev profile)
+# - Flyway owns the schema (baseline migration); Hibernate validates only
+# - Secrets come exclusively from environment variables
+# - Restricted actuator exposure and safe error responses
+# ===================================================================
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: false
+        use_sql_comments: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-start: true
+    baseline-version: 0
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:20}
+      minimum-idle: ${DB_POOL_MIN_IDLE:4}
+      idle-timeout: 300000
+      connection-timeout: 20000
+      max-lifetime: 1200000
+      leak-detection-threshold: 60000
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+server:
+  port: ${SERVER_PORT:9090}
+  shutdown: graceful
+  tomcat:
+    threads:
+      max: ${TOMCAT_MAX_THREADS:200}
+      min-spare: ${TOMCAT_MIN_SPARE:10}
+    max-connections: ${TOMCAT_MAX_CONNECTIONS:10000}
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/css,text/javascript
+    min-response-size: 1024
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+  forward-headers-strategy: framework
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+  health:
+    mail:
+      enabled: false
+app:
+  jwt:
+    secret: ${JWT_SECRET}
+    expiration-ms: ${JWT_EXPIRATION_MS:3600000}
+  cors:
+    allowed-origins: ${CORS_ORIGINS}
+  security:
+    hidden-admin-password: ${HIDDEN_ADMIN_PASSWORD}
+    password-min-length: ${PASSWORD_MIN_LENGTH:8}
+    max-login-attempts: ${MAX_LOGIN_ATTEMPTS:5}
+    lockout-minutes: ${LOCKOUT_MINUTES:15}
+logging:
+  level:
+    root: INFO
+    in.zygertechnology: INFO
+    org.springframework.security: WARN
+    org.springframework.web: WARN
+    org.hibernate.SQL: WARN

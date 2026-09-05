@@ -983,14 +983,13 @@ public class QualityInspectionService {
     }
 
     private boolean hasScar(QualityInspection ins) {
-        try {
-            Long count = em.createQuery(
-                            "select count(s) from QualityScar s where s.inspectionId = :id", Long.class)
-                    .setParameter("id", ins.getId()).getSingleResult();
-            return count != null && count > 0;
-        } catch (Exception ex) {
-            return false;
-        }
+        // Fail-closed: a database failure must never be interpreted as "no SCAR exists",
+        // which would create a duplicate SCAR for the same inspection on retry. The error
+        // propagates into autoCreateScar's controlled catch boundary (log + skip).
+        Long count = em.createQuery(
+                        "select count(s) from QualityScar s where s.inspectionId = :id", Long.class)
+                .setParameter("id", ins.getId()).getSingleResult();
+        return count != null && count > 0;
     }
 
     /** Best-effort supplier resolution for the SCAR: [supplierCode, supplierName]. */

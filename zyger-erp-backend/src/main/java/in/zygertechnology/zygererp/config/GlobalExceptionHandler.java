@@ -64,7 +64,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessRuleException.class)
     public ProblemDetail handleBusinessRule(BusinessRuleException ex) {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(
-                HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+                HttpStatus.UNPROCESSABLE_CONTENT, ex.getMessage());
         pd.setTitle("Business Rule Violation");
         pd.setType(URI.create("/errors/business-rule"));
         pd.setProperty("code", ex.getRuleCode());

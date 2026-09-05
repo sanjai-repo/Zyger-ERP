@@ -2,8 +2,6 @@ plugins {
 	id 'java'
 	id 'org.springframework.boot' version '4.1.0'
 	id 'io.spring.dependency-management' version '1.1.7'
-	id 'com.github.johnrengelman.shadow' version '8.1.1'
-
 }
 
 group = 'in.zygertechnology'
@@ -19,10 +17,8 @@ compileJava {
 	options.compilerArgs += '-parameters'
 }
 
-shadowJar {
-	manifest {
-		attributes 'Main-Class': 'in/zygertechnology/zygererp/ZygererpApplication.java'
-	}
+tasks.named('bootJar') {
+	archiveFileName = 'app.jar'
 }
 
 repositories {
@@ -40,7 +36,7 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'io.micrometer:micrometer-registry-prometheus'
 	implementation 'com.github.ben-manes.caffeine:caffeine'
-	implementation 'org.flywaydb:flyway-core'
+	implementation 'org.springframework.boot:spring-boot-starter-flyway'
 	runtimeOnly   'org.flywaydb:flyway-database-postgresql'
 
 	implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
@@ -68,4 +64,8 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	// The Testcontainers-backed integration suite spawns one PostgreSQL container per
+	// Spring context plus a static container per test class; the Gradle-default 512m
+	// test worker heap OOMs when the whole suite runs in a single fork, so raise it.
+	maxHeapSize = '2g'
 }

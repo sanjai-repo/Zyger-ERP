@@ -1,6 +1,6 @@
 // src/config/screenRegistry.tsx
 import { lazy } from 'react';
-import type { ComponentType, ReactNode } from 'react';
+import type { ComponentType } from 'react';
 import ModulePlaceholder from '../components/common/ModulePlaceholder';
 import ErrorBoundary from '../components/common/ErrorBoundary';
 
@@ -119,13 +119,24 @@ const GapAnalysisScreen = lazy(() => import('../pages/planning/gap-analysis/GapA
 const CostEstimationScreen = lazy(() => import('../pages/planning/cost-estimation/CostEstimationScreen'));
 const FgPossibleScreen = lazy(() => import('../pages/planning/fg-possible/FgPossibleScreen'));
 const JobCardScreen = lazy(() => import('../pages/production/job-card/JobCardScreen'));
+const ProductionOrderScreen = lazy(() => import('../pages/production/order/ProductionOrderScreen'));
 const JobCardKanban = lazy(() => import('../pages/production/kanban/JobCardKanban'));
 const ProductionEntryScreen = lazy(() => import('../pages/production/production-entry/ProductionEntryScreen'));
 const ProductConversionScreen = lazy(() => import('../pages/production/product-conversion/ProductConversionScreen'));
 const ProductionReturnScreen = lazy(() => import('../pages/production/production-return/ProductionReturnScreen'));
+const ProductionRejectionsScreen = lazy(() => import('../pages/production/disposition/ProductionDispositionScreen').then((m) => ({ default: m.ProductionRejectionsScreen })));
+const ProductionScrapsScreen = lazy(() => import('../pages/production/disposition/ProductionDispositionScreen').then((m) => ({ default: m.ProductionScrapsScreen })));
+const ProductionReworksScreen = lazy(() => import('../pages/production/disposition/ProductionDispositionScreen').then((m) => ({ default: m.ProductionReworksScreen })));
+const BatchCardScreen = lazy(() => import('../pages/production/batch-card/BatchCardScreen'));
+const ProductionQualityGateScreen = lazy(() => import('../pages/production/quality-gate/ProductionQualityGateScreen'));
+const MaterialRequestScreen = lazy(() => import('../pages/production/material-request/MaterialRequestScreen'));
+const ConsumptionScreen = lazy(() => import('../pages/production/consumption/ConsumptionScreen'));
 const ProductionLogScreen = lazy(() => import('../pages/production/production-log/ProductionLogScreen'));
 const IdleTimeScreen = lazy(() => import('../pages/production/idle-time/IdleTimeScreen'));
 const ProductionPendingScreen = lazy(() => import('../pages/production/production-pending/ProductionPendingScreen'));
+const ProductionReportsScreen = lazy(() => import('../pages/production/reports/ProductionReportsScreen'));
+const ProductionOutputScreen = lazy(() => import('../pages/production/reports/ProductionOutputScreen'));
+const ProductionRejectionScreen = lazy(() => import('../pages/production/reports/ProductionRejectionScreen'));
 const MaintenanceDashboard = lazy(() => import('../pages/maintenance/dashboard/MaintenanceDashboard'));
 const MaintenanceMastersPage = lazy(() => import('../pages/maintenance/masters/MaintenanceMastersPage'));
 const BreakdownIntimationScreen = lazy(() => import('../pages/maintenance/breakdown/BreakdownIntimationScreen'));
@@ -282,13 +293,24 @@ export const SCREEN_REGISTRY: Record<string, ScreenDefinition> = Object.fromEntr
     'cost-estimation': CostEstimationScreen,
     'fg-possible': FgPossibleScreen,
     'job-card': JobCardScreen,
+    'production-order': ProductionOrderScreen,
     'job-card-kanban': JobCardKanban,
     'production-entry': ProductionEntryScreen,
     'product-conversion': ProductConversionScreen,
     'production-return': ProductionReturnScreen,
+    'production-rejections': ProductionRejectionsScreen,
+    'production-scraps': ProductionScrapsScreen,
+    'production-reworks': ProductionReworksScreen,
+    'batch-card': BatchCardScreen,
+    'production-quality-gate': ProductionQualityGateScreen,
+    'material-request': MaterialRequestScreen,
+    'consumption': ConsumptionScreen,
     'production-log': ProductionLogScreen,
     'idle-time': IdleTimeScreen,
     'production-pending': ProductionPendingScreen,
+    'production-reports': ProductionReportsScreen,
+    'production-output': ProductionOutputScreen,
+    'production-rejection': ProductionRejectionScreen,
     'maintenance-dashboard': MaintenanceDashboard,
     'maintenance-masters': MaintenanceMastersPage,
     'breakdown-intimation': BreakdownIntimationScreen,

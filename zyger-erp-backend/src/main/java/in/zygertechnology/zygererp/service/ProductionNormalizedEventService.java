@@ -56,6 +56,10 @@ public class ProductionNormalizedEventService {
     public static final String OUT_REWORK = "REWORK";
     public static final String OUT_SCRAP = "SCRAP";
 
+    /** P8 Capability A — additional (co/by-product) output categories (FR-PROD-ENTRY-003). */
+    public static final String OUT_CO_PRODUCT = "CO_PRODUCT";
+    public static final String OUT_BY_PRODUCT = "BY_PRODUCT";
+
     public static final String LOCATION_STORE = "STORE";
 
     private final ProductionNormalizedOpsProperties properties;
@@ -125,6 +129,7 @@ public class ProductionNormalizedEventService {
         putOutput(session, op, entry, OUT_REJECTED, entry.getRejectedQuantity(), firstRejectionReason(entry), true);
         putOutput(session, op, entry, OUT_REWORK, entry.getReworkQuantity(), firstReworkReason(entry), true);
         putOutput(session, op, entry, OUT_SCRAP, entry.getScrapQuantity(), null, true);
+        projectAdditionalOutputs(session, op, entry);
     }
 
     private void projectReverse(ProductionEntry reversal, String actor) {
@@ -137,6 +142,59 @@ public class ProductionNormalizedEventService {
         putOutput(session, op, reversal, OUT_REJECTED, reversal.getRejectedQuantity(), firstRejectionReason(reversal), true);
         putOutput(session, op, reversal, OUT_REWORK, reversal.getReworkQuantity(), firstReworkReason(reversal), true);
         putOutput(session, op, reversal, OUT_SCRAP, reversal.getScrapQuantity(), null, true);
+        projectAdditionalOutputs(session, op, reversal);
+    }
+
+    /**
+     * P8 Capability A — mirror each additional (co/by-product) output of the authority
+     * entry as its own {@code prod_output_event} row. Natural key
+     * (session, operation, output_type, item_code, location) keeps replay idempotent;
+     * QUANTITY is taken verbatim (the reversal carries negated quantities, so the
+     * compensating projection fully offsets the original rows). Recording-only rows:
+     * never touch StockService, never enter the primary WIP contract (CLAR-002).
+     */
+    private void projectAdditionalOutputs(ProdExecutionSession session, ProdOperationEvent op, ProductionEntry entry) {
+        if (session == null || op == null) {
+            return;
+        }
+        List<ProductionEntryOutput> outputs = entry.getAdditionalOutputs();
+        if (outputs == null || outputs.isEmpty()) {
+            return;
+        }
+        for (ProductionEntryOutput o : outputs) {
+            if (o == null || o.getItemCode() == null || o.getItemCode().isBlank()) {
+                continue;
+            }
+            String type = o.getOutputType();
+            if (!OUT_CO_PRODUCT.equals(type) && !OUT_BY_PRODUCT.equals(type)) {
+                continue;
+            }
+            String location = o.getLocation() != null && !o.getLocation().isBlank() ? o.getLocation() : LOCATION_STORE;
+            if (o.getQuantity() == null || o.getQuantity().signum() == 0) {
+                continue; // zero-quantity outputs are not projected (committed behavior)
+            }
+            Optional<ProdOutputEvent> existing =
+                    outputRepo.findBySessionIdAndOperationEventIdAndOutputTypeAndItemCodeAndLocation(
+                            session.getId(), op.getId(), type, o.getItemCode(), location);
+            if (existing.isPresent()) {
+                continue; // already projected for this natural key
+            }
+            ProdOutputEvent out = ProdOutputEvent.builder()
+                    .session(session)
+                    .operationEvent(op)
+                    .outputType(type)
+                    .itemCode(o.getItemCode())
+                    .location(location)
+                    .quantity(o.getQuantity())
+                    .reasonCode(null)
+                    .createdAt(Instant.now())
+                    .build();
+            try {
+                outputRepo.saveAndFlush(out);
+            } catch (DataIntegrityViolationException e) {
+                // duplicate natural key from a concurrent emission — idempotent skip
+            }
+        }
     }
 
     // --- session (UNIQUE natural key: entry_number) ----------------------------

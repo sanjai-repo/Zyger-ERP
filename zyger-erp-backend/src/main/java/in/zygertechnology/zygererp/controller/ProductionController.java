@@ -5,10 +5,12 @@ import in.zygertechnology.zygererp.repo.*;
 import in.zygertechnology.zygererp.service.DocNumberService;
 import in.zygertechnology.zygererp.service.PrintService;
 import in.zygertechnology.zygererp.service.StockService;
+import in.zygertechnology.zygererp.service.ProductionNormalizedEventService;
 import in.zygertechnology.zygererp.repo.ItemRepository;
 import in.zygertechnology.zygererp.repo.MachineMasterRepository;
 import in.zygertechnology.zygererp.security.RequirePermission;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -29,6 +31,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @RestController
 @RequirePermission(module = "PRODUCTION", screen = "*", action = "VIEW")
 @RequiredArgsConstructor
@@ -52,516 +55,95 @@ public class ProductionController {
     private final MachineMasterRepository machines;
     private final PrintService printer;
     @Lazy private final StockService stockService;
+    private final in.zygertechnology.zygererp.service.ProductionJobCardService jobCardService;
     private final jakarta.persistence.EntityManager em;
     private final in.zygertechnology.zygererp.service.WorkflowStateMachine stateMachine;
     private final in.zygertechnology.zygererp.service.ProductionRollupService rollupService;
     private final in.zygertechnology.zygererp.service.ProductionEntryValidationService entryValidator;
     private final PostingIdempotencyKeyRepository idempotencyKeys;
     private final ProductionEntryAuditLogRepository auditLogs;
+    private final in.zygertechnology.zygererp.service.ProductionNormalizedEventService normalizedEvents;
+    private final in.zygertechnology.zygererp.service.ProductionQualityGateService qualityGate;
+    private final in.zygertechnology.zygererp.service.ProductionReturnService productionReturnService;
+    private final in.zygertechnology.zygererp.service.ProductConversionService productConversionService;
 
     private static String principalName(Principal p) { return p != null ? p.getName() : "system"; }
+
+    private static <T> List<T> copyFresh(List<T> list) {
+        return list == null ? null : new ArrayList<>(list);
+    }
 
     // ===========================
     // ---- JOB CARD -------------
     // ===========================
 
     @GetMapping("/api/v1/production/job-cards")
-    public List<JobCard> listJobCards() { return jobCards.findAll(); }
+    public List<JobCard> listJobCards() { return jobCardService.listJobCards(); }
 
     @PostMapping("/api/v1/production/job-cards")
     public JobCard createJobCard(@RequestBody JobCard jc, Principal p) {
-        jc.setId(null);
-        // Validate FK references
-        if (jc.getWorkOrderNumber() != null && !jc.getWorkOrderNumber().isBlank()) {
-            List<WorkOrder> woList = workOrders.findByWoNumber(jc.getWorkOrderNumber());
-            if (woList.isEmpty()) throw new RuntimeException("Work Order not found: " + jc.getWorkOrderNumber());
-        }
-        if (jc.getPartCode() != null && !jc.getPartCode().isBlank()) {
-            if (!items.existsByCode(jc.getPartCode())) {
-                throw new RuntimeException("Item code '" + jc.getPartCode() + "' does not exist");
-            }
-        }
-        jc.setJobCardNumber(numbers.next("job-card", "JCF"));
-        if (jc.getPlannedQuantity() == null) jc.setPlannedQuantity(BigDecimal.ZERO);
-        if (jc.getCompletedQuantity() == null) jc.setCompletedQuantity(BigDecimal.ZERO);
-        if (jc.getReworkQuantity() == null) jc.setReworkQuantity(BigDecimal.ZERO);
-        if (jc.getRejectedQuantity() == null) jc.setRejectedQuantity(BigDecimal.ZERO);
-        if (jc.getScrapQuantity() == null) jc.setScrapQuantity(BigDecimal.ZERO);
-        if (jc.getStatus() == null) jc.setStatus("DRAFT");
-        jc.setCreatedBy(principalName(p));
-        jc.setCreatedAt(Instant.now());
-        return jobCards.save(jc);
+        return jobCardService.createJobCard(jc, p);
     }
 
     @PostMapping("/api/v1/production/job-cards/from-work-order")
     public JobCard createFromWorkOrder(@RequestBody Map<String, Object> body, Principal p) {
-        String woNumber = (String) body.get("workOrderNumber");
-        if (woNumber == null || woNumber.isBlank()) throw new RuntimeException("Work Order Number is required");
-
-        // Try by woNumber first, then by docNo
-        List<WorkOrder> woList = workOrders.findByWoNumber(woNumber);
-        if (woList.isEmpty()) {
-            // Try looking up by the document number in the generic doc system
-            woList = workOrders.findAll().stream()
-                .filter(w -> woNumber.equalsIgnoreCase(w.getWoNumber()) || woNumber.equalsIgnoreCase(w.getDocNo()))
-                .collect(Collectors.toList());
-        }
-        if (woList.isEmpty()) throw new RuntimeException("Work Order not found: " + woNumber);
-        WorkOrder wo = woList.get(0);
-
-        if ("DRAFT".equals(wo.getStatus())) {
-            wo.setStatus("APPROVED");
-            workOrders.save(wo);
-        } else if (!"APPROVED".equals(wo.getStatus()) && !"RELEASED".equals(wo.getStatus())) {
-            throw new RuntimeException("Work Order must be DRAFT, APPROVED or RELEASED. Current status: " + wo.getStatus());
-        }
-
-        JobCard jc = new JobCard();
-        jc.setJobCardNumber(numbers.next("job-card", "JCF"));
-        jc.setWorkOrderNumber(wo.getDocNo() != null ? wo.getDocNo() : wo.getWoNumber());
-        jc.setPartCode(wo.getItemCode());
-        jc.setPartDescription(wo.getItemCode());
-        jc.setRevision(wo.getItemRevision());
-        jc.setPlannedQuantity(wo.getOrderQuantity());
-        jc.setPriority(wo.getPriority() != null ? wo.getPriority() : "MEDIUM");
-        if (wo.getPlannedStartDate() != null) jc.setPlannedStartDate(wo.getPlannedStartDate().atStartOfDay(ZoneId.systemDefault()).toInstant());
-        if (wo.getDueDate() != null) jc.setPlannedEndDate(wo.getDueDate().atStartOfDay(ZoneId.systemDefault()).toInstant());
-        jc.setCustomerCode(wo.getCustomerCode());
-        jc.setCompletedQuantity(BigDecimal.ZERO);
-        jc.setReworkQuantity(BigDecimal.ZERO);
-        jc.setRejectedQuantity(BigDecimal.ZERO);
-        jc.setScrapQuantity(BigDecimal.ZERO);
-        jc.setStatus("DRAFT");
-
-        // Link BOM and Route
-        if (wo.getRouteId() != null) {
-            routeSheets.findById(wo.getRouteId()).ifPresent(route -> {
-                jc.setRouteSheetNumber(route.getRouteNumber());
-            });
-        }
-        if (wo.getBomId() != null) {
-            productionBoms.findById(wo.getBomId()).ifPresent(bom -> {
-                jc.setBomNumber(bom.getBomNumber());
-            });
-        }
-
-        jc.setCreatedBy(principalName(p));
-        jc.setCreatedAt(Instant.now());
-        JobCard saved = jobCards.save(jc);
-
-        // Auto-create subjobs from Route Sheet operations
-        if (wo.getRouteId() != null) {
-            routeSheets.findById(wo.getRouteId()).ifPresent(route -> {
-                int seqNo = 1;
-                for (RouteOperation op : route.getOperations()) {
-                    JobCardSubjob sub = new JobCardSubjob();
-                    sub.setJobCard(saved);
-                    sub.setSubjobNumber(saved.getJobCardNumber() + "-S" + String.format("%02d", seqNo));
-                    sub.setOperationCode(op.getOperationCode());
-                    sub.setOperationDescription(op.getOperationDescription());
-                    sub.setSequenceNo(op.getSequenceNo() != null ? op.getSequenceNo() : seqNo);
-                    sub.setMachineCode(op.getMachineCode());
-                    sub.setWorkCenterCode(op.getWorkCenterCode());
-                    sub.setPlannedQuantity(saved.getPlannedQuantity());
-                    sub.setCompletedQuantity(BigDecimal.ZERO);
-                    sub.setReworkQuantity(BigDecimal.ZERO);
-                    sub.setRejectedQuantity(BigDecimal.ZERO);
-                    sub.setScrapQuantity(BigDecimal.ZERO);
-                    sub.setStatus("PENDING");
-                    sub.setInspectionRequired(op.isInspectionRequired());
-                    sub.setCreatedAt(Instant.now());
-                    jobCardSubjobs.save(sub);
-                    seqNo++;
-                }
-            });
-        }
-
-        return jobCards.findById(saved.getId()).orElse(saved);
+        return jobCardService.createFromWorkOrder(body, p);
     }
 
     @GetMapping("/api/v1/production/job-cards/{id}")
     public JobCard getJobCard(@PathVariable Long id) {
-        return jobCards.findById(id).orElseThrow(() -> new RuntimeException("Job Card not found"));
+        return jobCardService.getJobCard(id);
     }
 
     @PutMapping("/api/v1/production/job-cards/{id}")
     public JobCard updateJobCard(@PathVariable Long id, @RequestBody JobCard jc, Principal p) {
-        JobCard e = jobCards.findById(id).orElseThrow(() -> new RuntimeException("Job Card not found"));
-        if (!"DRAFT".equals(e.getStatus()) && !"ON_HOLD".equals(e.getStatus())) {
-            throw new RuntimeException("Only DRAFT or ON_HOLD job cards can be edited");
-        }
-        jc.setId(id);
-        jc.setJobCardNumber(e.getJobCardNumber());
-        jc.setCreatedAt(e.getCreatedAt());
-        jc.setCreatedBy(e.getCreatedBy());
-        jc.setUpdatedAt(Instant.now());
-        jc.setUpdatedBy(principalName(p));
-        return jobCards.save(jc);
+        return jobCardService.updateJobCard(id, jc, p);
     }
 
     @DeleteMapping("/api/v1/production/job-cards/{id}")
     public void deleteJobCard(@PathVariable Long id) {
-        JobCard e = jobCards.findById(id).orElseThrow(() -> new RuntimeException("Job Card not found"));
-        if (!"DRAFT".equals(e.getStatus())) throw new RuntimeException("Only DRAFT job cards can be deleted");
-        jobCardSubjobs.findByJobCardId(id).forEach(l -> jobCardSubjobs.deleteById(l.getId()));
-        jobCards.deleteById(id);
+        jobCardService.deleteJobCard(id);
     }
 
     @PostMapping("/api/v1/production/job-cards/{id}/actions/{action}")
     public Map<String, Object> jobCardAction(@PathVariable Long id, @PathVariable String action,
                                               @RequestBody(required = false) Map<String, String> body,
                                               Principal p) {
-        JobCard jc = jobCards.findById(id).orElseThrow(() -> new RuntimeException("Job Card not found"));
-        String note = body != null ? body.getOrDefault("note", "") : "";
-        Map<String, Object> result = new LinkedHashMap<>();
-        List<String> errors = new ArrayList<>();
-
-        switch (action.toLowerCase()) {
-            case "approve": {
-                jc.setStatus("APPROVED");
-                break;
-            }
-            case "release": {
-                // Validate: must have subjobs
-                List<JobCardSubjob> subs = jobCardSubjobs.findByJobCardId(id);
-                if (subs.isEmpty()) {
-                    errors.add("Job Card must have at least one subjob/operation before release");
-                }
-                // Validate: BOM and Route should be linked
-                if (jc.getBomNumber() == null || jc.getBomNumber().isBlank()) {
-                    errors.add("Production BOM must be linked before release");
-                }
-                if (jc.getRouteSheetNumber() == null || jc.getRouteSheetNumber().isBlank()) {
-                    errors.add("Route Sheet must be linked before release");
-                }
-                if (!errors.isEmpty()) {
-                    result.put("success", false);
-                    result.put("errors", errors);
-                    return result;
-                }
-                jc.setStatus("RELEASED");
-                jc.setReleaseRemarks(note);
-                break;
-            }
-            case "start": {
-                jc.setStatus("IN_PROGRESS");
-                jc.setActualStartDate(Instant.now());
-                break;
-            }
-            case "hold": {
-                jc.setStatus("ON_HOLD");
-                jc.setHoldReason(note);
-                break;
-            }
-            case "quality-hold": {
-                jc.setStatus("QUALITY_HOLD");
-                jc.setHoldReason(note);
-                break;
-            }
-            case "production-hold": {
-                jc.setStatus("PRODUCTION_HOLD");
-                jc.setHoldReason(note);
-                break;
-            }
-            case "release-hold": {
-                if (!"QUALITY_HOLD".equals(jc.getStatus()) && !"PRODUCTION_HOLD".equals(jc.getStatus())) {
-                    errors.add("Job Card must be on QUALITY_HOLD or PRODUCTION_HOLD to release hold");
-                    result.put("success", false);
-                    result.put("errors", errors);
-                    return result;
-                }
-                jc.setStatus("RELEASED");
-                break;
-            }
-            case "reopen": {
-                if (!"COMPLETED".equals(jc.getStatus())) {
-                    errors.add("Only COMPLETED job cards can be reopened");
-                    result.put("success", false);
-                    result.put("errors", errors);
-                    return result;
-                }
-                jc.setStatus("RELEASED");
-                break;
-            }
-            case "resume": {
-                jc.setStatus("IN_PROGRESS");
-                break;
-            }
-            case "complete": {
-                // Validate all subjobs completed
-                List<JobCardSubjob> subs = jobCardSubjobs.findByJobCardId(id);
-                List<String> incomplete = new ArrayList<>();
-                for (JobCardSubjob s : subs) {
-                    if (!"COMPLETED".equals(s.getStatus())) {
-                        incomplete.add(s.getSubjobNumber() + " (" + s.getOperationCode() + ") - " + s.getStatus());
-                    }
-                }
-                if (!incomplete.isEmpty()) {
-                    errors.add("The following subjobs are not completed: " + String.join("; ", incomplete));
-                }
-
-                // Validate quantities reconcile
-                BigDecimal totalPlanned = subs.stream()
-                    .map(s -> s.getPlannedQuantity() == null ? BigDecimal.ZERO : s.getPlannedQuantity())
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-                BigDecimal totalCompleted = subs.stream()
-                    .map(s -> s.getCompletedQuantity() == null ? BigDecimal.ZERO : s.getCompletedQuantity())
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-                // Update JC quantities from subjobs
-                BigDecimal totalGood = BigDecimal.ZERO;
-                BigDecimal totalRework = BigDecimal.ZERO;
-                BigDecimal totalReject = BigDecimal.ZERO;
-                BigDecimal totalScrap = BigDecimal.ZERO;
-                for (JobCardSubjob s : subs) {
-                    totalGood = totalGood.add(s.getCompletedQuantity() == null ? BigDecimal.ZERO : s.getCompletedQuantity());
-                    totalRework = totalRework.add(s.getReworkQuantity() == null ? BigDecimal.ZERO : s.getReworkQuantity());
-                    totalReject = totalReject.add(s.getRejectedQuantity() == null ? BigDecimal.ZERO : s.getRejectedQuantity());
-                    totalScrap = totalScrap.add(s.getScrapQuantity() == null ? BigDecimal.ZERO : s.getScrapQuantity());
-                }
-                jc.setCompletedQuantity(totalGood);
-                jc.setReworkQuantity(totalRework);
-                jc.setRejectedQuantity(totalReject);
-                jc.setScrapQuantity(totalScrap);
-
-                // Validate quality: check if any subjob with inspection required is on quality hold
-                boolean qualityPending = subs.stream().anyMatch(s ->
-                    Boolean.TRUE.equals(s.getInspectionRequired()) && "COMPLETED".equals(s.getStatus())
-                    && !"QUALITY_HOLD".equals(s.getStatus()));
-                if (qualityPending) {
-                    // Allow completion but warn
-                }
-
-                // Overproduction check: total output must not exceed planned + 10% tolerance
-                BigDecimal plannedQty = jc.getPlannedQuantity() == null ? BigDecimal.ZERO : jc.getPlannedQuantity();
-                BigDecimal totalOutput = totalGood.add(totalRework);
-                BigDecimal tolerance = plannedQty.multiply(new BigDecimal("0.10"));
-                if (plannedQty.compareTo(BigDecimal.ZERO) > 0 && totalOutput.compareTo(plannedQty.add(tolerance)) > 0) {
-                    errors.add("Overproduction detected: completed " + totalOutput + " against planned " + plannedQty + " (max allowed: " + plannedQty.add(tolerance) + ")");
-                }
-
-                if (!errors.isEmpty()) {
-                    result.put("success", false);
-                    result.put("errors", errors);
-                    return result;
-                }
-
-                jc.setStatus("COMPLETED");
-                jc.setActualEndDate(Instant.now());
-                jc.setCompleteRemarks(note);
-                jc.setCompletionStatus("COMPLETE");
-
-                if (totalGood.compareTo(BigDecimal.ZERO) > 0 && jc.getPartCode() != null) {
-                    stockService.recordStockIn(
-                        jc.getJobCardNumber(), "job-card-complete", "FG_RECEIPT",
-                        jc.getPartCode(), "STORE", null, null,
-                        totalGood, LocalDate.now(), principalName(p), "FREE");
-                }
-
-                // FRS §8: Auto-create IPQC inspection on production completion
-                if (totalGood.compareTo(BigDecimal.ZERO) > 0 && jc.getPartCode() != null) {
-                    try {
-                        QualityInspection qi = new QualityInspection();
-                        qi.setDocNo(numbers.next("QUALITY_INSPECTION", "QC"));
-                        qi.setInspectionType(QualityInspectionType.IPQC);
-                        qi.setSourceType("PRODUCTION");
-                        qi.setSourceNumber(jc.getJobCardNumber());
-                        qi.setDocDate(LocalDate.now());
-                        qi.setInspectionDate(LocalDate.now());
-                        qi.setItemCode(jc.getPartCode());
-                        qi.setReceivedQuantity(totalGood);
-                        qi.setInspectionQuantity(totalGood);
-                        qi.setInspectionStatus("DRAFT");
-                        qi.setDecisionStatus("PENDING");
-                        qi.setCreatedBy(principalName(p));
-                        qi.setCreatedAt(Instant.now());
-                        qi.setUpdatedAt(Instant.now());
-                        em.persist(qi);
-                    } catch (Exception ignored) {}
-                }
-                break;
-            }
-            case "close": {
-                if (!"COMPLETED".equals(jc.getStatus())) {
-                    errors.add("Job Card must be COMPLETED before closing");
-                    result.put("success", false);
-                    result.put("errors", errors);
-                    return result;
-                }
-                jc.setStatus("CLOSED");
-                break;
-            }
-            case "cancel": {
-                if ("CLOSED".equals(jc.getStatus())) {
-                    errors.add("CLOSED job cards cannot be cancelled");
-                    result.put("success", false);
-                    result.put("errors", errors);
-                    return result;
-                }
-                jc.setStatus("CANCELLED");
-                break;
-            }
-            default:
-                throw new RuntimeException("Unknown action: " + action);
-        }
-        jc.setUpdatedAt(Instant.now());
-        jc.setUpdatedBy(principalName(p));
-        jobCards.save(jc);
-
-        result.put("success", true);
-        result.put("jobCard", jobCards.findById(id).orElse(jc));
-        return result;
+        return jobCardService.jobCardAction(id, action, body, p);
     }
 
     // ---- Completion Check (dry run) ----
 
     @GetMapping("/api/v1/production/job-cards/{id}/completion-check")
     public Map<String, Object> completionCheck(@PathVariable Long id) {
-        JobCard jc = jobCards.findById(id).orElseThrow(() -> new RuntimeException("Job Card not found"));
-        List<JobCardSubjob> subs = jobCardSubjobs.findByJobCardId(id);
-        Map<String, Object> result = new LinkedHashMap<>();
-        List<Map<String, Object>> checks = new ArrayList<>();
-
-        // Check 1: All subjobs completed
-        boolean allCompleted = subs.stream().allMatch(s -> "COMPLETED".equals(s.getStatus()));
-        checks.add(Map.of(
-            "check", "All Operations Complete",
-            "passed", allCompleted,
-            "detail", subs.stream().map(s -> s.getSubjobNumber() + ": " + s.getStatus()).collect(Collectors.joining(", "))
-        ));
-
-        // Check 2: Required quantity accounted for
-        BigDecimal totalPlanned = subs.stream()
-            .map(s -> s.getPlannedQuantity() == null ? BigDecimal.ZERO : s.getPlannedQuantity())
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalCompleted = subs.stream()
-            .map(s -> s.getCompletedQuantity() == null ? BigDecimal.ZERO : s.getCompletedQuantity())
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
-        boolean qtyOk = totalCompleted.compareTo(BigDecimal.ZERO) > 0;
-        checks.add(Map.of(
-            "check", "Quantity Accounted For",
-            "passed", qtyOk,
-            "detail", "Completed: " + totalCompleted + " / Planned: " + totalPlanned
-        ));
-
-        // Check 3: Quality inspection
-        boolean qualityOk = subs.stream()
-            .filter(s -> Boolean.TRUE.equals(s.getInspectionRequired()))
-            .allMatch(s -> "COMPLETED".equals(s.getStatus()));
-        checks.add(Map.of(
-            "check", "Quality Inspection",
-            "passed", qualityOk,
-            "detail", "Inspection required operations: " +
-                subs.stream().filter(s -> Boolean.TRUE.equals(s.getInspectionRequired())).count()
-        ));
-
-        // Check 4: Rework resolved
-        long reworkCount = subs.stream()
-            .filter(s -> s.getReworkQuantity() != null && s.getReworkQuantity().compareTo(BigDecimal.ZERO) > 0)
-            .count();
-        checks.add(Map.of(
-            "check", "Rework Resolved",
-            "passed", reworkCount == 0,
-            "detail", reworkCount + " operations with rework"
-        ));
-
-        // Check 5: Scrap recorded
-        long scrapCount = subs.stream()
-            .filter(s -> s.getScrapQuantity() != null && s.getScrapQuantity().compareTo(BigDecimal.ZERO) > 0)
-            .count();
-        checks.add(Map.of(
-            "check", "Scrap Recorded",
-            "passed", true,
-            "detail", scrapCount + " operations with scrap"
-        ));
-
-        boolean canComplete = allCompleted && qtyOk;
-        result.put("jobCardNumber", jc.getJobCardNumber());
-        result.put("canComplete", canComplete);
-        result.put("checks", checks);
-        return result;
+        return jobCardService.completionCheck(id);
     }
 
     // ---- Subjobs ----
 
     @GetMapping("/api/v1/production/job-cards/{id}/subjobs")
     public List<JobCardSubjob> getSubjobs(@PathVariable Long id) {
-        return jobCardSubjobs.findByJobCardId(id);
+        return jobCardService.getSubjobs(id);
     }
 
     @PostMapping("/api/v1/production/job-cards/{id}/subjobs")
     public JobCardSubjob addSubjob(@PathVariable Long id, @RequestBody JobCardSubjob sj, Principal p) {
-        JobCard jc = jobCards.findById(id).orElseThrow(() -> new RuntimeException("Job Card not found"));
-        if (!"DRAFT".equals(jc.getStatus()) && !"RELEASED".equals(jc.getStatus())) {
-            throw new RuntimeException("Subjobs can only be added to DRAFT or RELEASED job cards");
-        }
-        if (sj.getMachineCode() != null && !sj.getMachineCode().isBlank()) {
-            if (!machines.existsByCode(sj.getMachineCode())) {
-                throw new RuntimeException("Machine code '" + sj.getMachineCode() + "' does not exist");
-            }
-        }
-        sj.setId(null);
-        sj.setJobCard(jc);
-        if (sj.getPlannedQuantity() == null) sj.setPlannedQuantity(jc.getPlannedQuantity());
-        if (sj.getCompletedQuantity() == null) sj.setCompletedQuantity(BigDecimal.ZERO);
-        if (sj.getReworkQuantity() == null) sj.setReworkQuantity(BigDecimal.ZERO);
-        if (sj.getRejectedQuantity() == null) sj.setRejectedQuantity(BigDecimal.ZERO);
-        if (sj.getScrapQuantity() == null) sj.setScrapQuantity(BigDecimal.ZERO);
-        if (sj.getStatus() == null) sj.setStatus("PENDING");
-        sj.setCreatedAt(Instant.now());
-        return jobCardSubjobs.save(sj);
+        return jobCardService.addSubjob(id, sj, p);
     }
 
     @PutMapping("/api/v1/production/job-cards/subjobs/{lineId}")
     public JobCardSubjob updateSubjob(@PathVariable Long lineId, @RequestBody JobCardSubjob sj, Principal p) {
-        JobCardSubjob e = jobCardSubjobs.findById(lineId).orElseThrow(() -> new RuntimeException("Subjob not found"));
-        sj.setId(lineId);
-        sj.setJobCard(e.getJobCard());
-        sj.setCreatedAt(e.getCreatedAt());
-        sj.setUpdatedAt(Instant.now());
-        sj.setUpdatedBy(principalName(p));
-        return jobCardSubjobs.save(sj);
+        return jobCardService.updateSubjob(lineId, sj, p);
     }
 
     @DeleteMapping("/api/v1/production/job-cards/subjobs/{lineId}")
     public void deleteSubjob(@PathVariable Long lineId) {
-        JobCardSubjob e = jobCardSubjobs.findById(lineId).orElseThrow(() -> new RuntimeException("Subjob not found"));
-        if (!"PENDING".equals(e.getStatus()) && !"RELEASED".equals(e.getStatus())) {
-            throw new RuntimeException("Only PENDING or RELEASED subjobs can be deleted");
-        }
-        jobCardSubjobs.deleteById(lineId);
+        jobCardService.deleteSubjob(lineId);
     }
 
     @PostMapping("/api/v1/production/job-cards/subjobs/{lineId}/actions/{action}")
     public JobCardSubjob subjobAction(@PathVariable Long lineId, @PathVariable String action, Principal p) {
-        JobCardSubjob sj = jobCardSubjobs.findById(lineId).orElseThrow(() -> new RuntimeException("Subjob not found"));
-        switch (action.toLowerCase()) {
-            case "release": sj.setStatus("RELEASED"); break;
-            case "start": sj.setStatus("IN_PROGRESS"); sj.setStartTime(Instant.now()); break;
-            case "hold": sj.setStatus("ON_HOLD"); break;
-            case "quality-hold": sj.setStatus("QUALITY_HOLD"); break;
-            case "production-hold": sj.setStatus("PRODUCTION_HOLD"); break;
-            case "release-hold": {
-                if (!"QUALITY_HOLD".equals(sj.getStatus()) && !"PRODUCTION_HOLD".equals(sj.getStatus())) {
-                    throw new RuntimeException("Subjob must be on QUALITY_HOLD or PRODUCTION_HOLD to release hold");
-                }
-                sj.setStatus("RELEASED");
-                break;
-            }
-            case "resume": sj.setStatus("IN_PROGRESS"); break;
-            case "complete": sj.setStatus("COMPLETED"); sj.setEndTime(Instant.now()); break;
-            case "cancel": {
-                if ("COMPLETED".equals(sj.getStatus()) || "CLOSED".equals(sj.getStatus())) {
-                    throw new RuntimeException("COMPLETED/CLOSED subjobs cannot be cancelled");
-                }
-                sj.setStatus("CANCELLED");
-                break;
-            }
-            default: throw new RuntimeException("Unknown action: " + action);
-        }
-        sj.setUpdatedAt(Instant.now());
-        sj.setUpdatedBy(principalName(p));
-        return jobCardSubjobs.save(sj);
+        return jobCardService.subjobAction(lineId, action, p);
     }
 
     // ===========================
@@ -570,6 +152,17 @@ public class ProductionController {
 
     @GetMapping("/api/v1/production/entries")
     public List<ProductionEntry> listProductionEntries() { return productionEntries.findAll(); }
+
+    /**
+     * Read-only preview of the next Production Entry number. Does NOT consume or
+     * reserve the sequence, so it is safe to call on form load / page refresh.
+     * Mirrors the format assigned on save ({@code next("production-entry", "PE")}),
+     * in line with BR-NUM-001 (preview may repeat; reservation is permanent on save).
+     */
+    @GetMapping("/api/v1/production/entries/next-number")
+    public Map<String, Object> nextEntryNumber() {
+        return Map.of("nextNumber", numbers.peek("production-entry", "PE"));
+    }
 
     @PostMapping("/api/v1/production/entries")
     @Transactional
@@ -585,7 +178,8 @@ public class ProductionController {
 
         // Auto-derive good quantity if not manually specified
         if (good.compareTo(BigDecimal.ZERO) == 0 && processQty.compareTo(BigDecimal.ZERO) > 0 && rework.add(reject).compareTo(BigDecimal.ZERO) > 0) {
-            good = processQty.subtract(rework).subtract(reject);
+            good = processQty.subtract(rework).subtract(reject).subtract(scrap);
+            good = good.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : good;
             pe.setGoodQuantity(good);
         }
 
@@ -602,11 +196,16 @@ public class ProductionController {
         entryValidator.validateSequenceAndPending(pe);
 
         // Ensure proper JPA bi-directional linkages
-        pe.setOperators(pe.getOperators());
-        pe.setRejectionReasons(pe.getRejectionReasons());
-        pe.setReworkReasons(pe.getReworkReasons());
-        pe.setMaterials(pe.getMaterials());
-        pe.setBatchAllocations(pe.getBatchAllocations());
+        // NOTE: the child setters clear() the existing field list to re-add rebound
+        // children. Passing the field's own list directly would clear() the same
+        // (aliased) list and silently drop the children. A fresh copy avoids the
+        // aliasing so rejection/rework/operator/material/batch children are retained.
+        pe.setOperators(copyFresh(pe.getOperators()));
+        pe.setRejectionReasons(copyFresh(pe.getRejectionReasons()));
+        pe.setReworkReasons(copyFresh(pe.getReworkReasons()));
+        pe.setMaterials(copyFresh(pe.getMaterials()));
+        pe.setBatchAllocations(copyFresh(pe.getBatchAllocations()));
+        pe.setAdditionalOutputs(copyFresh(pe.getAdditionalOutputs()));
 
         ProductionEntry saved = productionEntries.save(pe);
 
@@ -619,7 +218,13 @@ public class ProductionController {
                     .timestamp(Instant.now())
                     .metadataJson("{\"entryNumber\":\"" + saved.getEntryNumber() + "\"}")
                     .build());
-        } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            log.warn("Audit log (CREATE) failed for entry {}", saved.getEntryNumber(), ex);
+        }
+
+        // P3: derive normalized projection in this same transaction (flag-gated).
+        // Authoritative write stays production_entry; events are a projection only (P3-01).
+        normalizedEvents.project(saved, ProductionNormalizedEventService.EventKind.CREATE, principalName(p));
 
         return saved;
     }
@@ -629,7 +234,26 @@ public class ProductionController {
         return productionEntries.findById(id).orElseThrow(() -> new RuntimeException("Production Entry not found"));
     }
 
+    // ===========================
+    // ---- P3 normalized-event (READ-ONLY projection, flag-gated) ----
+    // ===========================
+
+    @GetMapping("/api/v1/production/normalized/entries/{entryNumber}")
+    public List<Object> getNormalizedSession(@PathVariable String entryNumber) {
+        // Read-only derived projection; empty when the feature flag is OFF or not found.
+        return normalizedEvents.findSessionByEntryNumber(entryNumber)
+                .map(s -> List.of((Object) s))
+                .orElseGet(List::of);
+    }
+
+    @GetMapping("/api/v1/production/normalized/job-cards/{jobCardNumber}")
+    public List<ProdExecutionSession> getNormalizedSessionsByJobCard(@PathVariable String jobCardNumber) {
+        // Read-only derived projection; empty when the feature flag is OFF.
+        return normalizedEvents.findSessionsByJobCard(jobCardNumber);
+    }
+
     @GetMapping("/api/v1/production/entries/eligible-operations")
+    @Transactional(readOnly = true)
     public List<Map<String, Object>> getEligibleOperations(@RequestParam String jobCardNumber,
                                                            @RequestParam(defaultValue = "true") boolean pendingSequenceOnly) {
         List<Map<String, Object>> result = new ArrayList<>();
@@ -652,6 +276,12 @@ public class ProductionController {
             map.put("pendingQuantity", pendingQty);
             map.put("status", sj.getStatus());
             map.put("eligible", !pendingSequenceOnly || priorCompleted);
+
+            // P11 — Quality Gate advisory (blocking inspection w/o override); evaluation only, no consumption.
+            Map<String, Object> gate = qualityGate.evaluateGate(jobCardNumber, sj.getOperationCode(), "system");
+            map.put("qualityGate", gate.get("gate"));
+            map.put("qualityBlocked", gate.get("blocked"));
+            map.put("qualityBlockers", gate.get("blockers"));
 
             result.add(map);
 
@@ -687,11 +317,12 @@ public class ProductionController {
         entryValidator.validate(pe);
         entryValidator.validateSequenceAndPending(pe);
 
-        pe.setOperators(pe.getOperators());
-        pe.setRejectionReasons(pe.getRejectionReasons());
-        pe.setReworkReasons(pe.getReworkReasons());
-        pe.setMaterials(pe.getMaterials());
-        pe.setBatchAllocations(pe.getBatchAllocations());
+        pe.setOperators(copyFresh(pe.getOperators()));
+        pe.setRejectionReasons(copyFresh(pe.getRejectionReasons()));
+        pe.setReworkReasons(copyFresh(pe.getReworkReasons()));
+        pe.setMaterials(copyFresh(pe.getMaterials()));
+        pe.setBatchAllocations(copyFresh(pe.getBatchAllocations()));
+        pe.setAdditionalOutputs(copyFresh(pe.getAdditionalOutputs()));
 
         ProductionEntry saved = productionEntries.save(pe);
 
@@ -703,7 +334,9 @@ public class ProductionController {
                     .userId(principalName(p))
                     .timestamp(Instant.now())
                     .build());
-        } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            log.warn("Audit log (DRAFT_SAVE) failed for entry {}", saved.getId(), ex);
+        }
 
         return saved;
     }
@@ -722,7 +355,9 @@ public class ProductionController {
                     .timestamp(Instant.now())
                     .metadataJson("{\"entryNumber\":\"" + e.getEntryNumber() + "\"}")
                     .build());
-        } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            log.warn("Audit log (CANCEL) failed for entry {}", e.getEntryNumber(), ex);
+        }
 
         productionEntries.deleteById(id);
     }
@@ -765,9 +400,21 @@ public class ProductionController {
             }
             case "approve": pe.setStatus("APPROVED"); break;
             case "post": {
+                // Finality guard: a posted or reversed entry must never be re-posted
+                // (re-posting would re-add good/rejected/rework/scrap to the subjob and
+                // re-emit the projection — silent double-count, contrary to V-22 "posted
+                // entries are final"). The X-Idempotency-Key header protects retries; this
+                // guard protects the case where the header is absent.
+                if ("POSTED".equalsIgnoreCase(pe.getStatus()) || "REVERSED".equalsIgnoreCase(pe.getStatus())) {
+                    return pe;
+                }
                 // Atomic Final Posting (§4.3)
                 entryValidator.validate(pe);
                 entryValidator.validateSequenceAndPending(pe);
+
+                // P11 — Production Quality Gate (CLAR-PROD-012): refuse post while the operation's
+                // inspection is PENDING/FAIL/HELD without an approved one-time override.
+                qualityGate.assertEntryPostGate(pe, principalName(p));
 
                 // Update subjob progress
                 if (pe.getJobCardNumber() != null && pe.getOperationCode() != null) {
@@ -808,8 +455,14 @@ public class ProductionController {
                                 .resultStatus("SUCCESS")
                                 .createdAt(Instant.now())
                                 .build());
-                    } catch (Exception ignored) {}
+                    } catch (Exception ex) {
+                        log.warn("Idempotency key persist failed for key {}", idempotencyKeyHeader, ex);
+                    }
                 }
+
+                // P3: finalize the derived projection with the addressed outputs
+                // (flag-gated; idempotent by natural key; emits no stock postings).
+                normalizedEvents.project(pe, ProductionNormalizedEventService.EventKind.POST, principalName(p));
 
                 try {
                     auditLogs.save(ProductionEntryAuditLog.builder()
@@ -818,7 +471,9 @@ public class ProductionController {
                             .userId(principalName(p))
                             .timestamp(Instant.now())
                             .build());
-                } catch (Exception ignored) {}
+                } catch (Exception ex) {
+                    log.warn("Audit log (POST) failed for entry {}", pe.getEntryNumber(), ex);
+                }
 
                 break;
             }
@@ -868,6 +523,29 @@ public class ProductionController {
                 rev.setCreatedBy(principalName(p));
                 rev.setCreatedAt(Instant.now());
 
+                // P8 Capability A — mirror additional (co/by-product) outputs as
+                // negated rows so the compensating projection fully offsets them.
+                if (pe.getAdditionalOutputs() != null && !pe.getAdditionalOutputs().isEmpty()) {
+                    List<ProductionEntryOutput> negated = new ArrayList<>();
+                    for (ProductionEntryOutput o : pe.getAdditionalOutputs()) {
+                        if (o == null) {
+                            continue;
+                        }
+                        negated.add(ProductionEntryOutput.builder()
+                                .outputType(o.getOutputType())
+                                .itemCode(o.getItemCode())
+                                .itemName(o.getItemName())
+                                .uom(o.getUom())
+                                .location(o.getLocation() != null ? o.getLocation() : "STORE")
+                                .quantity(o.getQuantity() != null ? o.getQuantity().negate() : null)
+                                .weight(o.getWeight())
+                                .destinationStageCode(o.getDestinationStageCode())
+                                .remarks(o.getRemarks())
+                                .build());
+                    }
+                    rev.setAdditionalOutputs(negated);
+                }
+
                 // Reverse subjob numbers
                 if (pe.getJobCardNumber() != null && pe.getOperationCode() != null) {
                     List<JobCardSubjob> subs = jobCardSubjobs.findByJobCardJobCardNumber(pe.getJobCardNumber());
@@ -876,6 +554,21 @@ public class ProductionController {
                             BigDecimal current = sj.getCompletedQuantity() != null ? sj.getCompletedQuantity() : BigDecimal.ZERO;
                             BigDecimal adj = current.subtract(pe.getGoodQuantity() != null ? pe.getGoodQuantity() : BigDecimal.ZERO);
                             sj.setCompletedQuantity(adj.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : adj);
+
+                            // Mirror the reject/rework/scrap increments applied at post time so a
+                            // reversal fully compensates the subjob (no inflated reject/rework/scrap).
+                            BigDecimal currentReject = sj.getRejectedQuantity() != null ? sj.getRejectedQuantity() : BigDecimal.ZERO;
+                            BigDecimal adjReject = currentReject.subtract(pe.getRejectedQuantity() != null ? pe.getRejectedQuantity() : BigDecimal.ZERO);
+                            sj.setRejectedQuantity(adjReject.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : adjReject);
+
+                            BigDecimal currentRework = sj.getReworkQuantity() != null ? sj.getReworkQuantity() : BigDecimal.ZERO;
+                            BigDecimal adjRework = currentRework.subtract(pe.getReworkQuantity() != null ? pe.getReworkQuantity() : BigDecimal.ZERO);
+                            sj.setReworkQuantity(adjRework.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : adjRework);
+
+                            BigDecimal currentScrap = sj.getScrapQuantity() != null ? sj.getScrapQuantity() : BigDecimal.ZERO;
+                            BigDecimal adjScrap = currentScrap.subtract(pe.getScrapQuantity() != null ? pe.getScrapQuantity() : BigDecimal.ZERO);
+                            sj.setScrapQuantity(adjScrap.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : adjScrap);
+
                             sj.setStatus("IN_PROGRESS");
                             jobCardSubjobs.save(sj);
                         }
@@ -896,7 +589,14 @@ public class ProductionController {
                             .timestamp(Instant.now())
                             .metadataJson("{\"reversalEntryId\":" + savedRev.getId() + "}")
                             .build());
-                } catch (Exception ignored) {}
+                } catch (Exception ex) {
+                    log.warn("Audit log (REVERSE) failed for entry {}", pe.getEntryNumber(), ex);
+                }
+
+                // P3: derive the compensating reversal projection. The original
+                // historical projection is preserved untouched (P3-06); the mirror
+                // is keyed to the reversal's own entry_number.
+                normalizedEvents.project(savedRev, ProductionNormalizedEventService.EventKind.REVERSE, principalName(p));
 
                 return savedRev;
             }
@@ -1027,17 +727,7 @@ public class ProductionController {
 
     @PostMapping("/api/v1/production/conversions")
     public ProductConversion createConversion(@RequestBody ProductConversion pc, Principal p) {
-        pc.setId(null);
-        pc.setConversionNumber(numbers.next("product-conversion", "PC"));
-        if (pc.getConversionDate() == null) pc.setConversionDate(Instant.now());
-        if (pc.getInputQuantity() == null) pc.setInputQuantity(BigDecimal.ZERO);
-        if (pc.getOutputQuantity() == null) pc.setOutputQuantity(BigDecimal.ZERO);
-        if (pc.getProcessLossQty() == null) pc.setProcessLossQty(BigDecimal.ZERO);
-        if (pc.getScrapQty() == null) pc.setScrapQty(BigDecimal.ZERO);
-        if (pc.getStatus() == null) pc.setStatus("DRAFT");
-        pc.setCreatedBy(principalName(p));
-        pc.setCreatedAt(Instant.now());
-        return productConversions.save(pc);
+        return productConversionService.create(pc, principalName(p));
     }
 
     @GetMapping("/api/v1/production/conversions/{id}")
@@ -1047,71 +737,18 @@ public class ProductionController {
 
     @PutMapping("/api/v1/production/conversions/{id}")
     public ProductConversion updateConversion(@PathVariable Long id, @RequestBody ProductConversion pc, Principal p) {
-        ProductConversion e = productConversions.findById(id).orElseThrow(() -> new RuntimeException("Product Conversion not found"));
-        pc.setId(id);
-        pc.setConversionNumber(e.getConversionNumber());
-        pc.setCreatedAt(e.getCreatedAt());
-        pc.setCreatedBy(e.getCreatedBy());
-        pc.setUpdatedAt(Instant.now());
-        pc.setUpdatedBy(principalName(p));
-        return productConversions.save(pc);
+        return productConversionService.update(id, pc, principalName(p));
     }
 
     @DeleteMapping("/api/v1/production/conversions/{id}")
     public void deleteConversion(@PathVariable Long id) {
-        ProductConversion e = productConversions.findById(id).orElseThrow(() -> new RuntimeException("Product Conversion not found"));
-        if (!"DRAFT".equals(e.getStatus())) throw new RuntimeException("Only DRAFT conversions can be deleted");
-        productConversions.deleteById(id);
+        productConversionService.delete(id);
     }
 
     @PostMapping("/api/v1/production/conversions/{id}/actions/{action}")
+    @Transactional
     public ProductConversion conversionAction(@PathVariable Long id, @PathVariable String action, Principal p) {
-        ProductConversion pc = productConversions.findById(id).orElseThrow(() -> new RuntimeException("Product Conversion not found"));
-        switch (action.toLowerCase()) {
-            case "submit": pc.setStatus("SUBMITTED"); break;
-            case "reject": pc.setStatus("REJECTED"); break;
-            case "verify": pc.setStatus("VERIFIED"); break;
-            case "post": {
-                if (!"VERIFIED".equals(pc.getStatus())) {
-                    throw new RuntimeException("Only VERIFIED conversions can be posted");
-                }
-                if (pc.getInputQuantity() != null && pc.getInputQuantity().compareTo(BigDecimal.ZERO) > 0 && pc.getInputItemCode() != null) {
-                    stockService.recordStockOut(
-                        pc.getConversionNumber(), "product-conversion", "CONVERSION_OUT",
-                        pc.getInputItemCode(), pc.getSourceWarehouse(), pc.getInputBatchNumber(), null,
-                        pc.getInputQuantity(), LocalDate.now(), principalName(p));
-                }
-                if (pc.getOutputQuantity() != null && pc.getOutputQuantity().compareTo(BigDecimal.ZERO) > 0 && pc.getOutputItemCode() != null) {
-                    stockService.recordStockIn(
-                        pc.getConversionNumber(), "product-conversion", "CONVERSION_IN",
-                        pc.getOutputItemCode(), pc.getDestinationWarehouse(), pc.getOutputBatchNumber(), null,
-                        pc.getOutputQuantity(), LocalDate.now(), principalName(p), "FREE");
-                }
-                pc.setStatus("POSTED");
-                break;
-            }
-            case "complete": {
-                if (pc.getInputQuantity() != null && pc.getInputQuantity().compareTo(BigDecimal.ZERO) > 0 && pc.getInputItemCode() != null) {
-                    stockService.recordStockOut(
-                        pc.getConversionNumber(), "product-conversion", "CONVERSION_OUT",
-                        pc.getInputItemCode(), pc.getSourceWarehouse(), pc.getInputBatchNumber(), null,
-                        pc.getInputQuantity(), LocalDate.now(), principalName(p));
-                }
-                if (pc.getOutputQuantity() != null && pc.getOutputQuantity().compareTo(BigDecimal.ZERO) > 0 && pc.getOutputItemCode() != null) {
-                    stockService.recordStockIn(
-                        pc.getConversionNumber(), "product-conversion", "CONVERSION_IN",
-                        pc.getOutputItemCode(), pc.getDestinationWarehouse(), pc.getOutputBatchNumber(), null,
-                        pc.getOutputQuantity(), LocalDate.now(), principalName(p), "FREE");
-                }
-                pc.setStatus("COMPLETED");
-                break;
-            }
-            case "cancel": pc.setStatus("CANCELLED"); break;
-            default: throw new RuntimeException("Unknown action: " + action);
-        }
-        pc.setUpdatedAt(Instant.now());
-        pc.setUpdatedBy(principalName(p));
-        return productConversions.save(pc);
+        return productConversionService.action(id, action, principalName(p));
     }
 
     // ===========================
@@ -1123,14 +760,7 @@ public class ProductionController {
 
     @PostMapping("/api/v1/production/returns")
     public ProductionReturn createReturn(@RequestBody ProductionReturn pr, Principal p) {
-        pr.setId(null);
-        pr.setReturnNumber(numbers.next("production-return", "PR"));
-        if (pr.getReturnDate() == null) pr.setReturnDate(Instant.now());
-        if (pr.getQuantity() == null) pr.setQuantity(BigDecimal.ZERO);
-        if (pr.getStatus() == null) pr.setStatus("DRAFT");
-        pr.setCreatedBy(principalName(p));
-        pr.setCreatedAt(Instant.now());
-        return productionReturns.save(pr);
+        return productionReturnService.create(pr, principalName(p));
     }
 
     @GetMapping("/api/v1/production/returns/{id}")
@@ -1140,49 +770,18 @@ public class ProductionController {
 
     @PutMapping("/api/v1/production/returns/{id}")
     public ProductionReturn updateReturn(@PathVariable Long id, @RequestBody ProductionReturn pr, Principal p) {
-        ProductionReturn e = productionReturns.findById(id).orElseThrow(() -> new RuntimeException("Production Return not found"));
-        pr.setId(id);
-        pr.setReturnNumber(e.getReturnNumber());
-        pr.setCreatedAt(e.getCreatedAt());
-        pr.setCreatedBy(e.getCreatedBy());
-        pr.setUpdatedAt(Instant.now());
-        pr.setUpdatedBy(principalName(p));
-        return productionReturns.save(pr);
+        return productionReturnService.update(id, pr, principalName(p));
     }
 
     @DeleteMapping("/api/v1/production/returns/{id}")
     public void deleteReturn(@PathVariable Long id) {
-        ProductionReturn e = productionReturns.findById(id).orElseThrow(() -> new RuntimeException("Production Return not found"));
-        if (!"DRAFT".equals(e.getStatus())) throw new RuntimeException("Only DRAFT returns can be deleted");
-        productionReturns.deleteById(id);
+        productionReturnService.delete(id);
     }
 
     @PostMapping("/api/v1/production/returns/{id}/actions/{action}")
+    @Transactional
     public ProductionReturn returnAction(@PathVariable Long id, @PathVariable String action, Principal p) {
-        ProductionReturn pr = productionReturns.findById(id).orElseThrow(() -> new RuntimeException("Production Return not found"));
-        switch (action.toLowerCase()) {
-            case "submit": pr.setStatus("SUBMITTED"); break;
-            case "verify": pr.setStatus("VERIFIED"); break;
-            case "receive": {
-                if (pr.getQuantity() != null && pr.getQuantity().compareTo(BigDecimal.ZERO) > 0 && pr.getItemCode() != null) {
-                    String stockStatus = "SCRAP".equalsIgnoreCase(pr.getCondition()) ? "SCRAP"
-                        : ("REWORK".equalsIgnoreCase(pr.getCondition()) || "QC_HOLD".equalsIgnoreCase(pr.getCondition())) ? "QC_HOLD"
-                        : "FREE";
-                    String loc = pr.getLocation() != null ? pr.getLocation() : (pr.getWarehouse() != null ? pr.getWarehouse() : "STORE");
-                    stockService.recordStockIn(
-                        pr.getReturnNumber(), "production-return", "RETURN_RECEIPT",
-                        pr.getItemCode(), loc, pr.getBatchNumber(), null,
-                        pr.getQuantity(), LocalDate.now(), principalName(p), stockStatus);
-                }
-                pr.setStatus("RECEIVED");
-                break;
-            }
-            case "cancel": pr.setStatus("CANCELLED"); break;
-            default: throw new RuntimeException("Unknown action: " + action);
-        }
-        pr.setUpdatedAt(Instant.now());
-        pr.setUpdatedBy(principalName(p));
-        return productionReturns.save(pr);
+        return productionReturnService.action(id, action, principalName(p));
     }
 
     // ===========================
@@ -1255,6 +854,9 @@ public class ProductionController {
         act.setId(null);
         act.setLogSheet(ls);
         if (act.getStartTime() != null && act.getEndTime() != null) {
+            if (act.getEndTime().isBefore(act.getStartTime())) {
+                throw new IllegalArgumentException("End time cannot be earlier than start time.");
+            }
             long mins = ChronoUnit.MINUTES.between(act.getStartTime(), act.getEndTime());
             act.setDuration(BigDecimal.valueOf(mins));
         }
@@ -1268,6 +870,9 @@ public class ProductionController {
         act.setId(lineId);
         act.setLogSheet(e.getLogSheet());
         if (act.getStartTime() != null && act.getEndTime() != null) {
+            if (act.getEndTime().isBefore(act.getStartTime())) {
+                throw new IllegalArgumentException("End time cannot be earlier than start time.");
+            }
             long mins = ChronoUnit.MINUTES.between(act.getStartTime(), act.getEndTime());
             act.setDuration(BigDecimal.valueOf(mins));
         }

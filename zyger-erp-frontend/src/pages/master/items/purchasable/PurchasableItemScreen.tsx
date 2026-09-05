@@ -543,7 +543,7 @@ export default function PurchasableItemScreen() {
                   <span>Item Group</span>
                   <select className="in" value={form.itemGroup} onChange={e => setFld('itemGroup', e.target.value)}>
                     <option value="">Select...</option>
-                    {itemGroupRows.map(g => <option key={g.id} value={g.code}>{g.name}</option>)}
+                    {itemGroupRows.filter(g => g.itemType === 'PURCHASABLE' || g.itemType === 'RAW_MATERIAL').map(g => <option key={g.id} value={g.code}>{g.name}</option>)}
                   </select>
                 </label>
 
