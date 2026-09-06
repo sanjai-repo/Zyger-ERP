@@ -420,6 +420,54 @@ public class DocumentFacade {
         try { return new BigDecimal(num); } catch (Exception e) { return BigDecimal.ZERO; }
     }
 
+    /**
+     * Line-bearing transaction/order documents must carry at least one line with
+     * a positive quantity. Empty or all-zero payloads are rejected up-front so the
+     * database is never seeded with meaningless DRAFT documents. Scoped to the
+     * stock-effect and order doc types where an empty payload is always a defect;
+     * content-driven docs (quality records, master data) are left untouched.
+     */
+    private static final Set<String> REQUIRED_LINES_KEYS = Set.of(
+            // Inventory (Effect IN/OUT/ADJUST)
+            "po-inward", "lo-inward", "jo-inward", "general-inward", "return-inward", "grn",
+            "rm-issue", "general-issue", "jo-dc-issue", "issue-internal-external",
+            "issue-against-receipt", "sales-dc", "jo-dc", "general-dc", "return-dc",
+            "transfer-dc", "dc-return", "invoice-return", "inward-return", "internal-return",
+            "received-against-issue", "receipt-return", "stock-allotment", "stock-release",
+            "stock-issue-request", "physical-stock-amendment", "subcontract-invoice",
+            // Purchase
+            "purchase-request", "supplier-enquiry", "supplier-quotation", "purchase-order", "job-order",
+            // Sales
+            "sales-order", "proforma-invoice", "sales-invoice"
+    );
+
+    private void validateLineQtyAndPresence(String key, DocEntity e, Map<String, Object> body) {
+        if (!REQUIRED_LINES_KEYS.contains(key)) return;
+        List<?> lines = e.getLines();
+        if (lines == null || lines.isEmpty()) {
+            throw new IllegalArgumentException("Document type '" + key + "' requires at least one line");
+        }
+        DocTypes.DocDef def = DocTypes.get(key);
+        String qtyField = def.qtyField();
+        for (Object line : lines) {
+            if (!(line instanceof LineEntity le)) continue;
+            BigDecimal qty = qtyField != null && !qtyField.isBlank() ? lineQty(le, qtyField) : le.getQty();
+            if (qty == null || qty.signum() <= 0) {
+                throw new IllegalArgumentException("Document type '" + key + "' requires a positive line quantity");
+            }
+        }
+    }
+
+    private BigDecimal lineQty(LineEntity l, String qtyField) {
+        try {
+            java.lang.reflect.Method m = l.getClass().getMethod("get" + Character.toUpperCase(qtyField.charAt(0)) + qtyField.substring(1));
+            Object v = m.invoke(l);
+            return v instanceof BigDecimal bd ? bd : v instanceof Number n ? BigDecimal.valueOf(n.doubleValue()) : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private void denormalizeLines(Map<String, Object> row, String key) {
         Object linesObj = row.get("lines");
@@ -473,6 +521,7 @@ public class DocumentFacade {
         e.setUpdatedAt(Instant.now());
         attach(e);
 
+        validateLineQtyAndPresence(key, e, body);
         validateReturnEligibility(key, e);
         validateReceivedAgainstIssue(key, e);
         validateBatchHeat(key, e);

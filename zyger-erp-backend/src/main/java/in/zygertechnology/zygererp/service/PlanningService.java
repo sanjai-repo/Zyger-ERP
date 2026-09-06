@@ -1501,7 +1501,7 @@ public class PlanningService {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("salesOrderId", so.getId());
         body.put("soLineId", soItem.getId());
-        body.put("itemCode", soItem.getItemName());
+        body.put("itemCode", soItem.getItemCode() != null ? soItem.getItemCode() : soItem.getItemName());
         body.put("orderQuantity", qty);
         body.put("productionQty", qty);
         body.put("pendingQty", soItem.getPendingQty() != null ? soItem.getPendingQty() : soItem.getOrderQty());

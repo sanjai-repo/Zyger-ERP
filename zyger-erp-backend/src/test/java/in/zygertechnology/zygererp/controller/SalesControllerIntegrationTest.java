@@ -70,8 +70,39 @@ class SalesControllerIntegrationTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
-    @DisplayName("POST /api/v1/sales/{type} - should create sales order")
+    @DisplayName("POST /api/v1/sales/{type} - should create sales order with a positive-qty line")
     void shouldCreateSalesOrder() throws Exception {
+        Map<String, Object> body = Map.of(
+                "customer", "Test Customer",
+                "orderDate", "2026-09-01",
+                "lines", java.util.List.of(
+                        Map.of("itemCode", "ITEM-001", "orderQty", 5, "unitPrice", 10, "netAmount", 50))
+        );
+
+        mockMvc.perform(post("/api/v1/sales/sales-order")
+                        .header("Authorization", bearer(adminToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.docNo").exists())
+                .andExpect(jsonPath("$.status").value("DRAFT"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/sales/sales-order - empty payload must be rejected (400, no empty DRAFT)")
+    void shouldRejectEmptySalesOrderBody() throws Exception {
+        mockMvc.perform(post("/api/v1/sales/sales-order")
+                        .header("Authorization", bearer(adminToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("at least one line")));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/sales/sales-order - empty lines must be rejected (400)")
+    void shouldRejectSalesOrderWithEmptyLines() throws Exception {
         Map<String, Object> body = Map.of(
                 "customer", "Test Customer",
                 "orderDate", "2026-09-01",
@@ -82,9 +113,27 @@ class SalesControllerIntegrationTest extends AbstractPostgresIntegrationTest {
                         .header("Authorization", bearer(adminToken()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.docNo").exists())
-                .andExpect(jsonPath("$.status").value("DRAFT"));
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/sales/sales-order - zero-quantity line must be rejected (400)")
+    void shouldRejectSalesOrderWithZeroQtyLine() throws Exception {
+        Map<String, Object> body = Map.of(
+                "customer", "Test Customer",
+                "orderDate", "2026-09-01",
+                "lines", java.util.List.of(
+                        Map.of("itemCode", "ITEM-001", "orderQty", 0, "unitPrice", 10))
+        );
+
+        mockMvc.perform(post("/api/v1/sales/sales-order")
+                        .header("Authorization", bearer(adminToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("positive line quantity")));
     }
 
     @Test
