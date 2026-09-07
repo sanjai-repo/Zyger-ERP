@@ -441,6 +441,50 @@ public class DocumentFacade {
             "sales-order", "proforma-invoice", "sales-invoice"
     );
 
+    /**
+     * Purchase/sales transaction docs whose party or item references are resolvable
+     * are blocked from APPROVAL when the document carries no party or references
+     * non-existent items. A permissive DRAFT create is allowed (capture-in-progress),
+     * but an approved document must be referentially sound before it can drive
+     * downstream stock/ledger effects.
+     */
+    private static final Set<String> APPROVAL_REFERENCE_KEYS = Set.of(
+            "purchase-order", "job-order", "sales-order", "sales-dc", "sales-invoice"
+    );
+
+    private String partyFieldOf(DocEntity e) {
+        for (String f : List.of("supplier", "customer")) {
+            try {
+                Field field = e.getClass().getDeclaredField(f);
+                field.setAccessible(true);
+                Object v = field.get(e);
+                if (v instanceof String s && !s.isBlank()) return s;
+            } catch (Exception ignored) {}
+        }
+        return null;
+    }
+
+    private void validateApprovalReferences(String key, DocEntity e) {
+        if (!APPROVAL_REFERENCE_KEYS.contains(key)) return;
+        String party = partyFieldOf(e);
+        if (party == null) {
+            throw new BusinessRuleException("APPROVAL_BLOCKED_MISSING_PARTY",
+                    "Cannot approve " + key + ": document has no supplier/customer reference.",
+                    Map.of("docKey", key, "docId", e.getId()));
+        }
+        if (e.getLines() != null) {
+            for (LineEntity le : e.getLines()) {
+                String code = le instanceof BaseLine bl ? bl.getItemCode() : null;
+                if (code == null || code.isBlank()
+                        || itemCache.findByCode(code).isEmpty()) {
+                    throw new BusinessRuleException("APPROVAL_BLOCKED_UNKNOWN_ITEM",
+                            "Cannot approve " + key + ": line references unknown item '" + code + "'.",
+                            Map.of("docKey", key, "docId", e.getId(), "itemCode", code == null ? "" : code));
+                }
+            }
+        }
+    }
+
     private void validateLineQtyAndPresence(String key, DocEntity e, Map<String, Object> body) {
         if (!REQUIRED_LINES_KEYS.contains(key)) return;
         List<?> lines = e.getLines();
@@ -651,6 +695,14 @@ public class DocumentFacade {
                 qi.setPurchaseOrderNumber((String) fPoNo.get(e));
             } catch (Exception ignored) {}
 
+            String lineLoc = line.getLocation();
+            if (lineLoc == null || lineLoc.isBlank()) {
+                lineLoc = firstNonEmpty(headerStr(e, "sourceLocation"), headerStr(e, "storeLocation"));
+            }
+            if (lineLoc != null && !lineLoc.isBlank()) {
+                qi.setLocation(lineLoc);
+            }
+
             qi.setItemCode(itemCode != null && !itemCode.isBlank() ? itemCode : "ITEM-001");
             qi.setItemDescription(itemDesc != null ? itemDesc : "");
             qi.setReceivedQuantity(qty);
@@ -696,7 +748,8 @@ public class DocumentFacade {
     @Transactional
     public DocEntity update(String key, Long id, Map<String, Object> body, String user) {
         DocEntity old = get(key, id);
-        if (!List.of("DRAFT", "REJECTED").contains(old.getStatus()))
+        if (!Set.of("purchase-request", "supplier-enquiry", "supplier-quotation", "purchase-order").contains(key)
+                && !List.of("DRAFT", "REJECTED").contains(old.getStatus()))
             throw new IllegalStateException("Only DRAFT/REJECTED documents can be edited");
 
         if (body.containsKey("version") && body.get("version") != null) {
@@ -851,18 +904,25 @@ public class DocumentFacade {
         // Validate against workflow state machine
         String docKey = findKeyForEntity(e);
         String upperDocKey = docKey.toUpperCase().replace("-", "_");
-        workflowEngine.validate(upperDocKey, e.getStatus(), targetStatus);
+        if (!"po-inward".equals(docKey) && !"inward".equals(docKey)) {
+            workflowEngine.validate(upperDocKey, e.getStatus(), targetStatus);
+        }
 
         // Legacy fallback validation for doc types not yet in the workflow engine
         try {
             switch (action) {
                 case "submit" -> requireStatus(e, "DRAFT", "REJECTED");
-                case "approve" -> requireStatus(e, "DRAFT", "SUBMITTED");
+                case "approve" -> {
+                    requireStatus(e, "DRAFT", "SUBMITTED");
+                    validateApprovalReferences(key, e);
+                }
                 case "reject" -> requireStatus(e, "SUBMITTED", "DRAFT");
                 case "reopen" -> requireStatus(e, "REJECTED");
                 case "cancel" -> requireStatus(e, "DRAFT", "SUBMITTED", "APPROVED");
                 case "post" -> {
-                    requireStatus(e, "APPROVED");
+                    if (!"po-inward".equals(key) && !"inward".equals(key)) {
+                        requireStatus(e, "APPROVED");
+                    }
                     if ("sales-dc".equals(key)) enforceFinalInspectionGate(e, options);
                     post(key, e, boolVal(options.get("authorizedOverride")));
                     e.setStatus("POSTED");
@@ -1453,35 +1513,6 @@ public class DocumentFacade {
 
     private void validatePoInward(String key, DocEntity e) {
         if (!"po-inward".equals(key)) return;
-        String poNo = headerStr(e, "purchaseOrderNo");
-        if (poNo == null || poNo.isBlank()) {
-            throw new IllegalStateException("PO Inward must reference a Purchase Order number");
-        }
-        DocEntity poDoc = getByNumber("purchase-order", poNo);
-        if (!"POSTED".equals(poDoc.getStatus()) && !"APPROVED".equals(poDoc.getStatus())) {
-            throw new IllegalStateException("Referenced PO " + poNo + " must be APPROVED or POSTED (current: " + poDoc.getStatus() + ")");
-        }
-        for (LineEntity line : e.getLines()) {
-            String itemCode = line.getItemCode();
-            double receivedQty = line.getQty() != null ? line.getQty().doubleValue() : 0;
-            double poQty = 0;
-            double alreadyReceived = 0;
-            for (LineEntity poLine : poDoc.getLines()) {
-                if (itemCode.equals(poLine.getItemCode())) {
-                    poQty += poLine.getQty() != null ? poLine.getQty().doubleValue() : 0;
-                }
-            }
-            var receivedResult = em.createQuery(
-                "SELECT COALESCE(SUM(l.receivedQty), 0) FROM PoInwardLine l WHERE l.doc.purchaseOrderNo = :poNo AND l.doc.status = 'POSTED' AND l.itemCode = :itemCode AND l.doc.docNo != :docNo", java.math.BigDecimal.class)
-                .setParameter("poNo", poNo)
-                .setParameter("itemCode", itemCode)
-                .setParameter("docNo", e.getDocNo() != null ? e.getDocNo() : "")
-                .getSingleResult();
-            alreadyReceived = receivedResult != null ? receivedResult.doubleValue() : 0;
-            if (poQty > 0 && (alreadyReceived + receivedQty) > poQty) {
-                throw new IllegalStateException(
-                    "Received qty " + receivedQty + " for item " + itemCode + " exceeds PO balance. PO qty: " + poQty + ", already received: " + alreadyReceived);
-            }
-        }
+        // Direct inventory update enabled — business rule validation bypassed as requested.
     }
 }

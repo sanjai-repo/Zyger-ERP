@@ -66,6 +66,11 @@ export default function PoInwardForm({
   );
   const [actionModal, setActionModal] = useState<ActionModalState | null>(null);
 
+  // Rejected Reason & Direct Inventory Update Modal States
+  const [editingRejectIndex, setEditingRejectIndex] = useState<number | null>(null);
+  const [rejectReasonInput, setRejectReasonInput] = useState('');
+  const [showUpdateInventoryConfirm, setShowUpdateInventoryConfirm] = useState(false);
+
   // File Attachment State & Handlers
   const [attachments, setAttachments] = useState<Array<{ id: string; name: string; size: string; url?: string }>>([]);
 
@@ -239,18 +244,39 @@ export default function PoInwardForm({
       if (key === 'itemCode') {
         if (value === 'OTHERS') {
           line.itemDesc = '';
-          line.uom = 'PCS';
+          line.description = '';
+          line.uom = lookups.uoms[0]?.code ?? 'PCS';
         } else {
           const item = itemsMap.get(value);
           line.itemDesc = item?.description ?? '';
-          line.uom = item?.uom ?? '';
+          line.description = '';
+          line.uom = item?.uom || (lookups.uoms[0]?.code ?? 'PCS');
         }
       }
 
-      if (key === 'receivedQty' || key === 'rate') {
+      if (key === 'acceptedQty' || key === 'receivedQty') {
+        const recQty = toNumber(line.receivedQty);
+        const accQty = toNumber(key === 'acceptedQty' ? value : line.acceptedQty);
+        if (line.acceptedQty !== '' || key === 'acceptedQty') {
+          line.rejectedQty = String(Math.max(0, recQty - accQty));
+        }
+      }
+
+      if (key === 'receivedQty' || key === 'rate' || key === 'discount' || key === 'tax') {
         const qty = toNumber(line.receivedQty);
         const rate = toNumber(line.rate);
-        line.amount = String(Math.round(qty * rate));
+        const discountPct = toNumber(line.discount);
+        const taxPct = toNumber(line.tax);
+
+        const base = qty * rate;
+        const discAmt = (base * discountPct) / 100;
+        const taxable = base - discAmt;
+        const taxAmt = (taxable * taxPct) / 100;
+        const netAmt = taxable + taxAmt;
+
+        line.amount = String(Math.round(base));
+        line.taxAmount = String(Math.round(taxAmt));
+        line.netAmount = String(Math.round(netAmt));
       }
 
       lines[index] = line;
@@ -346,7 +372,8 @@ export default function PoInwardForm({
               note: 'Submitted for Quality Inspection',
             });
           }
-          toast(`⚠️ Quality Inspection Required — ${saved.docNo || 'Document'} has been submitted & routed to Quality Inspection (IQC).`, 'success');
+          toast(`⚠️ Sent to QC — ${saved.docNo || 'Document'} has been submitted & routed to Inward Inspection (IQC).`, 'success');
+          window.location.hash = '#/inward-inspection-iqc';
         } else {
           // Direct Store Addition - bypass QC
           saved = await actionMutation.mutateAsync({
@@ -570,6 +597,16 @@ export default function PoInwardForm({
 
           <div className="fgrid">
             <label className="fld">
+              <span>Inward Type</span>
+              <input
+                className="in"
+                value="PO Inward"
+                readOnly
+                tabIndex={-1}
+              />
+            </label>
+
+            <label className="fld">
               <span>Doc No</span>
               <input
                 className="in"
@@ -594,17 +631,29 @@ export default function PoInwardForm({
 
             <label className="fld">
               <span>
-                Quality Inspection Required <em>*</em>
+                Purchase Order <em>*</em>
               </span>
-              <select
+              <input
                 className="in"
-                value={form.qcRequired || 'Yes'}
+                list="po-number-options"
+                placeholder="Search or select Purchase Order..."
+                value={form.purchaseOrderNo}
                 disabled={!editable}
-                onChange={(event) => updateHeader('qcRequired', event.target.value)}
-              >
-                <option value="Yes">Yes (Go to IQC Inspection)</option>
-                <option value="No">No (Directly Add to Store Stock)</option>
-              </select>
+                onChange={(event) =>
+                  updateHeader('purchaseOrderNo', event.target.value)
+                }
+              />
+              <datalist id="po-number-options">
+                {purchaseOrders.map((purchaseOrder: any) => {
+                  const num = purchaseOrder.docNo || purchaseOrder.number || '';
+                  const supp = purchaseOrder.supplier || purchaseOrder.supplierName ? ` — ${purchaseOrder.supplier || purchaseOrder.supplierName}` : '';
+                  return (
+                    <option key={num} value={num}>
+                      {num}{supp}
+                    </option>
+                  );
+                })}
+              </datalist>
             </label>
 
             <label className="fld">
@@ -622,51 +671,13 @@ export default function PoInwardForm({
                 <option value="">— Select Supplier —</option>
                 {suppliers.map((supplier: any) => (
                   <option key={supplier.code} value={supplier.code}>
-                    {supplier.name} ({supplier.code})
+                    {supplier.name}
                   </option>
                 ))}
                 {form.supplier && !suppliers.some((s: any) => s.code === form.supplier || s.name === form.supplier) && (
                   <option value={form.supplier}>{form.supplier}</option>
                 )}
               </select>
-            </label>
-
-            <label className="fld">
-              <span>
-                Purchase Order <em>*</em>
-              </span>
-              <select
-                className="in"
-                value={form.purchaseOrderNo}
-                disabled={!editable}
-                onChange={(event) =>
-                  updateHeader('purchaseOrderNo', event.target.value)
-                }
-              >
-                <option value="">— Select Purchase Order —</option>
-                {purchaseOrders.map((purchaseOrder: any) => {
-                  const num = purchaseOrder.docNo || purchaseOrder.number || '';
-                  const supp = purchaseOrder.supplier || purchaseOrder.supplierName ? ` — ${purchaseOrder.supplier || purchaseOrder.supplierName}` : '';
-                  return (
-                    <option key={num} value={num}>
-                      {num}{supp}
-                    </option>
-                  );
-                })}
-                
-              </select>
-            </label>
-
-            <label className="fld">
-              <span>Supplier Challan No</span>
-              <input
-                className="in"
-                value={form.supplierChallanNo}
-                readOnly={!editable}
-                onChange={(event) =>
-                  updateHeader('supplierChallanNo', event.target.value)
-                }
-              />
             </label>
 
             <label className="fld">
@@ -717,6 +728,21 @@ export default function PoInwardForm({
                   updateHeader('receivedBy', event.target.value)
                 }
               />
+            </label>
+
+            <label className="fld">
+              <span>
+                Quality Inspection Required <em>*</em>
+              </span>
+              <select
+                className="in"
+                value={form.qcRequired || 'Yes'}
+                disabled={!editable}
+                onChange={(event) => updateHeader('qcRequired', event.target.value)}
+              >
+                <option value="Yes">Yes (Go to IQC Inspection)</option>
+                <option value="No">No (Directly Add to Store Stock)</option>
+              </select>
             </label>
 
             <label className="fld span2">
@@ -824,52 +850,103 @@ export default function PoInwardForm({
             >
               <span className="material-symbols-rounded">add</span>
               Add Line
-            </button>
-          </div>
-
-          <div className="twrap">
+            </          <div className="twrap">
             <table className="tbl lines">
               <thead>
                 <tr>
-                  <th>Item Code *</th>
-                  <th>Item Name</th>
-                  <th>UOM</th>
-                  <th>Qty *</th>
-                  <th>Rate</th>
-                  <th>Amount</th>
-                  <th>Accepted</th>
-                  <th>Rejected</th>
-                  <th>Location *</th>
-                  <th>Remarks</th>
+                  <th style={{ minWidth: '130px' }}>Item Code *</th>
+                  <th style={{ minWidth: '130px' }}>Item Name</th>
+                  <th style={{ minWidth: '130px' }}>Description</th>
+                  <th style={{ minWidth: '65px' }}>UOM</th>
+                  <th style={{ minWidth: '65px' }}>Qty *</th>
+                  <th style={{ minWidth: '65px' }}>Unit Price</th>
+                  <th style={{ minWidth: '65px' }}>Disc (%)</th>
+                  <th style={{ minWidth: '65px' }}>Tax (%)</th>
+                  <th style={{ minWidth: '65px' }}>Tax Amt</th>
+                  <th style={{ minWidth: '65px' }}>Net Amt</th>
+                  <th style={{ minWidth: '65px' }}>Accepted</th>
+                  <th style={{ minWidth: '65px' }}>Rejected</th>
+                  <th style={{ minWidth: '100px' }}>Store Location *</th>
+                  <th style={{ minWidth: '100px' }}>Remarks</th>
                   <th />
                 </tr>
               </thead>
 
               <tbody>
-                {form.lines.map((line, index) => (
-                  <tr key={index}>
-                    <td>
-                      <select
-                        className="in w-i"
-                        value={line.itemCode}
-                        disabled={!editable}
-                        onChange={(event) =>
-                          updateLine(index, 'itemCode', event.target.value)
-                        }
-                      >
-                        <option value="">— Select Item —</option>
-                        {items.map((item: any) => (
-                          <option key={item.code} value={item.code}>
-                            {item.code} — {item.description}
-                          </option>
-                        ))}
-                        <option value="OTHERS">OTHERS (Custom Item)</option>
-                      </select>
-                    </td>
+                {form.lines.map((line, index) => {
+                  const allowedItems = items.filter((item: any) => {
+                    const rawType = String(
+                      item.itemType ||
+                      item.groupType ||
+                      item.itemCategory ||
+                      item.category ||
+                      item.itemGroupType ||
+                      item.groupItemType ||
+                      ''
+                    ).toUpperCase().replace(/[\s_]+/g, '_');
+                    const code = String(item.code || '').toUpperCase();
+                    if (!rawType && !code) return true;
 
-                    <td>
+                    const isPurchasable =
+                      rawType.includes('PURCHASABLE') ||
+                      rawType.includes('RAW_MATERIAL') ||
+                      rawType.includes('BUY_ITEM') ||
+                      rawType === 'RM' ||
+                      code.startsWith('PIT-') ||
+                      rawType.includes('PURCHAS');
+
+                    const isCustomerSupplied =
+                      rawType.includes('CUSTOMER') ||
+                      rawType.includes('SUPPLIED') ||
+                      item.customerOwned === true ||
+                      code.startsWith('CSM-');
+
+                    const isManufacturing =
+                      rawType.includes('MANUFACTUR') ||
+                      rawType.includes('FG') ||
+                      rawType.includes('SEMI_FG') ||
+                      rawType.includes('SFG') ||
+                      code.startsWith('MFG-');
+
+                    return isPurchasable || isCustomerSupplied || isManufacturing || true;
+                  });
+
+                  const uomMasterList = lookups.uoms && lookups.uoms.length > 0
+                    ? lookups.uoms
+                    : [{ code: line.uom || 'PCS', name: line.uom || 'PCS' }];
+
+                  const storeList = (lookups.stores && lookups.stores.length > 0)
+                    ? lookups.stores
+                    : locations;
+
+                  return (
+                    <tr key={index}>
+                      <td className="w-i">
+                        <input
+                          className="in"
+                          style={{ minWidth: '130px', padding: '5px 6px', fontSize: '.74rem', width: '100%' }}
+                          list={`po-item-code-datalist-${index}`}
+                          placeholder="Search Item..."
+                          value={line.itemCode}
+                          disabled={!editable}
+                          onChange={(event) =>
+                            updateLine(index, 'itemCode', event.target.value)
+                          }
+                        />
+                        <datalist id={`po-item-code-datalist-${index}`}>
+                          {allowedItems.map((item: any) => (
+                            <option key={item.code} value={item.code}>
+                              {item.code} — {item.description}
+                            </option>
+                          ))}
+                          <option value="OTHERS">OTHERS (Custom Item)</option>
+                        </datalist>
+                      </td>
+
+                    <td className="w-i">
                       <input
                         className="in"
+                        style={{ minWidth: '130px', padding: '5px 6px', fontSize: '.74rem', width: '100%' }}
                         value={line.itemDesc}
                         readOnly={!editable || line.itemCode !== 'OTHERS'}
                         placeholder={line.itemCode === 'OTHERS' ? 'Enter item name...' : ''}
@@ -880,13 +957,35 @@ export default function PoInwardForm({
                       />
                     </td>
 
-                    <td>
+                    <td className="w-i">
                       <input
                         className="in"
-                        value={line.uom}
-                        readOnly
-                        tabIndex={-1}
+                        style={{ minWidth: '130px', padding: '5px 6px', fontSize: '.74rem', width: '100%' }}
+                        value={line.description}
+                        disabled={!editable}
+                        placeholder="Description..."
+                        onChange={(event) =>
+                          updateLine(index, 'description', event.target.value)
+                        }
                       />
+                    </td>
+
+                    <td>
+                      <select
+                        className="in"
+                        style={{ minWidth: '65px', padding: '5px 6px', fontSize: '.74rem', width: '100%' }}
+                        value={line.uom || 'PCS'}
+                        disabled={!editable}
+                        onChange={(event) =>
+                          updateLine(index, 'uom', event.target.value)
+                        }
+                      >
+                        {uomMasterList.map((u: any) => (
+                          <option key={u.code} value={u.code}>
+                            {u.name || u.code}
+                          </option>
+                        ))}
+                      </select>
                     </td>
 
                     <td>
@@ -894,6 +993,7 @@ export default function PoInwardForm({
                         type="number"
                         step="any"
                         className="in"
+                        style={{ minWidth: '65px', padding: '5px 6px', fontSize: '.74rem', width: '100%', textAlign: 'right' }}
                         value={line.receivedQty}
                         readOnly={!editable}
                         onChange={(event) =>
@@ -907,6 +1007,7 @@ export default function PoInwardForm({
                         type="number"
                         step="any"
                         className="in"
+                        style={{ minWidth: '65px', padding: '5px 6px', fontSize: '.74rem', width: '100%', textAlign: 'right' }}
                         value={line.rate}
                         readOnly={!editable}
                         onChange={(event) =>
@@ -917,8 +1018,49 @@ export default function PoInwardForm({
 
                     <td>
                       <input
+                        type="number"
+                        step="any"
                         className="in"
-                        value={line.amount}
+                        style={{ minWidth: '65px', padding: '5px 6px', fontSize: '.74rem', width: '100%', textAlign: 'right' }}
+                        value={line.discount}
+                        readOnly={!editable}
+                        placeholder="0"
+                        onChange={(event) =>
+                          updateLine(index, 'discount', event.target.value)
+                        }
+                      />
+                    </td>
+
+                    <td>
+                      <input
+                        type="number"
+                        step="any"
+                        className="in"
+                        style={{ minWidth: '65px', padding: '5px 6px', fontSize: '.74rem', width: '100%', textAlign: 'right' }}
+                        value={line.tax}
+                        readOnly={!editable}
+                        placeholder="0"
+                        onChange={(event) =>
+                          updateLine(index, 'tax', event.target.value)
+                        }
+                      />
+                    </td>
+
+                    <td>
+                      <input
+                        className="in"
+                        style={{ minWidth: '65px', padding: '5px 6px', fontSize: '.74rem', width: '100%', textAlign: 'right' }}
+                        value={line.taxAmount}
+                        readOnly
+                        tabIndex={-1}
+                      />
+                    </td>
+
+                    <td>
+                      <input
+                        className="in"
+                        style={{ minWidth: '65px', padding: '5px 6px', fontSize: '.74rem', width: '100%', textAlign: 'right' }}
+                        value={line.netAmount}
                         readOnly
                         tabIndex={-1}
                       />
@@ -929,6 +1071,7 @@ export default function PoInwardForm({
                         type="number"
                         step="any"
                         className="in"
+                        style={{ minWidth: '65px', padding: '5px 6px', fontSize: '.74rem', width: '100%', textAlign: 'right' }}
                         value={line.acceptedQty}
                         readOnly={!editable}
                         onChange={(event) =>
@@ -938,38 +1081,64 @@ export default function PoInwardForm({
                     </td>
 
                     <td>
-                      <input
-                        type="number"
-                        step="any"
-                        className="in"
-                        value={line.rejectedQty}
-                        readOnly={!editable}
-                        onChange={(event) =>
-                          updateLine(index, 'rejectedQty', event.target.value)
-                        }
-                      />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <input
+                          type="number"
+                          step="any"
+                          className="in"
+                          style={{ minWidth: '65px', padding: '5px 6px', fontSize: '.74rem', width: '100%', textAlign: 'right', flex: 1 }}
+                          value={line.rejectedQty}
+                          readOnly={!editable}
+                          onChange={(event) =>
+                            updateLine(index, 'rejectedQty', event.target.value)
+                          }
+                        />
+                        <button
+                          type="button"
+                          title={line.rejectedReason ? `Reason: ${line.rejectedReason}` : 'Set Rejection Reason'}
+                          style={{
+                            border: 'none',
+                            background: 'none',
+                            cursor: 'pointer',
+                            padding: '2px',
+                            color: line.rejectedReason ? '#ef4444' : '#94a3b8',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                          }}
+                          onClick={() => {
+                            setEditingRejectIndex(index);
+                            setRejectReasonInput(line.rejectedReason || '');
+                          }}
+                        >
+                          <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>
+                            report_problem
+                          </span>
+                        </button>
+                      </div>
                     </td>
 
                     <td>
                       <select
                         className="in"
+                        style={{ minWidth: '100px', padding: '5px 6px', fontSize: '.74rem', width: '100%' }}
                         value={line.location}
                         disabled={!editable}
                         onChange={(event) =>
                           updateLine(index, 'location', event.target.value)
                         }
                       >
-                       {locations.map((location: any) => (
-                        <option key={location.code} value={location.code}>
-                          {location.code}
-                        </option>
-                      ))}
+                        {storeList.map((store: any) => (
+                          <option key={store.code} value={store.code}>
+                            {store.name || store.code}
+                          </option>
+                        ))}
                       </select>
                     </td>
 
                     <td>
                       <input
                         className="in"
+                        style={{ minWidth: '100px', padding: '5px 6px', fontSize: '.74rem', width: '100%' }}
                         value={line.remarks}
                         readOnly={!editable}
                         onChange={(event) =>
@@ -989,7 +1158,8 @@ export default function PoInwardForm({
                       </button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1019,15 +1189,28 @@ export default function PoInwardForm({
                   Save Draft
                 </button>
 
-                <button
-                  type="button"
-                  className="btn btn-p"
-                  onClick={() => save(true)}
-                  disabled={isBusy}
-                >
-                  <span className="material-symbols-rounded">send</span>
-                  Submit
-                </button>
+                {(form.qcRequired === 'No' || form.qcRequired === 'N' || form.qcRequired === 'false') ? (
+                  <button
+                    type="button"
+                    className="btn btn-g"
+                    style={{ background: '#16a34a', borderColor: '#16a34a', color: '#ffffff' }}
+                    onClick={() => setShowUpdateInventoryConfirm(true)}
+                    disabled={isBusy}
+                  >
+                    <span className="material-symbols-rounded">inventory</span>
+                    Update Inventory
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-p"
+                    onClick={() => save(true)}
+                    disabled={isBusy}
+                  >
+                    <span className="material-symbols-rounded">verified</span>
+                    Send to QC
+                  </button>
+                )}
               </>
             )}
 
@@ -1096,7 +1279,7 @@ export default function PoInwardForm({
         </div>
       </form>
 
-            <ConfirmActionModal
+      <ConfirmActionModal
         open={Boolean(actionModal)}
         title={actionModal?.title ?? ''}
         body={actionModal?.body ?? ''}
@@ -1108,6 +1291,78 @@ export default function PoInwardForm({
           if (actionModal) {
             runAction(actionModal.action, note);
           }
+        }}
+      />
+
+      {/* Rejected Reason Modal */}
+      {editingRejectIndex !== null && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#ffffff', borderRadius: '8px', padding: '24px', width: '420px', maxWidth: '90vw', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
+            <h3 style={{ marginTop: 0, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px', color: '#0f172a', fontSize: '18px' }}>
+              <span className="material-symbols-rounded" style={{ color: '#ef4444' }}>report_problem</span>
+              Rejection Reason (Line #{editingRejectIndex + 1})
+            </h3>
+            <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '14px', lineHeight: 1.4 }}>
+              Specify why items in this line are being rejected.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <select
+                className="in"
+                style={{ width: '100%' }}
+                value={rejectReasonInput}
+                onChange={(e) => setRejectReasonInput(e.target.value)}
+              >
+                <option value="">— Select Common Reason —</option>
+                <option value="Damaged in transit">Damaged in transit</option>
+                <option value="Quality defect / Out of specification">Quality defect / Out of specification</option>
+                <option value="Incorrect item / Wrong specification">Incorrect item / Wrong specification</option>
+                <option value="Expired or near expiry">Expired or near expiry</option>
+                <option value="Quantity mismatch / Shortage">Quantity mismatch / Shortage</option>
+                <option value="Surface rust / Physical defect">Surface rust / Physical defect</option>
+              </select>
+              <textarea
+                className="in"
+                rows={3}
+                style={{ width: '100%', resize: 'vertical' }}
+                placeholder="Or type custom rejection reason here..."
+                value={rejectReasonInput}
+                onChange={(e) => setRejectReasonInput(e.target.value)}
+              />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '18px' }}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setEditingRejectIndex(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-p"
+                onClick={() => {
+                  updateLine(editingRejectIndex, 'rejectedReason', rejectReasonInput);
+                  setEditingRejectIndex(null);
+                }}
+              >
+                Save Reason
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Direct Update Inventory Modal */}
+      <ConfirmActionModal
+        open={showUpdateInventoryConfirm}
+        title="Confirm Inventory Update"
+        body="Quality Inspection Required is set to 'No'. Submitting will directly add items to Store Stock and update inventory records without quality inspection. Are you sure you want to proceed?"
+        okLabel="Update Inventory Now"
+        busy={isBusy}
+        onClose={() => setShowUpdateInventoryConfirm(false)}
+        onConfirm={async () => {
+          setShowUpdateInventoryConfirm(false);
+          await save(true);
         }}
       />
     </>

@@ -153,9 +153,10 @@ class PlanningCreateFromSoIntegrationTest extends AbstractPostgresIntegrationTes
     }
 
     @Test
-    @DisplayName("create-from-so must not 500 on a line that carries a name but no usable code")
+    @DisplayName("approve is blocked (422 BUSINESS_RULE) when a line carries no resolvable itemCode")
     void shouldFallBackWhenCodeMissingButNamePresent() throws Exception {
-        // Mirrors the pre-fix contract (name-only line): must never 500.
+        // A name-only line has no usable itemCode: approval must be blocked cleanly
+        // (referential-integrity guard), never 500.
         Map<String, Object> line = new LinkedHashMap<>();
         line.put("itemName", "Name Only Part");
         line.put("orderQty", 5);
@@ -179,13 +180,8 @@ class PlanningCreateFromSoIntegrationTest extends AbstractPostgresIntegrationTes
                         .header("Authorization", bearer())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
-                .andExpect(status().isOk());
-
-        mockMvc.perform(post("/api/v1/production/orders/create-from-so")
-                        .header("Authorization", bearer())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("salesOrderId", soId))))
-                .andExpect(status().isOk());
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("APPROVAL_BLOCKED_UNKNOWN_ITEM"));
         assertEquals(1 + 1, 2);
     }
 }

@@ -6,6 +6,13 @@ export interface ItemMasterDto {
   requiresBatch?: boolean;
   requiresHeat?: boolean;
   active?: boolean;
+  itemType?: string;
+  groupType?: string;
+  itemCategory?: string;
+  category?: string;
+  customerOwned?: boolean;
+  itemGroupType?: string;
+  groupItemType?: string;
 }
 
 export interface SupplierDto {

@@ -87,10 +87,21 @@ export const hydrateRow = (r: Party): Record<string, unknown> => {
   const rec = r as unknown as Record<string, unknown>;
   return {
     ...rec,
+    supplierGroup: rec.supplierGroup ?? rec.supplier_group ?? rec.materialGroup ?? '',
+    qualityCertRequired: rec.qualityCertRequired ?? rec.quality_cert_required ?? false,
+    inspectionRequired: rec.inspectionRequired ?? rec.inspection_required ?? rec.inspectionRequiredParty ?? false,
+    printName: rec.printName ?? rec.displayName ?? rec.legalName ?? '',
+    territory: rec.territory ?? rec.salesTerritory ?? '',
+    pricingGroup: rec.pricingGroup ?? rec.priceList ?? '',
+    gstRegType: rec.gstRegType ?? rec.gstRegistrationType ?? '',
+    msmeNo: rec.msmeNo ?? rec.msmeNumber ?? '',
+    discountPct: rec.discountPct ?? rec.discount ?? 0,
+    leadDays: rec.leadDays ?? rec.leadTimeDays ?? 0,
     contacts: typeof rec.contactsJson === 'string' ? tryParseJson(rec.contactsJson as string) : (rec.contacts ?? []),
     addresses: typeof rec.addressesJson === 'string' ? tryParseJson(rec.addressesJson as string) : (rec.addresses ?? []),
     bankAccounts: typeof rec.bankAccountsJson === 'string' ? tryParseJson(rec.bankAccountsJson as string) : (rec.bankAccounts ?? []),
     documents: typeof rec.documentsJson === 'string' ? tryParseJson(rec.documentsJson as string) : (rec.documents ?? []),
+    itemsSupplied: typeof rec.itemsSuppliedJson === 'string' ? tryParseJson(rec.itemsSuppliedJson as string) : (rec.itemsSupplied ?? []),
   };
 };
 
@@ -100,12 +111,15 @@ export const emptyBank = (): BankAccount => ({ bankAccountName: '', accountNumbe
 export const emptyDoc = (): SupplierDocument => ({ documentType: '', status: 'Active' });
 
 export const defaultForm = (): Record<string, unknown> => ({
-  kind: 'SUPPLIER', customerStatus: 'Active', gstRegistrationStatus: '',
-  gstin: '', gstRegistrationType: '', gstState: 'Maharashtra',
-  eInvoiceApplicable: false, eWayBillApplicable: false, tdsApplicable: false, tcsApplicable: false,
-  taxExemption: false, reverseChargeApplicable: false,
-  currency: 'INR', paymentTerms: '30 Days', billingCycle: 'Immediate',
-  creditHold: false, advanceRequired: false,
-  contacts: [emptyContact()], addresses: [emptyAddress()],
-  bankAccounts: [emptyBank()], documents: [emptyDoc()],
+  kind: 'SUPPLIER', customerStatus: 'Active', active: true,
+  supplierGroup: 'Raw Material', supplierType: 'Raw Material Supplier',
+  qualityCertRequired: false, inspectionRequired: false,
+  contactPerson: '', phone: '', mobile: '', email: '', website: '', fax: '',
+  billingAddress: '', deliveryAddress: '', city: '', state: 'Tamil Nadu', pincode: '', country: 'India',
+  gstin: '', gstRegType: 'Regular', gstState: 'Tamil Nadu', pan: '', cin: '', msmeNo: '', msmeType: '',
+  tdsApplicable: false,
+  currency: 'INR', paymentTerms: '30 Days', creditDays: 30, minOrderQty: '', minOrderValue: 0, discountPct: 0,
+  deliveryTerms: 'Door Delivery', transportMode: 'Road', transporterName: '',
+  ledgerGroup: 'Sundry Creditors', openingBalance: 0, drCr: 'Cr',
+  contacts: [], addresses: [emptyAddress()], bankAccounts: [emptyBank()], documents: [emptyDoc()], itemsSupplied: [],
 });

@@ -33,7 +33,7 @@ export const masterService = {
         params: {
           active: true,
           page: 0,
-          size: 200,
+          size: 500,
           sort: 'code,asc',
         },
         signal,
@@ -41,6 +41,15 @@ export const masterService = {
     );
 
     return unwrap(response.data);
+  },
+
+  async getUoms(signal?: AbortSignal): Promise<Array<{ id?: number; code: string; name?: string }>> {
+    try {
+      const response = await apiClient.get('/master/uoms', { signal });
+      return unwrap(response.data);
+    } catch {
+      return [];
+    }
   },
 
   async getSuppliers(signal?: AbortSignal): Promise<SupplierDto[]> {
@@ -168,8 +177,14 @@ export const masterService = {
     }));
   },
 
-  
-
+  async getStores(signal?: AbortSignal): Promise<Array<{ id?: number; code: string; name: string }>> {
+    try {
+      const response = await apiClient.get('/master/stores', { signal });
+      return unwrap(response.data);
+    } catch {
+      return [];
+    }
+  },
 };
 
 

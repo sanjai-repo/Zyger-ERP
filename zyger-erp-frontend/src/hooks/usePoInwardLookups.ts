@@ -30,6 +30,20 @@ export function usePoInwardLookups() {
     retry: 1,
   });
 
+  const uomsQuery = useQuery({
+    queryKey: ['master', 'uoms'],
+    queryFn: ({ signal }) => masterService.getUoms(signal),
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
+  });
+
+  const storesQuery = useQuery({
+    queryKey: ['master', 'stores'],
+    queryFn: ({ signal }) => masterService.getStores(signal),
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
+  });
+
   const isLoading =
     itemsQuery.isPending ||
     suppliersQuery.isPending ||
@@ -59,6 +73,8 @@ export function usePoInwardLookups() {
       suppliersQuery.refetch(),
       purchaseOrdersQuery.refetch(),
       locationsQuery.refetch(),
+      uomsQuery.refetch(),
+      storesQuery.refetch(),
     ]);
   };
 
@@ -67,6 +83,8 @@ export function usePoInwardLookups() {
     suppliers: suppliersQuery.data ?? [],
     purchaseOrders: purchaseOrdersQuery.data ?? [],
     locations: locationsQuery.data ?? [],
+    uoms: uomsQuery.data ?? [],
+    stores: storesQuery.data ?? [],
     isLoading,
     isError,
     errorMessage,

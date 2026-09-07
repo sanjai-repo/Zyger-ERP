@@ -42,13 +42,10 @@ export default function UomForm({ uomId, viewOnly = false, onBack, onSaved }: Pr
       return;
     }
     setLoading(true);
-    const params = new URLSearchParams({ page: '0', size: '9999' });
-    apiClient.get(`/master/uoms?${params}`).then(({ data }) => {
-      const list = data.content ?? data ?? [];
-      const found = list.find((r: { id: number }) => r.id === uomId);
-      if (found) {
-        setForm({ ...defaultForm(), ...found });
-        setEditId(found.id);
+    apiClient.get(`/master/uoms/${uomId}`).then(({ data }) => {
+      if (data) {
+        setForm({ ...defaultForm(), ...data });
+        setEditId(data.id);
       } else {
         toast('UOM not found.', 'error');
         onBack();
@@ -64,8 +61,6 @@ export default function UomForm({ uomId, viewOnly = false, onBack, onSaved }: Pr
   const save = async () => {
     if (!String(form.code ?? '').trim()) { toast('UOM Code is required.', 'error'); return; }
     if (!String(form.name ?? '').trim()) { toast('UOM Name is required.', 'error'); return; }
-    if (!String(form.symbol ?? '').trim()) { toast('Symbol is required.', 'error'); return; }
-    if (form.conversionFactor === null || form.conversionFactor === undefined || form.conversionFactor === '') { toast('Conversion Factor is required.', 'error'); return; }
     setBusy(true);
     try {
       if (editId) {
@@ -123,9 +118,6 @@ export default function UomForm({ uomId, viewOnly = false, onBack, onSaved }: Pr
           <div className="fgrid sec-body">
             {inp('UOM Code', 'code', { required: true, placeholder: 'Auto-generated', readOnly: true })}
             {inp('UOM Name', 'name', { required: true })}
-            {inp('Symbol', 'symbol', { required: true })}
-            {inp('Base UOM', 'baseUom')}
-            {inp('Conversion Factor', 'conversionFactor', { type: 'number' })}
             <label className="fld full">
               <span>Description</span>
               <textarea className="in" rows={3} value={String(form.description ?? '')}

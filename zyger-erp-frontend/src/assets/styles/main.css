@@ -1682,13 +1682,13 @@ textarea.in {
 }
 
 .lines .in {
-    min-width: 86px;
+    min-width: 65px;
     padding: 5px 6px;
     font-size: .74rem
 }
 
 .lines .w-i {
-    min-width: 200px
+    min-width: 130px
 }
 
 .actbar {

@@ -100,12 +100,6 @@ public class PurchaseService {
                 if ("BLOCKED".equals(p.getApprovalStatus())) {
                     throw new IllegalStateException("Supplier " + p.getCode() + " is BLOCKED and cannot be used in purchase documents");
                 }
-                if (!"APPROVED".equals(p.getApprovalStatus()) && !"ACTIVE".equals(p.getApprovalStatus())) {
-                    Object override = body.get("supplierOverride");
-                    if (!Boolean.TRUE.equals(override)) {
-                        throw new IllegalStateException("Supplier " + p.getCode() + " approval status is " + p.getApprovalStatus() + ". Pass supplierOverride=true to bypass.");
-                    }
-                }
             });
         }
     }

@@ -99,12 +99,36 @@ public class QualityInspectionService {
         if (d == null) d = LocalDate.now();
         e.setDocDate(d);
         e.setInspectionDate(d);
-        e.setInspectionStatus("DRAFT");
-        e.setDecisionStatus("NONE");
+
+        boolean directUpdate = Boolean.TRUE.equals(body.get("directInventoryUpdate"))
+                || "PASS".equalsIgnoreCase(String.valueOf(body.get("inspectionStatus")))
+                || "PASSED".equalsIgnoreCase(String.valueOf(body.get("inspectionStatus")))
+                || "APPROVED".equalsIgnoreCase(String.valueOf(body.get("inspectionStatus")));
+
+        if (directUpdate) {
+            e.setInspectionStatus("PASS");
+            e.setDecisionStatus("PASS");
+            e.setFinalDecision("PASS");
+            e.setApprovedBy(user);
+            e.setApprovedAt(Instant.now());
+            e.setSignedAt(Instant.now());
+            e.setIsLocked(true);
+        } else {
+            e.setInspectionStatus("DRAFT");
+            e.setDecisionStatus("NONE");
+        }
+
         if (body.get("receivedQuantity") != null)
             e.setReceivedQuantity(bdVal(body.get("receivedQuantity")));
         if (body.get("inspectionQuantity") != null)
             e.setInspectionQuantity(bdVal(body.get("inspectionQuantity")));
+        if (body.get("acceptedQuantity") != null)
+            e.setAcceptedQuantity(bdVal(body.get("acceptedQuantity")));
+        if (body.get("rejectedQuantity") != null)
+            e.setRejectedQuantity(bdVal(body.get("rejectedQuantity")));
+        if (body.get("location") != null)
+            e.setLocation(String.valueOf(body.get("location")));
+
         e.setCreatedBy(user);
         e.setCreatedAt(Instant.now());
         e.setUpdatedAt(Instant.now());
@@ -122,9 +146,50 @@ public class QualityInspectionService {
         em.persist(e);
 
         // §4.2: Record initial status history
-        recordStatusChange(e, null, "DRAFT", user, "Inspection created");
+        recordStatusChange(e, null, e.getInspectionStatus(), user, directUpdate ? "Directly passed and updated inventory" : "Inspection created");
+
+        if (directUpdate) {
+            postAcceptedQuantityToInventory(e, user);
+        }
 
         return e;
+    }
+
+    private void postAcceptedQuantityToInventory(QualityInspection e, String user) {
+        if (e.getItemCode() == null || e.getItemCode().isBlank()) return;
+
+        BigDecimal acceptedQty = e.getAcceptedQuantity();
+        if (acceptedQty == null || acceptedQty.compareTo(BigDecimal.ZERO) <= 0) {
+            acceptedQty = e.getInspectionQuantity() != null && e.getInspectionQuantity().compareTo(BigDecimal.ZERO) > 0
+                    ? e.getInspectionQuantity() : e.getReceivedQuantity();
+        }
+        if (acceptedQty == null || acceptedQty.compareTo(BigDecimal.ZERO) <= 0) return;
+
+        String batch = e.getBatchNumber() != null ? e.getBatchNumber() : "";
+        String heat = e.getHeatNumber() != null ? e.getHeatNumber() : "";
+        String location = e.getLocation() != null ? e.getLocation() : "MAIN";
+
+        try {
+            stockService.recordStockIn(
+                    e.getDocNo(),
+                    KEY,
+                    "QC_INSPECTION_PASS",
+                    e.getItemCode(),
+                    location,
+                    batch,
+                    heat,
+                    acceptedQty,
+                    e.getInspectionDate(),
+                    user,
+                    "FREE"
+            );
+            e.setStockSyncStatus("SYNCED");
+            em.persist(e);
+        } catch (Exception ex) {
+            log.warn("Direct inventory update error for inspection {}: {}", e.getDocNo(), ex.getMessage());
+            e.setStockSyncStatus("SYNC_ERROR");
+            em.persist(e);
+        }
     }
 
     public static String prefixForType(QualityInspectionType type) {

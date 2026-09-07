@@ -16,7 +16,7 @@ interface Props {
   onView?: (id: number) => void;
 }
 
-export default function CustomerList({ onAdd, onEdit }: Props) {
+export default function CustomerList({ onAdd, onEdit, onView }: Props) {
   const { toast } = useToast();
   const [rows, setRows] = useState<Party[]>([]);
   const [total, setTotal] = useState(0);
@@ -117,12 +117,13 @@ export default function CustomerList({ onAdd, onEdit }: Props) {
             <table className="tbl">
               <thead>
                 <tr>
-                  <th style={{ width: '50px' }}>ID</th>
+                  <th style={{ width: '50px' }}>#</th>
                   <th>CUSTOMER CODE</th>
                   <th>CUSTOMER NAME</th>
                   <th>GROUP</th>
                   <th>TYPE</th>
                   <th>CITY / STATE</th>
+                  <th>CONTACT PERSON</th>
                   <th>MOBILE</th>
                   <th>EMAIL</th>
                   <th>GSTIN</th>
@@ -131,24 +132,30 @@ export default function CustomerList({ onAdd, onEdit }: Props) {
               </thead>
               <tbody>
                 {filteredRows.length === 0 ? (
-                  <tr><td colSpan={10} className="empty">No customers found.</td></tr>
+                  <tr><td colSpan={11} className="empty">No customers found.</td></tr>
                 ) : (
-                  filteredRows.map((r) => (
+                  filteredRows.map((r, idx) => (
                     <tr key={r.id}>
-                      <td>{r.id}</td>
+                      <td>{page * PAGE_SIZE + idx + 1}</td>
                       <td style={{ fontWeight: 700, color: '#0f172a' }}>{r.code}</td>
                       <td style={{ fontWeight: 600 }}>{r.name}</td>
                       <td>{r.customerGroup || 'Others'}</td>
                       <td>{r.customerType || 'B2B'}</td>
                       <td>
-                        {r.addresses?.[0]?.city || (r as any).city || '—'}
-                        {r.addresses?.[0]?.state || (r as any).state ? `, ${r.addresses?.[0]?.state || (r as any).state}` : ''}
+                        {[r.addresses?.[0]?.city, (r as any).city].find(s => Boolean(s && String(s).trim())) || '—'}
+                        {[r.addresses?.[0]?.state, (r as any).state].find(s => Boolean(s && String(s).trim())) ? `, ${[r.addresses?.[0]?.state, (r as any).state].find(s => Boolean(s && String(s).trim()))}` : ''}
                       </td>
-                      <td>{r.contacts?.[0]?.mobileNumber || (r as any).phone || '—'}</td>
-                      <td style={{ color: '#0284c7' }}>{r.contacts?.[0]?.email || (r as any).email || '—'}</td>
+                      <td>
+                        {[(r as any).contactPerson, (r as any).contactPersonName, r.contacts?.find(c => c.primaryContact)?.contactPersonName, r.contacts?.[0]?.contactPersonName].find(s => Boolean(s && String(s).trim())) || '—'}
+                      </td>
+                      <td>{[(r as any).mobile, (r as any).phone, r.contacts?.find(c => c.primaryContact)?.mobileNumber, r.contacts?.[0]?.mobileNumber].find(s => Boolean(s && String(s).trim())) || '—'}</td>
+                      <td style={{ color: '#0284c7' }}>{[(r as any).email, r.contacts?.find(c => c.primaryContact)?.email, r.contacts?.[0]?.email].find(s => Boolean(s && String(s).trim())) || '—'}</td>
                       <td style={{ fontWeight: 600 }}>{r.gstin || '—'}</td>
                       <td>
                         <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          <button type="button" className="ibtn" title="View" onClick={() => onView?.(r.id)}>
+                            <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>visibility</span>
+                          </button>
                           <button type="button" className="ibtn" title="Edit" onClick={() => onEdit(r.id)}>
                             <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>edit</span>
                           </button>

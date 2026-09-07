@@ -16,10 +16,19 @@ export type DocumentAction =
 
 export interface PoInwardLinePayload {
   itemCode: string;
+  itemDesc?: string;
+  description?: string;
+  uom?: string;
   receivedQty: number;
   rate?: number;
+  amount?: number;
+  discount?: number;
+  tax?: number;
+  taxAmount?: number;
+  netAmount?: number;
   acceptedQty?: number;
   rejectedQty?: number;
+  rejectedReason?: string;
   batchNo?: string;
   heatNo?: string;
   location: string;
@@ -29,7 +38,7 @@ export interface PoInwardLinePayload {
 export interface PoInwardPayload {
   date: string;
   supplier: string;
-  purchaseOrderNo: string;
+  purchaseOrderNo?: string;
   supplierChallanNo?: string;
   supplierInvoiceNo?: string;
   dcNumber?: string;
@@ -43,10 +52,15 @@ export interface PoInwardPayload {
 export interface PoInwardLineDto {
   itemCode: string;
   itemDesc?: string;
+  description?: string;
   uom?: string;
   receivedQty?: number;
   rate?: number;
   amount?: number;
+  discount?: number;
+  tax?: number;
+  taxAmount?: number;
+  netAmount?: number;
   acceptedQty?: number;
   rejectedQty?: number;
   batchNo?: string;
@@ -60,7 +74,7 @@ export interface PoInwardDto {
   docNo?: string;
   date: string;
   supplier: string;
-  purchaseOrderNo: string;
+  purchaseOrderNo?: string;
   supplierChallanNo?: string;
   supplierInvoiceNo?: string;
   dcNumber?: string;

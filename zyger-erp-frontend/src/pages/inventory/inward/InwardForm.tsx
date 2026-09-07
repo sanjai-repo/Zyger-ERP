@@ -81,18 +81,18 @@ function formFromDto(
       }
       if (field.type === 'auto') {
         if (field.key === 'itemDesc') {
-          state.itemDesc = valueOf(doc, line, 'itemDesc');
+          state.itemDesc = valueOf(doc, line, 'itemDesc') || line.description || '';
           return;
         }
         if (field.key === 'uom') {
           const item = items.find((entry) => entry.code === line.itemCode);
-          state.uom = item?.uom ?? '';
+          state.uom = line.uom ?? item?.uom ?? '';
           return;
         }
         if (field.key === 'amount') {
           const qty = toNumber(line.qty ?? line[config.qtyField]);
           const rate = toNumber(line.rate);
-          state.amount = String(Math.round(qty * rate));
+          state.amount = line.amount !== undefined && line.amount !== null ? String(line.amount) : String(Math.round(qty * rate));
           return;
         }
         return;
@@ -133,6 +133,11 @@ export default function InwardForm({
   const [errors, setErrors] = useState<string[]>([]);
   const [currentDocument, setCurrentDocument] = useState<Record<string, any> | null>(null);
   const [actionModal, setActionModal] = useState<ActionModalState | null>(null);
+
+  // Rejected Reason & Direct Inventory Update Modal States
+  const [editingRejectIndex, setEditingRejectIndex] = useState<number | null>(null);
+  const [rejectReasonInput, setRejectReasonInput] = useState('');
+  const [showUpdateInventoryConfirm, setShowUpdateInventoryConfirm] = useState(false);
 
   // File Attachment State & Handlers
   const [attachments, setAttachments] = useState<Array<{ id: string; name: string; size: string; url?: string }>>([]);
@@ -208,7 +213,7 @@ export default function InwardForm({
       case 'suppliers':
         return options.suppliers.map((s) => ({
           value: s.code,
-          label: `${s.code} — ${s.name}`,
+          label: s.name,
         }));
       case 'customers':
         return options.customers.map((c) => ({
@@ -216,7 +221,15 @@ export default function InwardForm({
           label: `${c.code} — ${c.name}`,
         }));
       case 'locations':
-        return options.locations.map((l) => ({ value: l.code, label: l.code }));
+      case 'stores': {
+        const storeList = (options.stores && options.stores.length > 0)
+          ? options.stores
+          : options.locations;
+        return storeList.map((l: any) => ({
+          value: l.code,
+          label: l.name || l.code,
+        }));
+      }
       case 'pos':
         return options.purchaseOrders.map((p: any) => {
           const num = p.docNo || p.number || '';
@@ -238,6 +251,15 @@ export default function InwardForm({
           { value: 'Yes', label: 'Yes' },
           { value: 'No', label: 'No' },
         ];
+      case 'uoms': {
+        const masterUoms = (options.uoms || []).map((u: any) => ({
+          value: u.code,
+          label: u.name || u.code,
+        }));
+        if (masterUoms.length > 0) return masterUoms;
+        const defaultUoms = ['PCS', 'NOS', 'KG', 'MTR', 'SET', 'BOX', 'LTR', 'PKT', 'BAG', 'TON', 'M3', 'SQM', 'FT', 'INCH', 'MM'];
+        return defaultUoms.map((u) => ({ value: u, label: u }));
+      }
       default:
         return [];
     }
@@ -248,7 +270,7 @@ export default function InwardForm({
 
     if ((key === 'poNumber' || key === 'purchaseOrderNo' || key === 'jobOrderNo' || key === 'labourOrderNo') && value) {
       const docTypeKey = (key === 'poNumber' || key === 'purchaseOrderNo') ? 'purchase-order' : key === 'jobOrderNo' ? 'job-order' : 'labour-order';
-      
+
       const foundPo = options.purchaseOrders.find((p: any) => p.docNo === value || p.number === value);
       if (foundPo) {
         const supp = foundPo.supplier || foundPo.supplierName || foundPo.party;
@@ -270,28 +292,21 @@ export default function InwardForm({
         }
 
         if (doc.lines && doc.lines.length > 0) {
-          const defaultLoc = options.locations[0]?.code ?? 'MAIN';
-          setLines(
-            doc.lines.map((l) => {
-              const item = options.items.find((i) => i.code === l.itemCode);
-              const qty = String(l.orderQty ?? l.qty ?? '');
-              const rate = String(l.unitPrice ?? l.rate ?? item?.defaultRate ?? '');
-              const amount = qty && rate ? String(Math.round(toNumber(qty) * toNumber(rate))) : '';
-
-              return {
-                itemCode: l.itemCode || 'ITEM-001',
-                itemDesc: l.itemDesc || l.itemName || item?.description || '',
-                uom: l.uom || item?.uom || 'PCS',
-                [config.qtyField]: qty,
-                acceptedQty: qty,
-                rejectedQty: '0',
-                rate,
-                amount,
-                location: l.location || defaultLoc,
-                remarks: l.remarks || '',
-              };
-            })
-          );
+          const newLines = doc.lines.map((l: any) => {
+            const item = options.items.find((i) => i.code === l.itemCode);
+            return {
+              ...emptyLine(),
+              itemCode: l.itemCode || 'ITEM-001',
+              itemDesc: l.itemDesc || l.description || item?.description || '',
+              description: '',
+              uom: l.uom || item?.uom || (options.uoms && options.uoms[0]?.code) || 'PCS',
+              [config.qtyField]: String(l.qty ?? l.quantity ?? 1),
+              rate: String(l.unitPrice ?? l.rate ?? item?.defaultRate ?? 0),
+              amount: String(l.amount ?? l.lineTotal ?? 0),
+              location: (options.stores && options.stores[0]?.code) || options.locations[0]?.code || 'MAIN',
+            };
+          });
+          setLines(newLines);
         }
       });
     }
@@ -300,17 +315,19 @@ export default function InwardForm({
   const updateLine = (index: number, key: string, value: string) => {
     setLines((prev) => {
       const next = [...prev];
-      const defaultLoc = options.locations[0]?.code ?? 'MAIN';
+      const defaultLoc = (options.stores && options.stores[0]?.code) || options.locations[0]?.code || 'MAIN';
       const line = { ...next[index], [key]: value };
 
       if (key === 'itemCode') {
         if (value === 'OTHERS') {
           line.itemDesc = '';
-          line.uom = 'PCS';
+          line.description = '';
+          line.uom = (options.uoms && options.uoms[0]?.code) || 'PCS';
         } else {
           const item = options.items.find((i) => i.code === value);
           line.itemDesc = item?.description ?? '';
-          line.uom = item?.uom ?? '';
+          line.description = '';
+          line.uom = item?.uom || (options.uoms && options.uoms[0]?.code) || 'PCS';
           if (!line.rate && item?.defaultRate) {
             line.rate = String(item.defaultRate);
           }
@@ -320,10 +337,29 @@ export default function InwardForm({
         }
       }
 
-      if (key === config.qtyField || key === 'rate') {
+      if (key === config.qtyField || key === 'acceptedQty') {
+        const recQty = toNumber(line[config.qtyField]);
+        const accQty = toNumber(key === 'acceptedQty' ? value : line.acceptedQty);
+        if (line.acceptedQty !== '' || key === 'acceptedQty') {
+          line.rejectedQty = String(Math.max(0, recQty - accQty));
+        }
+      }
+
+      if (key === config.qtyField || key === 'rate' || key === 'discount' || key === 'tax') {
         const qty = toNumber(line[config.qtyField]);
         const rate = toNumber(line.rate);
-        line.amount = String(Math.round(qty * rate));
+        const discountPct = toNumber(line.discount);
+        const taxPct = toNumber(line.tax);
+
+        const base = qty * rate;
+        const discAmt = (base * discountPct) / 100;
+        const taxable = base - discAmt;
+        const taxAmt = (taxable * taxPct) / 100;
+        const netAmt = taxable + taxAmt;
+
+        line.amount = String(Math.round(base));
+        line.taxAmount = String(Math.round(taxAmt));
+        line.netAmount = String(Math.round(netAmt));
       }
 
       next[index] = line;
@@ -398,10 +434,19 @@ export default function InwardForm({
       ...headerFields,
       lines: activeLines.map((line) => ({
         itemCode: line.itemCode,
+        itemDesc: line.itemDesc || undefined,
+        description: line.description || undefined,
+        uom: line.uom || undefined,
         [config.qtyField]: toNumber(line[config.qtyField]),
         rate: line.rate ? toNumber(line.rate) : undefined,
+        amount: line.amount ? toNumber(line.amount) : undefined,
+        discount: line.discount ? toNumber(line.discount) : undefined,
+        tax: line.tax ? toNumber(line.tax) : undefined,
+        taxAmount: line.taxAmount ? toNumber(line.taxAmount) : undefined,
+        netAmount: line.netAmount ? toNumber(line.netAmount) : undefined,
         acceptedQty: line.acceptedQty ? toNumber(line.acceptedQty) : undefined,
         rejectedQty: line.rejectedQty ? toNumber(line.rejectedQty) : undefined,
+        rejectedReason: line.rejectedReason || undefined,
         batchNo: line.batchNo || undefined,
         heatNo: line.heatNo || undefined,
         location: line.location,
@@ -452,7 +497,8 @@ export default function InwardForm({
               note: 'Submitted for Quality Inspection',
             });
           }
-          toast(`⚠️ Quality Inspection Required — ${saved.docNo ?? docNo} has been submitted & routed to Quality Inspection (IQC).`, 'success');
+          toast(`⚠️ Sent to QC — ${saved.docNo ?? docNo} has been submitted & routed to Inward Inspection (IQC).`, 'success');
+          window.location.hash = '#/inward-inspection-iqc';
         } else {
           // Direct Store Addition - bypass QC
           saved = await mutations.actionMutation.mutateAsync({
@@ -701,22 +747,42 @@ export default function InwardForm({
         {field.type === 'auto' ? (
           <input className="in" value={value} readOnly tabIndex={-1} />
         ) : field.type === 'select' ? (
-          <select
-            className="in"
-            value={value}
-            disabled={!editable}
-            onChange={(e) => updateHeader(field.key, e.target.value)}
-          >
-            <option value="">— Select —</option>
-            {resolveOptions(field.options).map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-            {value && !resolveOptions(field.options).some((o) => o.value === value) && (
-              <option value={value}>{value}</option>
-            )}
-          </select>
+          field.options === 'pos' || field.key === 'purchaseOrderNo' ? (
+            <>
+              <input
+                className="in"
+                list={`list-${field.key}`}
+                placeholder="Search or select Purchase Order..."
+                value={value}
+                disabled={!editable}
+                onChange={(e) => updateHeader(field.key, e.target.value)}
+              />
+              <datalist id={`list-${field.key}`}>
+                {resolveOptions(field.options).map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </datalist>
+            </>
+          ) : (
+            <select
+              className="in"
+              value={value}
+              disabled={!editable}
+              onChange={(e) => updateHeader(field.key, e.target.value)}
+            >
+              <option value="">— Select —</option>
+              {resolveOptions(field.options).map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+              {value && !resolveOptions(field.options).some((o) => o.value === value) && (
+                <option value={value}>{value}</option>
+              )}
+            </select>
+          )
         ) : (
           <input
             className="in"
@@ -735,12 +801,50 @@ export default function InwardForm({
     const line = lines[index];
     const value = line[field.key] ?? '';
 
+    if (field.key === 'rejectedQty') {
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <input
+            className="in"
+            style={{ minWidth: '65px', padding: '5px 6px', fontSize: '.74rem', width: '100%', textAlign: 'right', flex: 1 }}
+            type="number"
+            step="any"
+            value={value}
+            readOnly={!editable}
+            onChange={(e) => updateLine(index, field.key, e.target.value)}
+          />
+          <button
+            type="button"
+            title={line.rejectedReason ? `Reason: ${line.rejectedReason}` : 'Set Rejection Reason'}
+            style={{
+              border: 'none',
+              background: 'none',
+              cursor: 'pointer',
+              padding: '2px',
+              color: line.rejectedReason ? '#ef4444' : '#94a3b8',
+              display: 'inline-flex',
+              alignItems: 'center',
+            }}
+            onClick={() => {
+              setEditingRejectIndex(index);
+              setRejectReasonInput(line.rejectedReason || '');
+            }}
+          >
+            <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>
+              report_problem
+            </span>
+          </button>
+        </div>
+      );
+    }
+
     if (field.type === 'auto') {
       if (field.key === 'itemDesc' && line?.itemCode === 'OTHERS') {
         return (
           <input
             className="in"
             type="text"
+            style={{ minWidth: '130px', padding: '5px 6px', fontSize: '.74rem', width: '100%' }}
             value={value}
             disabled={!editable}
             placeholder="Enter item name..."
@@ -749,26 +853,80 @@ export default function InwardForm({
         );
       }
       return (
-        <input className="in" value={value} readOnly tabIndex={-1} />
+        <input
+          className="in"
+          style={{
+            minWidth: '65px',
+            padding: '5px 6px',
+            fontSize: '.74rem',
+            width: '100%',
+            textAlign: field.type === 'number' ? 'right' : 'left',
+          }}
+          value={value}
+          readOnly
+          tabIndex={-1}
+        />
       );
     }
 
     if (field.type === 'item') {
+      const allowedItems = options.items.filter((item: any) => {
+        const rawType = String(
+          item.itemType ||
+          item.groupType ||
+          item.itemCategory ||
+          item.category ||
+          item.itemGroupType ||
+          item.groupItemType ||
+          ''
+        ).toUpperCase().replace(/[\s_]+/g, '_');
+        const code = String(item.code || '').toUpperCase();
+        if (!rawType && !code) return true;
+
+        const isPurchasable =
+          rawType.includes('PURCHASABLE') ||
+          rawType.includes('RAW_MATERIAL') ||
+          rawType.includes('BUY_ITEM') ||
+          rawType === 'RM' ||
+          code.startsWith('PIT-') ||
+          rawType.includes('PURCHAS');
+
+        const isCustomerSupplied =
+          rawType.includes('CUSTOMER') ||
+          rawType.includes('SUPPLIED') ||
+          item.customerOwned === true ||
+          code.startsWith('CSM-');
+
+        const isManufacturing =
+          rawType.includes('MANUFACTUR') ||
+          rawType.includes('FG') ||
+          rawType.includes('SEMI_FG') ||
+          rawType.includes('SFG') ||
+          code.startsWith('MFG-');
+
+        return isPurchasable || isCustomerSupplied || isManufacturing || true;
+      });
+
       return (
-        <select
-          className={`in ${field.wide ? 'w-i' : ''}`}
-          value={value}
-          disabled={!editable}
-          onChange={(e) => updateLine(index, field.key, e.target.value)}
-        >
-          <option value="">— Select Item —</option>
-          {options.items.map((item) => (
-            <option key={item.code} value={item.code}>
-              {item.code} — {item.description}
-            </option>
-          ))}
-          <option value="OTHERS">OTHERS (Custom Item)</option>
-        </select>
+        <>
+          <input
+            className="in"
+            style={{ minWidth: '130px', padding: '5px 6px', fontSize: '.74rem', width: '100%' }}
+            list={`item-code-datalist-${index}`}
+            placeholder="Search Item..."
+            value={value}
+            disabled={!editable}
+            onChange={(e) => updateLine(index, field.key, e.target.value)}
+          />
+          <datalist id={`item-code-datalist-${index}`}>
+            {allowedItems.map((item) => (
+              <option key={item.code} value={item.code}>
+                {item.code} — {item.description}
+              </option>
+            ))}
+            <option value="OTHERS">OTHERS (Custom Item)</option>
+          </datalist>
+        </>
       );
     }
 
@@ -776,6 +934,7 @@ export default function InwardForm({
       return (
         <select
           className="in"
+          style={{ minWidth: field.key === 'uom' ? '65px' : '100px', padding: '5px 6px', fontSize: '.74rem', width: '100%' }}
           value={value}
           disabled={!editable}
           onChange={(e) => updateLine(index, field.key, e.target.value)}
@@ -786,13 +945,30 @@ export default function InwardForm({
               {option.label}
             </option>
           ))}
+          {value && !resolveOptions(field.options).some((o) => o.value === value) && (
+            <option value={value}>{value}</option>
+          )}
         </select>
       );
     }
 
+    const fieldMinWidth =
+      field.key === 'discount' || field.key === 'tax' || field.key === 'receivedQty' || field.key === 'acceptedQty' || field.key === 'rate'
+        ? '65px'
+        : field.key === 'description' || field.key === 'itemDesc'
+          ? '130px'
+          : '100px';
+
     return (
       <input
         className="in"
+        style={{
+          minWidth: fieldMinWidth,
+          padding: '5px 6px',
+          fontSize: '.74rem',
+          width: '100%',
+          textAlign: field.type === 'number' ? 'right' : 'left',
+        }}
         type={field.type === 'number' ? 'number' : 'text'}
         step="any"
         value={value}
@@ -837,24 +1013,23 @@ export default function InwardForm({
         </div>
 
         <div className="fgrid">
-          {!lockedType && (
-            <label className="fld">
-              <span>
-                Inward Type <em>*</em>
-              </span>
-              <select
-                className="in"
-                value={inwardType}
-                onChange={(e) => setInwardType(e.target.value as InwardType)}
-              >
-                {INWARD_TYPE_LIST.map((typeConfig) => (
-                  <option key={typeConfig.type} value={typeConfig.type}>
-                    {typeConfig.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+          <label className="fld">
+            <span>
+              Inward Type <em>*</em>
+            </span>
+            <select
+              className="in"
+              value={inwardType}
+              disabled={Boolean(lockedType) || !editable}
+              onChange={(e) => setInwardType(e.target.value as InwardType)}
+            >
+              {INWARD_TYPE_LIST.map((typeConfig) => (
+                <option key={typeConfig.type} value={typeConfig.type}>
+                  {typeConfig.label}
+                </option>
+              ))}
+            </select>
+          </label>
 
           {config.headerFields.map(renderHeaderField)}
         </div>
@@ -942,14 +1117,27 @@ export default function InwardForm({
                 Save Draft
               </button>
 
-              <button
-                className="btn btn-p"
-                onClick={() => save(true)}
-                disabled={isBusy}
-              >
-                <span className="material-symbols-rounded">send</span>
-                Submit
-              </button>
+              {(header.qcRequired === 'No' || header.qcRequired === 'N' || header.qcRequired === 'false') ? (
+                <button
+                  type="button"
+                  className="btn btn-g"
+                  style={{ background: '#16a34a', borderColor: '#16a34a', color: '#ffffff' }}
+                  onClick={() => setShowUpdateInventoryConfirm(true)}
+                  disabled={isBusy}
+                >
+                  <span className="material-symbols-rounded">inventory</span>
+                  Update Inventory
+                </button>
+              ) : (
+                <button
+                  className="btn btn-p"
+                  onClick={() => save(true)}
+                  disabled={isBusy}
+                >
+                  <span className="material-symbols-rounded">verified</span>
+                  Send to QC
+                </button>
+              )}
             </>
           )}
 
@@ -1024,6 +1212,78 @@ export default function InwardForm({
           if (actionModal) {
             runAction(actionModal.action, note);
           }
+        }}
+      />
+
+      {/* Rejected Reason Modal */}
+      {editingRejectIndex !== null && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#ffffff', borderRadius: '8px', padding: '24px', width: '420px', maxWidth: '90vw', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
+            <h3 style={{ marginTop: 0, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px', color: '#0f172a', fontSize: '18px' }}>
+              <span className="material-symbols-rounded" style={{ color: '#ef4444' }}>report_problem</span>
+              Rejection Reason (Line #{editingRejectIndex + 1})
+            </h3>
+            <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '14px', lineHeight: 1.4 }}>
+              Specify why items in this line are being rejected.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <select
+                className="in"
+                style={{ width: '100%' }}
+                value={rejectReasonInput}
+                onChange={(e) => setRejectReasonInput(e.target.value)}
+              >
+                <option value="">— Select Common Reason —</option>
+                <option value="Damaged in transit">Damaged in transit</option>
+                <option value="Quality defect / Out of specification">Quality defect / Out of specification</option>
+                <option value="Incorrect item / Wrong specification">Incorrect item / Wrong specification</option>
+                <option value="Expired or near expiry">Expired or near expiry</option>
+                <option value="Quantity mismatch / Shortage">Quantity mismatch / Shortage</option>
+                <option value="Surface rust / Physical defect">Surface rust / Physical defect</option>
+              </select>
+              <textarea
+                className="in"
+                rows={3}
+                style={{ width: '100%', resize: 'vertical' }}
+                placeholder="Or type custom rejection reason here..."
+                value={rejectReasonInput}
+                onChange={(e) => setRejectReasonInput(e.target.value)}
+              />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '18px' }}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setEditingRejectIndex(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-p"
+                onClick={() => {
+                  updateLine(editingRejectIndex, 'rejectedReason', rejectReasonInput);
+                  setEditingRejectIndex(null);
+                }}
+              >
+                Save Reason
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Direct Update Inventory Modal */}
+      <ConfirmActionModal
+        open={showUpdateInventoryConfirm}
+        title="Confirm Inventory Update"
+        body="Quality Inspection Required is set to 'No'. Submitting will directly add items to Store Stock and update inventory records without quality inspection. Are you sure you want to proceed?"
+        okLabel="Update Inventory Now"
+        busy={isBusy}
+        onClose={() => setShowUpdateInventoryConfirm(false)}
+        onConfirm={async () => {
+          setShowUpdateInventoryConfirm(false);
+          await save(true);
         }}
       />
     </>

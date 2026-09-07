@@ -97,8 +97,11 @@ public class DocumentRowMapper {
             Map<String, Object> lm = mapper.convertValue(l, new TypeReference<Map<String, Object>>() {});
             if (lm == null) lm = new LinkedHashMap<>();
             lm.remove("doc");
-            lm.put("itemDesc", itemCache.findByCode(l.getItemCode())
-                    .map(ItemMaster::getDescription).orElse(""));
+            Object existingDesc = lm.get("itemDesc");
+            if (existingDesc == null || existingDesc.toString().isBlank()) {
+                lm.put("itemDesc", itemCache.findByCode(l.getItemCode())
+                        .map(ItemMaster::getDescription).orElse(""));
+            }
             lineRows.add(lm);
         }
         r.put("lines", lineRows);
@@ -233,14 +236,15 @@ public class DocumentRowMapper {
         for (Map.Entry<String, String> e : renames.entrySet()) {
             for (Map<String, Object> line : lines) {
                 if (line.containsKey(e.getValue())) {
-                    Object val = line.remove(e.getValue());
+                    Object val = line.get(e.getValue());
+                    Object targetVal = val;
                     if ("tax".equals(e.getValue()) && val != null) {
                         try {
                             double rate = Double.parseDouble(String.valueOf(val));
-                            val = rate == 0 ? "Exempt" : "GST " + (int) rate + "%";
+                            targetVal = rate == 0 ? "Exempt" : "GST " + (int) rate + "%";
                         } catch (Exception ignored) {}
                     }
-                    line.put(e.getKey(), val);
+                    line.put(e.getKey(), targetVal);
                 }
             }
         }

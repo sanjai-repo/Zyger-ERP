@@ -107,6 +107,10 @@ public class QualityInspection extends BaseDoc implements DocEntity {
     String inspector;
     @Column(name = "assigned_inspector", length = 60)
     String assignedInspector;
+    @Column(length = 60)
+    String location;
+    @Column(length = 60)
+    String warehouse;
 
     @Column(name = "received_quantity")
     BigDecimal receivedQuantity;

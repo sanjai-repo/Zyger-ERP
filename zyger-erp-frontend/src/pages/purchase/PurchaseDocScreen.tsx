@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   usePurchaseDoc,
@@ -44,6 +45,312 @@ export interface PurchaseDocScreenProps {
 
 type ActionModal = { action: 'submit' | 'approve' | 'reject' | 'reopen' | 'cancel'; danger: boolean };
 
+function SearchableItemLookup({
+  value,
+  onChange,
+  disabled,
+  items,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  disabled?: boolean;
+  items: Array<{ id: number; code: string; name: string; description?: string }>;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState(value || '');
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const updateCoords = () => {
+    if (inputRef.current) {
+      const rect = inputRef.current.getBoundingClientRect();
+      setCoords({
+        top: rect.bottom + 2,
+        left: rect.left,
+        width: Math.max(rect.width, 240),
+      });
+    }
+  };
+
+  useEffect(() => {
+    setSearch(value || '');
+  }, [value]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    function handleScrollOrResize() {
+      if (isOpen) updateCoords();
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    window.addEventListener('resize', handleScrollOrResize);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
+    };
+  }, [isOpen]);
+
+  const handleFocus = () => {
+    updateCoords();
+    setIsOpen(true);
+  };
+
+  const filteredItems = items.filter((item) => {
+    const q = search.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      item.code.toLowerCase().includes(q) ||
+      (item.name && item.name.toLowerCase().includes(q)) ||
+      (item.description && item.description.toLowerCase().includes(q))
+    );
+  });
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
+      <input
+        ref={inputRef}
+        type="text"
+        disabled={disabled}
+        value={search}
+        onFocus={handleFocus}
+        onChange={(e) => {
+          setSearch(e.target.value);
+          onChange(e.target.value);
+          updateCoords();
+          setIsOpen(true);
+        }}
+        className="in"
+        placeholder="Type Item Code..."
+        style={{ fontWeight: 700, color: '#1e3a8a', width: '100%', boxSizing: 'border-box' }}
+      />
+      {isOpen && !disabled && coords && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            top: `${coords.top}px`,
+            left: `${coords.left}px`,
+            width: `${coords.width}px`,
+            zIndex: 999999,
+            maxHeight: '200px',
+            overflowY: 'auto',
+            backgroundColor: '#ffffff',
+            border: '1px solid #94a3b8',
+            borderRadius: '6px',
+            boxShadow: '0 10px 30px -5px rgba(0, 0, 0, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+            boxSizing: 'border-box',
+          }}
+        >
+          {filteredItems.length === 0 ? (
+            <div style={{ padding: '8px 12px', fontSize: '12px', color: '#94a3b8', textAlign: 'left' }}>
+              No matching items
+            </div>
+          ) : (
+            filteredItems.map((item) => (
+              <div
+                key={item.id || item.code}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setSearch(item.code);
+                  onChange(item.code);
+                  setIsOpen(false);
+                }}
+                style={{
+                  padding: '8px 10px',
+                  cursor: 'pointer',
+                  borderBottom: '1px solid #f1f5f9',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '2px',
+                  textAlign: 'left',
+                }}
+              >
+                <span style={{ fontWeight: 700, fontSize: '12px', color: '#1e293b' }}>
+                  {item.code}
+                </span>
+                <span style={{ fontSize: '11px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {item.name || item.description}
+                </span>
+              </div>
+            ))
+          )}
+          <div
+            onMouseDown={(e) => {
+              e.preventDefault();
+              setSearch('OTHERS');
+              onChange('OTHERS');
+              setIsOpen(false);
+            }}
+            style={{
+              padding: '8px 10px',
+              cursor: 'pointer',
+              fontWeight: 700,
+              fontSize: '11px',
+              color: '#2563eb',
+              backgroundColor: '#f8fafc',
+              borderTop: '1px solid #e2e8f0',
+              textAlign: 'left',
+            }}
+          >
+            + OTHERS (Custom Item)
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+function SearchableDocLookup({
+  value,
+  onChange,
+  disabled,
+  options,
+  placeholder,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  disabled?: boolean;
+  options: Array<{ value: string; label: string; sublabel?: string }>;
+  placeholder?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState(value || '');
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const updateCoords = () => {
+    if (inputRef.current) {
+      const rect = inputRef.current.getBoundingClientRect();
+      setCoords({
+        top: rect.bottom + 2,
+        left: rect.left,
+        width: Math.max(rect.width, 240),
+      });
+    }
+  };
+
+  useEffect(() => {
+    setSearch(value || '');
+  }, [value]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    function handleScrollOrResize() {
+      if (isOpen) updateCoords();
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    window.addEventListener('resize', handleScrollOrResize);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
+    };
+  }, [isOpen]);
+
+  const handleFocus = () => {
+    updateCoords();
+    setIsOpen(true);
+  };
+
+  const filtered = options.filter((opt) => {
+    const q = search.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      opt.value.toLowerCase().includes(q) ||
+      (opt.label && opt.label.toLowerCase().includes(q)) ||
+      (opt.sublabel && opt.sublabel.toLowerCase().includes(q))
+    );
+  });
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
+      <input
+        ref={inputRef}
+        type="text"
+        disabled={disabled}
+        value={search}
+        onFocus={handleFocus}
+        onChange={(e) => {
+          setSearch(e.target.value);
+          onChange(e.target.value);
+          updateCoords();
+          setIsOpen(true);
+        }}
+        className="in"
+        placeholder={placeholder || 'Type to search...'}
+        style={{ fontWeight: 700, color: '#1e3a8a', width: '100%', boxSizing: 'border-box' }}
+      />
+      {isOpen && !disabled && coords && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            top: `${coords.top}px`,
+            left: `${coords.left}px`,
+            width: `${coords.width}px`,
+            zIndex: 999999,
+            maxHeight: '200px',
+            overflowY: 'auto',
+            backgroundColor: '#ffffff',
+            border: '1px solid #94a3b8',
+            borderRadius: '6px',
+            boxShadow: '0 10px 30px -5px rgba(0, 0, 0, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+            boxSizing: 'border-box',
+          }}
+        >
+          {filtered.length === 0 ? (
+            <div style={{ padding: '8px 12px', fontSize: '12px', color: '#94a3b8', textAlign: 'left' }}>
+              No matching records
+            </div>
+          ) : (
+            filtered.map((opt) => (
+              <div
+                key={opt.value}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setSearch(opt.value);
+                  onChange(opt.value);
+                  setIsOpen(false);
+                }}
+                style={{
+                  padding: '8px 10px',
+                  cursor: 'pointer',
+                  borderBottom: '1px solid #f1f5f9',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '2px',
+                  textAlign: 'left',
+                }}
+              >
+                <span style={{ fontWeight: 700, fontSize: '12px', color: '#1e293b' }}>
+                  {opt.value}
+                </span>
+                {opt.sublabel && (
+                  <span style={{ fontSize: '11px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {opt.sublabel}
+                  </span>
+                )}
+              </div>
+            ))
+          )}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
 export default function PurchaseDocScreen({ config, initialDocId, viewOnly = false, defaultType, prefill }: PurchaseDocScreenProps) {
   const { toast } = useToast();
   const { user, can } = useAuth();
@@ -79,14 +386,43 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
     }).catch(() => { });
   }, []);
 
-  const getCompanyAddress = (isShipping = false) => {
-    if (!companyInfoMaster) return 'Company address not configured. Please set up Company Info in Master.';
-    const street = isShipping
-      ? (companyInfoMaster.deliveryAddress || companyInfoMaster.registeredAddress || '')
-      : (companyInfoMaster.registeredAddress || companyInfoMaster.deliveryAddress || '');
-    const parts = [street, companyInfoMaster.city, companyInfoMaster.state, companyInfoMaster.pincode].filter(Boolean);
-    return parts.length > 0 ? parts.join(', ') : 'Company address not configured. Please set up Company Info in Master.';
+  const getCompanyAddress = (isShipping = false, masterData = companyInfoMaster) => {
+    if (!masterData) return '';
+    const specificAddr = isShipping ? masterData.deliveryAddress : masterData.registeredAddress;
+    const fallbackAddr = isShipping ? masterData.registeredAddress : masterData.deliveryAddress;
+    const street = (specificAddr && String(specificAddr).trim()) || (fallbackAddr && String(fallbackAddr).trim()) || [masterData.addressLine1, masterData.addressLine2].filter(Boolean).join(', ');
+    
+    if (!street) return '';
+    
+    const parts = [street];
+    if (masterData.city && !street.toLowerCase().includes(String(masterData.city).toLowerCase())) {
+      parts.push(masterData.city);
+    }
+    if (masterData.state && !street.toLowerCase().includes(String(masterData.state).toLowerCase())) {
+      parts.push(masterData.state);
+    }
+    if (masterData.pincode && !street.toLowerCase().includes(String(masterData.pincode))) {
+      parts.push(masterData.pincode);
+    }
+    return parts.join(', ');
   };
+
+  useEffect(() => {
+    if (companyInfoMaster) {
+      setForm(prev => {
+        const newBill = prev.billingAddress || getCompanyAddress(false, companyInfoMaster);
+        const newShip = prev.shippingAddress || getCompanyAddress(true, companyInfoMaster);
+        if (newBill !== prev.billingAddress || newShip !== prev.shippingAddress) {
+          return {
+            ...prev,
+            billingAddress: newBill,
+            shippingAddress: newShip,
+          };
+        }
+        return prev;
+      });
+    }
+  }, [companyInfoMaster]);
 
   // Reference document options for Select Options header fields
   const [prList, setPrList] = useState<Array<Record<string, unknown>>>([]);
@@ -123,11 +459,21 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
       ]);
     });
 
-    // Load master items
-    axiosClient.get('/master/items?size=200').then((res) => {
+    // Load master items (Purchasable, Customer Supplied, Manufacturing)
+    axiosClient.get('/master/items?size=500').then((res) => {
       const data = res.data?.content || res.data || [];
       if (Array.isArray(data) && data.length > 0) {
-        setItemMasters(data.map((i: any) => ({
+        const filtered = data.filter((i: any) => {
+          const t = (i.itemType || '').toUpperCase().replace(/[\s_]+/g, '_');
+          const code = (i.code || '').toUpperCase();
+          const cat = (i.category || '').toUpperCase();
+          const isPurchasable = t === 'PURCHASABLE' || t === 'RAW_MATERIAL' || t === 'BUY_ITEM' || code.startsWith('PIT-') || cat.includes('PURCHAS');
+          const isCustomerSupplied = t === 'CUSTOMER_SUPPLIED' || i.customerOwned === true || code.startsWith('CSM-') || cat.includes('CUSTOMER');
+          const isManufacturing = t === 'FG' || t === 'SEMI_FG' || t === 'SFG' || t === 'MANUFACTURING' || code.startsWith('MFG-') || cat.includes('MANUFACTUR');
+          return isPurchasable || isCustomerSupplied || isManufacturing;
+        });
+
+        setItemMasters((filtered.length > 0 ? filtered : data).map((i: any) => ({
           id: i.id,
           code: i.code || '',
           name: i.name || i.description || i.code || '',
@@ -137,18 +483,16 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
         })));
       } else {
         setItemMasters([
-          { id: 1, code: 'ITEM-001', name: 'Precision CNC Shaft 25mm', uom: 'PCS', price: 450, description: 'Ground alloy steel shaft' },
-          { id: 2, code: 'ITEM-002', name: 'Hex Bolt M12 x 50mm 8.8 Grade', uom: 'KGS', price: 120, description: 'High tensile zinc plated bolt' },
-          { id: 3, code: 'ITEM-003', name: 'Carbide Insert WNMG 080408', uom: 'BOX', price: 2400, description: 'Turning insert for CNC' },
-          { id: 4, code: 'ITEM-004', name: 'Hydraulic Oil ISO VG 68', uom: 'LTR', price: 185, description: 'Industrial lubricant oil' },
+          { id: 1, code: 'PIT-2026-0001', name: 'Precision CNC Shaft 25mm', uom: 'PCS', price: 450, description: 'Purchasable Item' },
+          { id: 2, code: 'CSM-2026-0001', name: 'Customer Provided Casing', uom: 'NOS', price: 0, description: 'Customer Supplied Item' },
+          { id: 3, code: 'MFG-2026-0001', name: 'Assembled Motor Unit 5HP', uom: 'NOS', price: 12500, description: 'Manufacturing Item' },
         ]);
       }
     }).catch(() => {
       setItemMasters([
-        { id: 1, code: 'ITEM-001', name: 'Precision CNC Shaft 25mm', uom: 'PCS', price: 450, description: 'Ground alloy steel shaft' },
-        { id: 2, code: 'ITEM-002', name: 'Hex Bolt M12 x 50mm 8.8 Grade', uom: 'KGS', price: 120, description: 'High tensile zinc plated bolt' },
-        { id: 3, code: 'ITEM-003', name: 'Carbide Insert WNMG 080408', uom: 'BOX', price: 2400, description: 'Turning insert for CNC' },
-        { id: 4, code: 'ITEM-004', name: 'Hydraulic Oil ISO VG 68', uom: 'LTR', price: 185, description: 'Industrial lubricant oil' },
+        { id: 1, code: 'PIT-2026-0001', name: 'Precision CNC Shaft 25mm', uom: 'PCS', price: 450, description: 'Purchasable Item' },
+        { id: 2, code: 'CSM-2026-0001', name: 'Customer Provided Casing', uom: 'NOS', price: 0, description: 'Customer Supplied Item' },
+        { id: 3, code: 'MFG-2026-0001', name: 'Assembled Motor Unit 5HP', uom: 'NOS', price: 12500, description: 'Manufacturing Item' },
       ]);
     });
 
@@ -313,8 +657,46 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
       if (!docData.email && supp0.email) docData.email = supp0.email;
     }
 
+    if (!docData.billingAddress) {
+      docData.billingAddress = getCompanyAddress(false);
+    }
+    if (!docData.shippingAddress) {
+      docData.shippingAddress = getCompanyAddress(true);
+    }
+
+    const normalizeLoadedLine = (l: Record<string, unknown>, i: number) => {
+      const rawQty = (l.orderQty !== undefined && l.orderQty !== null && l.orderQty !== '')
+        ? l.orderQty
+        : ((l.requiredQty !== undefined && l.requiredQty !== null && l.requiredQty !== '') ? l.requiredQty : l.qty);
+      const qty = Number(rawQty ?? 0);
+      const price = Number(l.unitPrice ?? l.rate ?? 0);
+      const grossAmount = qty * price;
+      const discPct = Number(l.discount ?? 0);
+      const discAmt = (grossAmount * discPct) / 100;
+      const taxableAmount = grossAmount - discAmt;
+      const taxPct = Number(l.tax ?? 0);
+      const taxAmt = (taxableAmount * taxPct) / 100;
+      const computedNet = taxableAmount + taxAmt;
+      const net = (qty > 0 || price > 0) ? computedNet : Number(l.netAmount ?? l.netPrice ?? 0);
+      return {
+        lineNo: i + 1,
+        ...l,
+        orderQty: qty,
+        requiredQty: qty,
+        qty: qty,
+        unitPrice: price,
+        rate: price,
+        discount: discPct,
+        discountAmount: discAmt,
+        tax: taxPct,
+        taxAmount: l.taxAmount !== undefined && l.taxAmount !== null ? Number(l.taxAmount) : taxAmt,
+        netPrice: net,
+        netAmount: net,
+      };
+    };
+
     setForm(docData);
-    setLines(Array.isArray(docData.lines) ? (docData.lines as Array<Record<string, unknown>>).map((l, i) => ({ lineNo: i + 1, ...l })) : []);
+    setLines(Array.isArray(docData.lines) ? (docData.lines as Array<Record<string, unknown>>).map((l, i) => normalizeLoadedLine(l, i)) : []);
   }, [documentQuery.data, documentId, initializedForId]);
 
   // Auto-fill missing contactPerson/phone/email from supplierMasters when supplier is selected/loaded
@@ -335,10 +717,11 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
 
   useEffect(() => {
     if (prefill) {
+      const p = prefill as any;
       setMode('form');
       const dateToday = new Date().toISOString().split('T')[0];
       const initialCode = nextNumberQuery.data?.nextNumber || '';
-      const selectedSuppName = prefill.supplier || 'Tata Steel Ltd';
+      const selectedSuppName = p.supplier || 'Tata Steel Ltd';
       const foundSupp = supplierMasters.find(s => s.name === selectedSuppName || s.code === selectedSuppName);
 
       setForm({
@@ -349,39 +732,52 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
         contactPerson: foundSupp?.contactPerson || 'Sales Representative',
         phone: foundSupp?.phone || '9876543210',
         email: foundSupp?.email || 'sales@supplier.com',
-        buyer: 'Sanjay Kumar',
+        buyer: p.buyer || '',
         requestingDepartment: 'Production',
         requestBy: 'Sanjay Kumar',
-        requiredDate: prefill.scheduledDate || dateToday,
+        requiredDate: p.scheduledDate || dateToday,
+        closingDate: dateToday,
+        quotationValidityDate: dateToday,
+        validUntil: docType === 'supplier-quotation' ? '' : dateToday,
+        expectedReturnDate: dateToday,
+        startDate: dateToday,
+        endDate: dateToday,
         paymentTerms: '30 Days',
         deliveryTerms: 'EXW - Ex Works',
         billingAddress: getCompanyAddress(false),
         shippingAddress: getCompanyAddress(true),
+        requestType: 'Material',
+        jobWorkType: 'Subcontract',
+        process: 'Heat Treatment',
+        period: 'Monthly',
+        targetType: 'Value',
         ...(config.typeFilter && defaultType ? { [config.typeFilter.field]: defaultType } : {})
       });
 
-      const matchedItem = itemMasters.find(i => i.code === prefill.itemCode);
-      const itemName = matchedItem?.name || prefill.itemCode || 'Scheduled Item';
-      const unitPrice = matchedItem?.price || 450;
-      const orderQty = prefill.orderQty || 100;
-      const netAmount = orderQty * unitPrice;
+      const qty = Number(p.scheduledQty ?? p.orderQty ?? p.qty ?? 1);
+      const price = Number(p.unitPrice ?? p.rate ?? 100);
+      const grossAmount = qty * price;
+      const netAmount = grossAmount;
 
       setLines([
         {
           lineNo: 1,
-          itemCode: prefill.itemCode || 'ITEM-001',
-          itemName: itemName,
-          description: itemName,
-          orderQty: orderQty,
-          requiredQty: orderQty,
-          qty: orderQty,
-          uom: matchedItem?.uom || 'PCS',
-          unitPrice: unitPrice,
+          itemCode: p.itemCode || 'ITEM-001',
+          itemName: p.itemName || p.itemCode || 'Raw Material',
+          description: p.description || p.itemName || '',
+          specification: p.specification || '',
+          materialGrade: '',
+          size: '',
+          requiredQty: qty,
+          orderQty: qty,
+          qty: qty,
+          uom: p.uom || 'PCS',
+          unitPrice: price,
           discount: 0,
           tax: 0,
           netAmount: netAmount,
           netPrice: netAmount,
-          requiredDate: prefill.scheduledDate || dateToday,
+          requiredDate: p.scheduledDate || dateToday,
           lineStatus: 'Open'
         }
       ]);
@@ -390,7 +786,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
 
   const doc = documentQuery.data;
   const genericStatus = String(doc?.status ?? 'DRAFT');
-  const editable = !isViewOnly && (!documentId || ['DRAFT', 'REJECTED'].includes(genericStatus));
+  const editable = !isViewOnly && (!documentId || ['DRAFT', 'REJECTED'].includes(genericStatus) || Boolean(config.disableApprovalWorkflow));
   const isBusy = createMutation.isPending || updateMutation.isPending || actionMutation.isPending || deleteMutation.isPending;
 
   const rows = listQuery.data?.content ?? [];
@@ -401,6 +797,26 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
     setDocumentId(id);
     setIsViewOnly(_view);
     setInitializedForId('');
+
+    const normalizeLoadedLine = (l: Record<string, unknown>, i: number) => {
+      const qty = Number(l.requiredQty ?? l.orderQty ?? l.qty ?? 0);
+      const price = Number(l.unitPrice ?? l.rate ?? 0);
+      const grossAmount = qty * price;
+      const discPct = Number(l.discount ?? 0);
+      const discAmt = (grossAmount * discPct) / 100;
+      const taxableAmount = grossAmount - discAmt;
+      const taxPct = Number(l.tax ?? 0);
+      const taxAmt = (taxableAmount * taxPct) / 100;
+      const computedNet = taxableAmount + taxAmt;
+      const net = (qty > 0 || price > 0) ? computedNet : Number(l.netPrice ?? l.netAmount ?? 0);
+      return {
+        lineNo: i + 1,
+        ...l,
+        taxAmount: l.taxAmount !== undefined && l.taxAmount !== null ? Number(l.taxAmount) : taxAmt,
+        netPrice: net,
+        netAmount: net,
+      };
+    };
 
     if (id) {
       const existing = rows.find((r: any) => String(r.id) === String(id));
@@ -414,9 +830,15 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
           if (!rowData.phone && supp0.phone) rowData.phone = supp0.phone;
           if (!rowData.email && supp0.email) rowData.email = supp0.email;
         }
+        if (!rowData.billingAddress) {
+          rowData.billingAddress = getCompanyAddress(false);
+        }
+        if (!rowData.shippingAddress) {
+          rowData.shippingAddress = getCompanyAddress(true);
+        }
         setForm(rowData);
         if (Array.isArray(rowData.lines)) {
-          setLines(rowData.lines.map((l: any, i: number) => ({ lineNo: i + 1, ...l })));
+          setLines(rowData.lines.map((l: any, i: number) => normalizeLoadedLine(l, i)));
         }
       }
       setMode('form');
@@ -434,13 +856,13 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
       contactPerson: '',
       phone: '',
       email: '',
-      buyer: 'Sanjay Kumar',
+      buyer: '',
       requestingDepartment: 'Production',
       requestBy: 'Sanjay Kumar',
       requiredDate: dateToday,
       closingDate: dateToday,
       quotationValidityDate: dateToday,
-      validUntil: dateToday,
+      validUntil: docType === 'supplier-quotation' ? '' : dateToday,
       expectedReturnDate: dateToday,
       startDate: dateToday,
       endDate: dateToday,
@@ -456,7 +878,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
       ...(config.typeFilter && defaultType ? { [config.typeFilter.field]: defaultType } : {})
     });
     setLines([
-      { lineNo: 1, itemCode: 'ITEM-001', itemName: 'Precision CNC Shaft 25mm', description: 'Precision CNC Shaft 25mm', requiredQty: 250, orderQty: 250, uom: 'PCS', unitPrice: 450, discount: 0, tax: 20250, netAmount: 132750, netPrice: 132750, lineStatus: 'Open' }
+      { lineNo: 1, itemCode: '', itemName: '', description: '', specification: '', materialGrade: '', size: '', requiredQty: '', orderQty: '', qty: '', uom: '', unitPrice: '', discount: 0, taxAmount: 0, netAmount: 0, netPrice: 0, requiredDate: '', remarks: '', lineStatus: 'Open' }
     ]);
     setMode('form');
   };
@@ -485,7 +907,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
       setForm(prev => ({
         ...prev,
         purchaseRequestNumber: prNo,
-        buyer: selected?.requestBy || selected?.buyer || prev.buyer,
+        buyer: docType === 'supplier-enquiry' ? (prev.buyer || '') : (selected?.requestBy || selected?.buyer || prev.buyer),
         requiredDate: selected?.requiredDate || prev.requiredDate,
         quotationValidityDate: selected?.requiredDate || prev.quotationValidityDate,
         requestingDepartment: selected?.requestingDepartment || prev.requestingDepartment,
@@ -536,7 +958,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
         currency: selected?.currency || prev.currency,
         paymentTerms: selected?.paymentTerms || prev.paymentTerms,
         deliveryTerms: selected?.deliveryTerms || prev.deliveryTerms,
-        validUntil: selected?.quotationValidityDate || prev.validUntil,
+        validUntil: docType === 'supplier-quotation' ? prev.validUntil : (selected?.quotationValidityDate || prev.validUntil),
         remarks: selected?.remarks ? `Ref Enquiry: ${enqNo} — ${selected.remarks}` : prev.remarks,
       }));
 
@@ -589,23 +1011,40 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
         }));
 
         if (Array.isArray(doc.lines) && doc.lines.length > 0) {
-          setLines(doc.lines.map((l: any, i: number) => ({
-            lineNo: i + 1,
-            itemCode: l.itemCode || 'ITEM-001',
-            itemName: l.itemDesc || l.itemName || l.description || l.itemCode || '',
-            description: l.description || l.itemDesc || l.itemName || '',
-            specification: l.specification || '',
-            orderQty: Number(l.qty || l.orderQty || l.requiredQty || 1),
-            requiredQty: Number(l.qty || l.requiredQty || l.orderQty || 1),
-            qty: Number(l.qty || l.orderQty || 1),
-            uom: l.uom || 'PCS',
-            unitPrice: Number(l.rate || l.unitPrice || 0),
-            discount: Number(l.discount || 0),
-            tax: Number(l.tax || 0),
-            netAmount: Number(l.netAmount || (Number(l.rate || l.unitPrice || 0) * Number(l.qty || l.orderQty || 1))),
-            requiredDate: doc.date || '',
-            remarks: l.remarks || '',
-          })));
+          setLines(doc.lines.map((l: any, i: number) => {
+            const qty = Number(l.orderQty ?? l.requiredQty ?? l.qty ?? 1);
+            const price = Number(l.unitPrice ?? l.rate ?? 0);
+            const grossAmount = qty * price;
+            const discPct = Number(l.discount ?? 0);
+            const discAmt = (grossAmount * discPct) / 100;
+            const taxableAmount = grossAmount - discAmt;
+            const taxPct = Number(l.tax ?? 0);
+            const taxAmt = (taxableAmount * taxPct) / 100;
+            const computedNet = taxableAmount + taxAmt;
+            const net = (qty > 0 || price > 0) ? computedNet : Number(l.netAmount ?? l.netPrice ?? 0);
+
+            return {
+              lineNo: i + 1,
+              itemCode: l.itemCode || 'ITEM-001',
+              itemName: l.itemName || l.itemDesc || l.description || l.itemCode || '',
+              description: l.description || l.itemDesc || l.itemName || '',
+              specification: l.specification || '',
+              orderQty: qty,
+              requiredQty: qty,
+              qty: qty,
+              uom: l.uom || 'PCS',
+              unitPrice: price,
+              rate: price,
+              discount: discPct,
+              discountAmount: discAmt,
+              tax: taxPct,
+              taxAmount: l.taxAmount !== undefined && l.taxAmount !== null ? Number(l.taxAmount) : taxAmt,
+              netAmount: net,
+              netPrice: net,
+              requiredDate: doc.date || '',
+              remarks: l.remarks || '',
+            };
+          }));
         }
       });
       return;
@@ -634,7 +1073,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
         contactPerson: selected?.contactPerson || foundSupp?.contactPerson || prev.contactPerson,
         phone: selected?.phone || foundSupp?.phone || prev.phone,
         email: selected?.email || foundSupp?.email || prev.email,
-        buyer: selected?.buyer || prev.buyer,
+        buyer: selected?.buyer || prev.buyer || '',
         department: selected?.department || prev.department,
         paymentTerms: selected?.paymentTerms || prev.paymentTerms,
         deliveryTerms: selected?.deliveryTerms || prev.deliveryTerms,
@@ -647,26 +1086,42 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
 
       const quotLines = selected.lines;
       if (Array.isArray(quotLines) && quotLines.length > 0) {
-        setLines(quotLines.map((l: any, i: number) => ({
-          lineNo: i + 1,
-          itemCode: l.itemCode || 'ITEM-001',
-          itemName: l.itemName || l.description || l.itemCode || '',
-          description: l.description || l.itemName || '',
-          specification: l.specification || '',
-          drawingNumber: l.drawingNumber || '',
-          drawingRevision: l.drawingRevision || '',
-          orderQty: Number(l.orderQty ?? l.requiredQty ?? l.qty ?? 1),
-          requiredQty: Number(l.requiredQty ?? l.orderQty ?? l.qty ?? 1),
-          qty: Number(l.orderQty ?? l.requiredQty ?? l.qty ?? 1),
-          uom: l.uom || 'PCS',
-          unitPrice: Number(l.unitPrice ?? 0),
-          discount: Number(l.discount ?? 0),
-          tax: Number(l.tax ?? 0),
-          netPrice: Number(l.netPrice ?? l.netAmount ?? (Number(l.unitPrice ?? 0) * Number(l.orderQty ?? l.requiredQty ?? 1))),
-          netAmount: Number(l.netAmount ?? l.netPrice ?? (Number(l.unitPrice ?? 0) * Number(l.orderQty ?? l.requiredQty ?? 1))),
-          requiredDate: selected?.validUntil || '',
-          remarks: l.remarks || '',
-        })));
+        setLines(quotLines.map((l: any, i: number) => {
+          const qty = Number(l.orderQty ?? l.requiredQty ?? l.qty ?? 1);
+          const price = Number(l.unitPrice ?? l.rate ?? 0);
+          const grossAmount = qty * price;
+          const discPct = Number(l.discount ?? 0);
+          const discAmt = (grossAmount * discPct) / 100;
+          const taxableAmount = grossAmount - discAmt;
+          const taxPct = Number(l.tax ?? 0);
+          const taxAmt = (taxableAmount * taxPct) / 100;
+          const computedNet = taxableAmount + taxAmt;
+          const net = (qty > 0 || price > 0) ? computedNet : Number(l.netAmount ?? l.netPrice ?? 0);
+
+          return {
+            lineNo: i + 1,
+            itemCode: l.itemCode || 'ITEM-001',
+            itemName: l.itemName || l.description || l.itemCode || '',
+            description: l.description || l.itemName || '',
+            specification: l.specification || '',
+            drawingNumber: l.drawingNumber || '',
+            drawingRevision: l.drawingRevision || '',
+            orderQty: qty,
+            requiredQty: qty,
+            qty: qty,
+            uom: l.uom || 'PCS',
+            unitPrice: price,
+            rate: price,
+            discount: discPct,
+            discountAmount: discAmt,
+            tax: taxPct,
+            taxAmount: l.taxAmount !== undefined && l.taxAmount !== null ? Number(l.taxAmount) : taxAmt,
+            netAmount: net,
+            netPrice: net,
+            requiredDate: selected?.validUntil || '',
+            remarks: l.remarks || '',
+          };
+        }));
       }
     }
   };
@@ -712,35 +1167,52 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
           row.drawingNumber = '';
           row.storeWarehouse = '';
         } else {
-          const item = itemMasters.find(i => i.code === value);
+          const item = itemMasters.find(i => i.code === value || i.name === value || `${i.code} — ${i.name || i.description || i.code}` === value);
           if (item) {
-            row.itemName = item.name;
-            row.description = item.name + (item.description ? ` (${item.description})` : '');
-            row.uom = item.uom || 'PCS';
+            row.itemCode = item.code;
+            row.itemName = item.name || item.description || item.code;
+            row.description = item.description || '';
+            if (item.uom) row.uom = item.uom;
             if (item.price) row.unitPrice = item.price;
           }
         }
       }
 
       // Recalculate row amounts
-      const qty = Number(row.qty ?? row.requiredQty ?? row.orderQty ?? 1);
-      const price = Number(row.unitPrice ?? 0);
+      const rawQty = fieldKey === 'orderQty'
+        ? row.orderQty
+        : (fieldKey === 'requiredQty' ? row.requiredQty : (fieldKey === 'qty' ? row.qty : (row.orderQty ?? row.requiredQty ?? row.qty)));
+      const qty = Number(rawQty ?? 0);
+      row.orderQty = qty;
+      row.requiredQty = qty;
+      row.qty = qty;
+
+      const price = Number(row.unitPrice ?? row.rate ?? 0);
+      row.unitPrice = price;
+      row.rate = price;
+
+      const grossAmount = qty * price;
       const discPct = Number(row.discount ?? 0);
-      const discAmt = (qty * price * discPct) / 100;
+      const discAmt = (grossAmount * discPct) / 100;
       row.discountAmount = discAmt;
-      const baseNet = (qty * price) - discAmt;
+      const taxableAmount = grossAmount - discAmt;
 
-      let taxPct = 18;
-      const tc = String(row.taxCode || 'GST 18%');
-      if (tc.includes('28%')) taxPct = 28;
-      else if (tc.includes('12%')) taxPct = 12;
-      else if (tc.includes('5%')) taxPct = 5;
-      else if (tc.includes('Exempt')) taxPct = 0;
+      let taxPct = Number(row.tax ?? 0);
+      if (row.tax === undefined || row.tax === null || row.tax === '') {
+        const tc = String(row.taxCode || 'GST 18%');
+        if (tc.includes('28%')) taxPct = 28;
+        else if (tc.includes('12%')) taxPct = 12;
+        else if (tc.includes('5%')) taxPct = 5;
+        else if (tc.includes('Exempt')) taxPct = 0;
+        else taxPct = 18;
+      }
 
-      const taxAmt = (baseNet * taxPct) / 100;
+      const taxAmt = (taxableAmount * taxPct) / 100;
       row.taxAmount = taxAmt;
-      row.netAmount = baseNet + taxAmt;
-      row.netPrice = baseNet + taxAmt;
+
+      const netAmount = taxableAmount + taxAmt;
+      row.netAmount = netAmount;
+      row.netPrice = netAmount;
 
       next[index] = row;
       return next;
@@ -752,19 +1224,23 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
       ...prev,
       {
         lineNo: prev.length + 1,
-        itemCode: itemMasters[0]?.code || 'ITEM-001',
-        itemName: itemMasters[0]?.name || 'Precision CNC Shaft 25mm',
-        description: 'Precision CNC Shaft 25mm',
-        requiredQty: 100,
-        orderQty: 100,
-        qty: 100,
-        uom: 'PCS',
-        unitPrice: 450,
+        itemCode: '',
+        itemName: '',
+        description: '',
+        specification: '',
+        materialGrade: '',
+        size: '',
+        requiredQty: '',
+        orderQty: '',
+        qty: '',
+        uom: '',
+        unitPrice: '',
         discount: 0,
-        taxCode: 'GST 18%',
-        taxAmount: 8100,
-        netAmount: 53100,
-        netPrice: 53100,
+        taxAmount: 0,
+        netAmount: 0,
+        netPrice: 0,
+        requiredDate: '',
+        remarks: '',
         lineStatus: 'Open'
       }
     ]);
@@ -775,7 +1251,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
   };
 
   const buildPayload = () => {
-    const payload: Record<string, unknown> = { ...form };
+    const payload: Record<string, unknown> = { supplierOverride: true, ...form };
     if (config.lines) {
       payload.lines = lines.map(l => ({ ...l }));
       const total = lines.reduce((sum, l) => sum + (Number(l.netAmount ?? l.netPrice ?? l.totalAmount ?? 0)), 0);
@@ -793,10 +1269,14 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
       let savedRes: any;
       if (documentId) {
         savedRes = await updateMutation.mutateAsync({ id: documentId, payload });
-        toast('Purchase Document updated successfully!', 'success');
+        toast(`${config.title} updated successfully!`, 'success');
       } else {
         savedRes = await createMutation.mutateAsync(payload);
-        toast('Purchase Document created successfully!', 'success');
+        toast(`${config.title} saved successfully!`, 'success');
+        if (savedRes && (savedRes.id || savedRes.docNo)) {
+          setDocumentId(String(savedRes.id || savedRes.docNo));
+          setForm(prev => ({ ...prev, ...savedRes }));
+        }
       }
 
       logSystemActivity({
@@ -807,8 +1287,6 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
         user: user?.username || 'Unknown',
         status: savedRes?.status || 'RELEASED',
       });
-
-      backToList();
     } catch (err: any) {
       toast(getApiErrorMessage(err, 'Failed to save purchase document'), 'error');
     }
@@ -843,7 +1321,8 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
     if (!mutation) return;
     try {
       const res = await mutation.mutateAsync(documentId);
-      toast((res as any)?.message || 'Email sent!', 'success');
+      toast((res as any)?.message || 'Mail sent successfully!', 'success');
+      setForm(prev => ({ ...prev, status: 'SENT', emailSent: true }));
     } catch (err: any) {
       toast(getApiErrorMessage(err, 'Failed to send email'), 'error');
     }
@@ -857,6 +1336,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
   };
 
   const canSendEmail = ['supplier-enquiry', 'purchase-order', 'job-order'].includes(docType);
+  const isMailSent = String(form.status) === 'SENT' || Boolean(form.emailSent);
 
   // Header Renderers
   if (mode === 'list') {
@@ -920,6 +1400,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
             <table className="tbl">
               <thead>
                 <tr>
+                  <th style={{ width: '50px', textAlign: 'center' }}>S.No</th>
                   {config.columns.map((col) => (
                     <th key={col.field} className={col.numeric ? 'num' : ''}>
                       {col.label}
@@ -931,22 +1412,31 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
               <tbody>
                 {listQuery.isLoading ? (
                   <tr>
-                    <td colSpan={config.columns.length + 1} className="empty">
+                    <td colSpan={config.columns.length + 2} className="empty">
                       Loading purchase documents...
                     </td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={config.columns.length + 1} className="empty">
+                    <td colSpan={config.columns.length + 2} className="empty">
                       <span className="material-symbols-rounded">inventory_2</span>
                       No purchase documents found. Click <strong>+ New {config.title}</strong> to create one.
                     </td>
                   </tr>
                 ) : (
-                  rows.map((row: any) => (
+                  rows.map((row: any, idx: number) => (
                     <tr key={row.id}>
+                      <td style={{ textAlign: 'center', fontWeight: 500, color: '#64748b' }}>
+                        {page * PAGE_SIZE + idx + 1}
+                      </td>
                       {config.columns.map((col) => {
-                        const val = row[col.field];
+                        let val = row[col.field];
+                        if (col.field === 'requestingDepartment' && (val === undefined || val === null || val === '')) {
+                          val = row['department'];
+                        }
+                        if (col.field === 'requestBy' && (val === undefined || val === null || val === '')) {
+                          val = row['requestedBy'];
+                        }
                         if (col.badge) {
                           return (
                             <td key={col.field}>
@@ -1086,7 +1576,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
               Audit
             </button>
           )}
-          {editable && (
+          {editable && docType !== 'supplier-enquiry' && !config.hideTopSave && (
             <button
               onClick={() => handleSave()}
               disabled={isBusy}
@@ -1096,7 +1586,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
               {isBusy ? 'Saving...' : 'Save Document'}
             </button>
           )}
-          {documentId && (String(form.status) === 'DRAFT' || String(form.status) === 'REJECTED') && (
+          {!config.disableApprovalWorkflow && documentId && (String(form.status) === 'DRAFT' || String(form.status) === 'REJECTED') && (
             <button
               onClick={() => setActionModal({ action: 'submit', danger: false })}
               className="btn btn-g"
@@ -1105,7 +1595,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
               Submit
             </button>
           )}
-          {documentId && String(form.status) === 'SUBMITTED' && can('purchase', 'Approve') && (
+          {!config.disableApprovalWorkflow && documentId && String(form.status) === 'SUBMITTED' && can('purchase', 'Approve') && (
             <>
               <button
                 onClick={() => setActionModal({ action: 'approve', danger: false })}
@@ -1124,7 +1614,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
               </button>
             </>
           )}
-          {documentId && String(form.status) === 'REJECTED' && (
+          {!config.disableApprovalWorkflow && documentId && String(form.status) === 'REJECTED' && (
             <button
               onClick={() => setActionModal({ action: 'reopen', danger: false })}
               className="btn btn-g"
@@ -1146,11 +1636,17 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
           {documentId && canSendEmail && (
             <button
               onClick={() => handleSendEmail()}
-              className="btn btn-p"
-              title="Send document via email"
+              disabled={isMailSent || sendEnquiryMutation.isPending || sendPoMutation.isPending || sendJoMutation.isPending}
+              className={`btn ${isMailSent ? '' : 'btn-p'}`}
+              style={isMailSent ? { backgroundColor: '#e2e8f0', color: '#64748b', cursor: 'not-allowed', borderColor: '#cbd5e1' } : undefined}
+              title={isMailSent ? 'Mail has been sent' : 'Send document via email'}
             >
-              <span className="material-symbols-rounded">mail</span>
-              Send Email
+              <span className="material-symbols-rounded">{isMailSent ? 'mark_email_read' : 'mail'}</span>
+              {sendEnquiryMutation.isPending || sendPoMutation.isPending || sendJoMutation.isPending
+                ? 'Sending...'
+                : isMailSent
+                ? 'Mail Sent'
+                : 'Send Mail'}
             </button>
           )}
         </div>
@@ -1168,100 +1664,103 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
           {config.fields.map((field) => {
             const val = form[field.key] ?? '';
 
-            // 2nd Header Input Field (Select Option for Document References)
+            // Header Document Reference Input Fields with Searchable Lookup
             if (field.key === 'purchaseRequestNumber') {
+              const prOptions = prList.map((pr: any) => ({
+                value: String(pr.docNo || ''),
+                label: String(pr.docNo || ''),
+                sublabel: `${pr.requestingDepartment || pr.department || 'Dept'} - ${pr.requestBy || pr.requestedBy || ''}`
+              }));
               return (
                 <div key={field.key} className="fld">
                   <span>
-                    2. Source PR Reference (Select Option) <em className="req">*</em>
+                    PR Reference {field.required ? <em className="req">*</em> : null}
                   </span>
-                  <select
+                  <SearchableDocLookup
+                    value={String(val || '')}
                     disabled={!editable}
-                    value={String(val)}
-                    onChange={(e) => handlePRSelect(e.target.value)}
-                    className="in"
-                    style={{ fontWeight: 700, color: '#1e3a8a' }}
-                  >
-                    <option value="">-- Select Purchase Request --</option>
-                    {prList.map((pr: any) => (
-                      <option key={pr.docNo} value={pr.docNo}>
-                        {pr.docNo} ({pr.requestingDepartment || 'Dept'}) - {pr.requestBy}
-                      </option>
-                    ))}
-                  </select>
+                    options={prOptions}
+                    placeholder="Search PR No or Dept..."
+                    onChange={(selectedPrNo) => {
+                      setForm((prev) => ({ ...prev, purchaseRequestNumber: selectedPrNo }));
+                      handlePRSelect(selectedPrNo);
+                    }}
+                  />
                 </div>
               );
             }
 
             if (field.key === 'enquiryNumber') {
+              const enqOptions = enquiryList.map((enq: any) => ({
+                value: String(enq.docNo || ''),
+                label: String(enq.docNo || ''),
+                sublabel: `${enq.supplier || 'Supplier'} (${enq.date || ''})`
+              }));
               return (
                 <div key={field.key} className="fld">
                   <span>
-                    2. Enquiry Reference (Select Option) <em className="req">*</em>
+                    Enquiry Reference <em className="req">*</em>
                   </span>
-                  <select
+                  <SearchableDocLookup
+                    value={String(val || '')}
                     disabled={!editable}
-                    value={String(val)}
-                    onChange={(e) => handleEnquirySelect(e.target.value)}
-                    className="in"
-                    style={{ fontWeight: 700, color: '#1e3a8a' }}
-                  >
-                    <option value="">-- Select Supplier Enquiry --</option>
-                    {enquiryList.map((enq: any) => (
-                      <option key={enq.docNo} value={enq.docNo}>
-                        {enq.docNo} - {enq.supplier || 'Supplier'} ({enq.date})
-                      </option>
-                    ))}
-                  </select>
+                    options={enqOptions}
+                    placeholder="Search Enquiry No or Supplier..."
+                    onChange={(selectedEnqNo) => {
+                      setForm((prev) => ({ ...prev, enquiryNumber: selectedEnqNo }));
+                      handleEnquirySelect(selectedEnqNo);
+                    }}
+                  />
                 </div>
               );
             }
 
             if (field.key === 'quotationNumber') {
+              const quotOptions = quotationList.map((q: any) => ({
+                value: String(q.docNo || ''),
+                label: String(q.docNo || ''),
+                sublabel: `${q.supplier || 'Supplier'} (${q.date || ''})`
+              }));
               return (
                 <div key={field.key} className="fld">
                   <span>
-                    2. Reference Quotation (Select Option) <em className="req">*</em>
+                    Quotation Reference <em className="req">*</em>
                   </span>
-                  <select
+                  <SearchableDocLookup
+                    value={String(val || '')}
                     disabled={!editable}
-                    value={String(val)}
-                    onChange={(e) => handleQuotationSelect(e.target.value)}
-                    className="in"
-                    style={{ fontWeight: 700, color: '#1e3a8a' }}
-                  >
-                    <option value="">-- Select Supplier Quotation --</option>
-                    {quotationList.map((q: any) => (
-                      <option key={q.docNo} value={q.docNo}>
-                        {q.docNo} - {q.supplier} ({q.date})
-                      </option>
-                    ))}
-                  </select>
+                    options={quotOptions}
+                    placeholder="Search Quotation No or Supplier..."
+                    onChange={(selectedQuotNo) => {
+                      setForm((prev) => ({ ...prev, quotationNumber: selectedQuotNo }));
+                      handleQuotationSelect(selectedQuotNo);
+                    }}
+                  />
                 </div>
               );
             }
 
-            // Supplier Master Select
+            // Supplier Master Select with Searchable Lookup
             if (field.key === 'supplier') {
+              const suppOptions = supplierMasters.map((s) => ({
+                value: String(s.name || ''),
+                label: String(s.name || ''),
+                sublabel: `${s.code}${s.contactPerson ? ` • ${s.contactPerson}` : ''}`,
+              }));
               return (
                 <div key={field.key} className="fld">
-                  <span>{field.label}</span>
-                  <select
-                    disabled={!editable}
+                  <span>
+                    {field.label} {field.required ? <em className="req">*</em> : null}
+                  </span>
+                  <SearchableDocLookup
                     value={String(val || '')}
-                    onChange={(e) => handleSupplierSelect(e.target.value)}
-                    className="in"
-                  >
-                    <option value="">-- Select Supplier --</option>
-                    {supplierMasters.map((s) => (
-                      <option key={s.id} value={s.name}>
-                        {s.name} ({s.code})
-                      </option>
-                    ))}
-                    {val && !supplierMasters.some(s => s.name === val) && (
-                      <option value={String(val)}>{String(val)}</option>
-                    )}
-                  </select>
+                    disabled={!editable}
+                    options={suppOptions}
+                    placeholder="Type to search Supplier..."
+                    onChange={(selectedSupplierName) => {
+                      handleSupplierSelect(selectedSupplierName);
+                    }}
+                  />
                 </div>
               );
             }
@@ -1324,9 +1823,11 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
                 <thead>
                   <tr>
                     {config.lines.fields.map((f) => (
-                      <th key={f.key}>{f.label}</th>
+                      <th key={f.key} style={f.width ? { width: f.width, minWidth: f.width } : undefined}>
+                        {f.label}
+                      </th>
                     ))}
-                    {editable && <th style={{ textAlign: 'right' }}>Remove</th>}
+                    {editable && <th style={{ textAlign: 'right', width: '60px' }}>Remove</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -1335,38 +1836,27 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
                       {config.lines!.fields.map((f) => {
                         const cellVal = line[f.key] ?? '';
                         const isOthers = String(line.itemCode).toUpperCase() === 'OTHERS';
+                        const colStyle = f.width ? { width: f.width, minWidth: f.width } : undefined;
 
                         // If item is OTHERS, remove storeWarehouse and drawingNumber
                         if (isOthers && (f.key === 'storeWarehouse' || f.key === 'drawingNumber')) {
                           return (
-                            <td key={f.key} style={{ background: '#f8fafc', color: '#94a3b8', textAlign: 'center', fontSize: '12px' }}>
+                            <td key={f.key} style={{ background: '#f8fafc', color: '#94a3b8', textAlign: 'center', fontSize: '12px', ...colStyle }}>
                               N/A
                             </td>
                           );
                         }
 
-                        // Item Code Lookup Select
+                        // Item Code Lookup Select + Input
                         if (f.type === 'lookup') {
                           return (
-                            <td key={f.key} className="w-i">
-                              <select
-                                disabled={!editable}
+                            <td key={f.key} className={f.width ? undefined : "w-i"} style={colStyle}>
+                              <SearchableItemLookup
                                 value={String(cellVal)}
-                                onChange={(e) => handleLineItemChange(idx, f.key, e.target.value)}
-                                className="in"
-                                style={{ fontWeight: 700, color: '#1e3a8a' }}
-                              >
-                                <option value="">-- Select Item --</option>
-                                {itemMasters.map((item) => {
-                                  const nameStr = item.name || item.description || item.code;
-                                  return (
-                                    <option key={item.id} value={item.code}>
-                                      {item.code} — {nameStr}
-                                    </option>
-                                  );
-                                })}
-                                <option value="OTHERS">OTHERS (Custom Item)</option>
-                              </select>
+                                disabled={!editable}
+                                items={itemMasters}
+                                onChange={(val) => handleLineItemChange(idx, f.key, val)}
+                              />
                             </td>
                           );
                         }
@@ -1374,19 +1864,23 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
                         // UOM Master Lookup Select
                         if (f.key === 'uom') {
                           return (
-                            <td key={f.key}>
+                            <td key={f.key} style={colStyle}>
                               <select
                                 disabled={!editable}
                                 value={String(cellVal)}
                                 onChange={(e) => handleLineItemChange(idx, f.key, e.target.value)}
                                 className="in"
+                                style={{ width: '100%' }}
                               >
                                 <option value="">-- UOM --</option>
                                 {uomMasters.map((u) => (
                                   <option key={u.id} value={u.code}>
-                                    {u.code} - {u.name}
+                                    {u.name || u.code}
                                   </option>
                                 ))}
+                                {cellVal && !uomMasters.some((u) => u.code === cellVal || u.name === cellVal) && (
+                                  <option value={String(cellVal)}>{String(cellVal)}</option>
+                                )}
                               </select>
                             </td>
                           );
@@ -1394,12 +1888,13 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
 
                         if (f.type === 'select') {
                           return (
-                            <td key={f.key}>
+                            <td key={f.key} style={colStyle}>
                               <select
                                 disabled={!editable || f.readOnly}
                                 value={String(cellVal)}
                                 onChange={(e) => handleLineItemChange(idx, f.key, e.target.value)}
                                 className="in"
+                                style={{ width: '100%' }}
                               >
                                 {(f.options || []).map((o) => (
                                   <option key={o} value={o}>{o}</option>
@@ -1410,13 +1905,17 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
                         }
 
                         return (
-                          <td key={f.key}>
+                          <td key={f.key} style={colStyle}>
                             <input
                               type={f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text'}
                               disabled={!editable || f.readOnly}
                               value={String(cellVal)}
                               onChange={(e) => handleLineItemChange(idx, f.key, e.target.value)}
                               className="in"
+                              style={{
+                                width: '100%',
+                                textAlign: f.key === 'lineNo' ? 'center' : f.type === 'number' ? 'right' : 'left'
+                              }}
                             />
                           </td>
                         );
@@ -1446,11 +1945,12 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
       <div className="actbar" style={{ marginTop: '24px' }}>
         <div className="lft">
           <span className="material-symbols-rounded">info</span>
-          Fill all mandatory header and item details before submitting.
+          {config.disableApprovalWorkflow ? 'Fill all mandatory header and item details before saving.' : 'Fill all mandatory header and item details before submitting.'}
         </div>
         <button type="button" onClick={backToList} className="btn">
           Cancel
         </button>
+
         {editable && (
           <button type="button" onClick={() => handleSave()} disabled={isBusy} className="btn btn-p">
             <span className="material-symbols-rounded">save</span>

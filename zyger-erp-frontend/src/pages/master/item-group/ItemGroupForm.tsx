@@ -61,7 +61,7 @@ export default function ItemGroupForm({ itemGroupId, viewOnly = false, onBack, o
     e.preventDefault();
     if (!String(form.code ?? '').trim()) { toast('Group ID is required.', 'error'); return; }
     if (!String(form.name ?? '').trim()) { toast('Group Name is required.', 'error'); return; }
-    if (!String(form.itemType ?? '').trim()) { toast('Item Group Type is required.', 'error'); return; }
+    if (!String(form.itemType ?? '').trim()) { toast('Item Type is required.', 'error'); return; }
     setBusy(true);
     try {
       if (editId) {
@@ -111,8 +111,8 @@ export default function ItemGroupForm({ itemGroupId, viewOnly = false, onBack, o
         </div>
 
         {openSec && (
-          <div className="sec-body" style={{ background: '#fff', border: '1px solid #bfdbfe', borderTop: 'none', borderRadius: '0 0 12px 12px', padding: '24px' }}>
-            <div className="fgrid" style={{ gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
+          <div className="sec-body" style={{ background: '#fff', border: '1px solid #bfdbfe', borderTop: 'none', borderRadius: '0 0 12px 12px', padding: '16px 20px' }}>
+            <div className="fgrid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
               <label className="fld">
                 <span>GROUP ID</span>
                 <input
@@ -137,7 +137,7 @@ export default function ItemGroupForm({ itemGroupId, viewOnly = false, onBack, o
               </label>
 
               <label className="fld">
-                <span>ITEM GROUP TYPE *</span>
+                <span>ITEM TYPE *</span>
                 <select
                   className="in"
                   required
@@ -162,17 +162,18 @@ export default function ItemGroupForm({ itemGroupId, viewOnly = false, onBack, o
                   disabled={viewOnly}
                 />
               </label>
-            </div>
 
-            <div style={{ marginTop: '16px', marginBottom: '20px' }}>
-              <label className="fld chk">
-                <input
-                  type="checkbox"
-                  checked={Boolean(form.active ?? true)}
-                  onChange={(e) => updateForm('active', e.target.checked)}
+              <label className="fld">
+                <span>STATUS</span>
+                <select
+                  className="in"
+                  value={Boolean(form.active ?? true) ? 'Active' : 'Inactive'}
+                  onChange={(e) => updateForm('active', e.target.value === 'Active')}
                   disabled={viewOnly}
-                />
-                <span>Active</span>
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
               </label>
             </div>
 

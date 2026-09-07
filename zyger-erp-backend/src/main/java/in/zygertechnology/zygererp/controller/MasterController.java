@@ -230,7 +230,11 @@ public class MasterController {
         if (b.containsKey("minOrderQty")) i.setMinOrderQty(b.get("minOrderQty") != null ? new java.math.BigDecimal(b.get("minOrderQty").toString()) : null);
         if (b.containsKey("orderMultiple")) i.setOrderMultiple(b.get("orderMultiple") != null ? new java.math.BigDecimal(b.get("orderMultiple").toString()) : null);
         if (b.containsKey("shelfLifeDays")) i.setShelfLifeDays(b.get("shelfLifeDays") != null ? Integer.valueOf(b.get("shelfLifeDays").toString()) : null);
-        if (b.containsKey("batchControl")) i.setBatchControl(Boolean.TRUE.equals(b.get("batchControl")));
+        if (b.containsKey("batchControl")) {
+            boolean bc = Boolean.TRUE.equals(b.get("batchControl"));
+            i.setBatchControl(bc);
+            i.setRequiresBatch(bc);
+        }
         if (b.containsKey("serialControl")) i.setSerialControl(Boolean.TRUE.equals(b.get("serialControl")));
         if (b.containsKey("inspectionRequired")) i.setInspectionRequired(Boolean.TRUE.equals(b.get("inspectionRequired")));
         if (b.containsKey("defaultWarehouse")) i.setDefaultWarehouse((String) b.get("defaultWarehouse"));
@@ -269,7 +273,8 @@ public class MasterController {
         if (b.containsKey("itemGroupId") && b.get("itemGroupId") != null) {
             i.setItemGroup(itemGroups.findById(Long.valueOf(b.get("itemGroupId").toString())).orElse(null));
         } else if (b.containsKey("itemGroup") && b.get("itemGroup") != null && b.get("itemGroup") instanceof String s && !s.isBlank()) {
-            i.setItemGroup(itemGroups.findByCode(s).orElse(null));
+            ItemGroup ig = itemGroups.findByCode(s).or(() -> itemGroups.findAll().stream().filter(g -> s.equalsIgnoreCase(g.getName()) || s.equalsIgnoreCase(g.getCode())).findFirst()).orElse(null);
+            i.setItemGroup(ig);
         }
         if (b.containsKey("uomRefId") && b.get("uomRefId") != null) {
             i.setUomRef(uoms.findById(Long.valueOf(b.get("uomRefId").toString())).orElse(null));
@@ -294,6 +299,9 @@ public class MasterController {
                     extra.remove(e.getKey());
                 }
             }
+        }
+        if (i.getItemGroup() == null && b.containsKey("itemGroup") && b.get("itemGroup") != null) {
+            extra.put("itemGroup", b.get("itemGroup"));
         }
         if (!extra.isEmpty()) {
             try {
@@ -358,9 +366,25 @@ public class MasterController {
         m.put("hsnCode", i.getHsnCode()); m.put("batchControl", i.getBatchControl());
         m.put("inspectionRequired", i.getInspectionRequired()); m.put("reorderPoint", i.getReorderPoint());
         m.put("minOrderQty", i.getMinOrderQty()); m.put("safetyStock", i.getSafetyStock());
-        m.put("itemGroup", i.getItemGroup() != null ? i.getItemGroup().getCode() : null);
-        m.put("itemGroupName", i.getItemGroup() != null ? i.getItemGroup().getName() : null);
-        m.put("itemGroupType", i.getItemGroup() != null ? i.getItemGroup().getItemType() : null);
+        m.put("customerOwned", i.getCustomerOwned()); m.put("customerCode", i.getCustomerCode());
+        m.put("materialGrade", i.getMaterialGrade()); m.put("specification", i.getSpecification());
+        m.put("productType", i.getProductType()); m.put("drawingPath", i.getDrawingPath());
+        m.put("dimensionType", i.getDimensionType()); m.put("hsCode", i.getHsCode());
+        m.put("weightUom", i.getWeightUom()); m.put("minStockLevel", i.getMinStockLevel());
+        m.put("maxStockLevel", i.getMaxStockLevel()); m.put("supplierLeadTime", i.getSupplierLeadTime());
+        m.put("avgDailyConsumption", i.getAvgDailyConsumption()); m.put("storageCategory", i.getStorageCategory());
+        m.put("barcode", i.getBarcode()); m.put("alternateItems", i.getAlternateItems());
+        m.put("substituteItems", i.getSubstituteItems()); m.put("parentItem", i.getParentItem());
+        m.put("materialType", i.getMaterialType()); m.put("dimensions", i.getDimensions());
+        m.put("tolerance", i.getTolerance()); m.put("surfaceFinish", i.getSurfaceFinish());
+        m.put("hardness", i.getHardness()); m.put("manufacturer", i.getManufacturer());
+        m.put("purchaseUom", i.getPurchaseUom()); m.put("conversionFactor", i.getConversionFactor());
+        m.put("defaultReceivingStore", i.getDefaultReceivingStore());
+        if (i.getItemGroup() != null) {
+            m.put("itemGroup", i.getItemGroup().getCode());
+            m.put("itemGroupName", i.getItemGroup().getName());
+            m.put("itemGroupType", i.getItemGroup().getItemType());
+        }
         m.put("groupItemType", groupToItemType(i.getItemGroup()));
         m.put("bomCategory", bomBucket(i));
         if (i.getExtraData() != null && !i.getExtraData().isBlank()) {
@@ -370,6 +394,9 @@ public class MasterController {
                 Map<String,Object> extra = om.readValue(i.getExtraData(), Map.class);
                 m.putAll(extra);
             } catch (Exception ignored) {}
+        }
+        if (i.getItemGroup() != null) {
+            m.put("itemGroup", i.getItemGroup().getCode());
         }
         return m;
     }
@@ -424,14 +451,17 @@ public class MasterController {
             @RequestParam(defaultValue="0") int page,
             @RequestParam(defaultValue="200") int size,
             @RequestParam(required=false) String search,
-            @RequestParam(required=false) String kind) {
+            @RequestParam(required=false) String kind,
+            @RequestParam(required=false) Boolean activeOnly) {
         List<Party> all = new ArrayList<>();
         if (kind != null && !kind.isEmpty()) {
             all.addAll(parties.findByKind(kind));
         } else {
             all.addAll(parties.findAll());
         }
-        all.removeIf(p -> !p.isActive());
+        if (Boolean.TRUE.equals(activeOnly)) {
+            all.removeIf(p -> !p.isActive());
+        }
         if (search != null && !search.isEmpty()) {
             String s = search.toLowerCase();
             all.removeIf(p -> {
@@ -478,7 +508,17 @@ public class MasterController {
     }
 
     @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
-    @DeleteMapping("/api/master/parties/{id}") void delParty(@PathVariable Long id) { parties.findById(id).ifPresent(p -> { p.setActive(false); parties.save(p); }); }
+    @DeleteMapping("/api/master/parties/{id}") void delParty(@PathVariable Long id) {
+        try {
+            parties.deleteById(id);
+        } catch (Exception e) {
+            parties.findById(id).ifPresent(p -> {
+                p.setActive(false);
+                p.setCustomerStatus("Inactive");
+                parties.save(p);
+            });
+        }
+    }
 
     // ---- Location CRUD ----
     @GetMapping("/api/inventory/locations") List<LocationMaster> loc(){ return locs.findAll().stream().filter(LocationMaster::isActive).toList(); }
@@ -579,16 +619,17 @@ public class MasterController {
     private final MasterAuditLogRepository auditLogs;
 
     // ---- UOM Master ----
-    @Cacheable(value = "masterRefs", key = "'uoms'")
+    @Cacheable(value = "masterRefs", key = "'uoms-' + (#activeOnly == null ? 'all' : #activeOnly)")
     @GetMapping("/api/master/uoms")
-    List<Map<String,Object>> uomList() {
-        return uoms.findAll().stream().filter(UOMMaster::isActive).map(u -> {
-            Map<String,Object> m = new LinkedHashMap<>();
-            m.put("id", u.getId()); m.put("code", u.getCode()); m.put("name", u.getName());
-            m.put("symbol", u.getSymbol()); m.put("baseUom", u.getBaseUom()); m.put("conversionFactor", u.getConversionFactor());
-            m.put("description", u.getDescription()); m.put("active", u.isActive());
-            return m;
-        }).toList();
+    List<Map<String,Object>> uomList(@RequestParam(required = false) Boolean activeOnly) {
+        return uoms.findAll().stream()
+            .filter(u -> activeOnly == null || !activeOnly || u.isActive())
+            .map(u -> {
+                Map<String,Object> m = new LinkedHashMap<>();
+                m.put("id", u.getId()); m.put("code", u.getCode()); m.put("name", u.getName());
+                m.put("description", u.getDescription()); m.put("active", u.isActive());
+                return m;
+            }).toList();
     }
     @GetMapping("/api/master/uoms/{id}") UOMMaster getUom(@PathVariable Long id){
         return uoms.findById(id).orElseThrow(() -> new RuntimeException("UOM not found"));
@@ -603,7 +644,13 @@ public class MasterController {
         return uoms.save(merged);
     }
     @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
-    @DeleteMapping("/api/master/uoms/{id}") void delUom(@PathVariable Long id){ uoms.findById(id).ifPresent(u -> { u.setActive(false); uoms.save(u); }); }
+    @DeleteMapping("/api/master/uoms/{id}") void delUom(@PathVariable Long id){
+        try {
+            uoms.deleteById(id);
+        } catch (Exception e) {
+            uoms.findById(id).ifPresent(u -> { u.setActive(false); uoms.save(u); });
+        }
+    }
 
     // ---- Item Group ----
     @GetMapping("/api/master/item-groups") @Transactional(readOnly = true)
@@ -972,11 +1019,11 @@ public class MasterController {
         return rackMasters.findById(id).orElseThrow(() -> new IllegalArgumentException("Rack not found"));
     }
 
-    @Cacheable(cacheNames = "masterRefsByStore", key = "#storeId == null ? 'all' : #storeId")
+    @Cacheable(cacheNames = "masterRefsByStore", key = "(#storeId == null ? 'all' : #storeId) + '-' + (#activeOnly == null ? 'all' : #activeOnly)")
     @GetMapping("/api/master/racks") @Transactional(readOnly = true)
-    List<Map<String,Object>> rackList(@RequestParam(required=false) Long storeId) {
+    List<Map<String,Object>> rackList(@RequestParam(required=false) Long storeId, @RequestParam(required=false) Boolean activeOnly) {
         List<RackMaster> list = (storeId != null ? rackMasters.findByStoreId(storeId) : rackMasters.findAll())
-            .stream().filter(RackMaster::isActive).toList();
+            .stream().filter(r -> activeOnly == null || !activeOnly || r.isActive()).toList();
         return list.stream().map(r -> {
             Map<String,Object> m = new LinkedHashMap<>();
             m.put("id", r.getId()); m.put("code", r.getCode()); m.put("name", r.getName());
@@ -1015,7 +1062,15 @@ public class MasterController {
         return rackMasters.save(e);
     }
     @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
-    @DeleteMapping("/api/master/racks/{id}") void delRack(@PathVariable Long id){ rackMasters.findById(id).ifPresent(r -> { r.setActive(false); rackMasters.save(r); }); }
+    @DeleteMapping("/api/master/racks/{id}") @Transactional void delRack(@PathVariable Long id){
+        rackMasters.findById(id).ifPresent(r -> {
+            List<BinMaster> bList = binMasters.findByRackId(id);
+            if (bList != null && !bList.isEmpty()) {
+                binMasters.deleteAll(bList);
+            }
+            rackMasters.delete(r);
+        });
+    }
 
     // ---- Bin Master ----
     private final BinMasterRepository binMasters;
@@ -1028,14 +1083,14 @@ public class MasterController {
         return binMasters.findById(id).orElseThrow(() -> new IllegalArgumentException("Bin not found"));
     }
 
-    @Cacheable(cacheNames = "masterRefsByStore", key = "T(java.util.Objects).toString(#storeId) + '|' + T(java.util.Objects).toString(#rackId)")
+    @Cacheable(cacheNames = "masterRefsByStore", key = "T(java.util.Objects).toString(#storeId) + '|' + T(java.util.Objects).toString(#rackId) + '|' + (#activeOnly == null ? 'all' : #activeOnly)")
     @GetMapping("/api/master/bins") @Transactional(readOnly = true)
-    List<Map<String,Object>> binList(@RequestParam(required=false) Long storeId, @RequestParam(required=false) Long rackId) {
+    List<Map<String,Object>> binList(@RequestParam(required=false) Long storeId, @RequestParam(required=false) Long rackId, @RequestParam(required=false) Boolean activeOnly) {
         List<BinMaster> list;
         if (rackId != null) list = binMasters.findByRackId(rackId);
         else if (storeId != null) list = binMasters.findByStoreId(storeId);
         else list = binMasters.findAll();
-        list = list.stream().filter(BinMaster::isActive).toList();
+        list = list.stream().filter(b -> activeOnly == null || !activeOnly || b.isActive()).toList();
         return list.stream().map(b -> {
             Map<String,Object> m = new LinkedHashMap<>();
             m.put("id", b.getId()); m.put("code", b.getCode()); m.put("name", b.getName());
@@ -1078,7 +1133,7 @@ public class MasterController {
         return binMasters.save(e);
     }
     @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
-    @DeleteMapping("/api/master/bins/{id}") void delBin(@PathVariable Long id){ binMasters.findById(id).ifPresent(b -> { b.setActive(false); binMasters.save(b); }); }
+    @DeleteMapping("/api/master/bins/{id}") @Transactional void delBin(@PathVariable Long id){ binMasters.deleteById(id); }
 
     // ---- Store Master ----
     @GetMapping("/api/master/stores/{id}")
@@ -1086,22 +1141,24 @@ public class MasterController {
         return stores.findById(id).orElseThrow(() -> new IllegalArgumentException("Store not found"));
     }
 
-    @Cacheable(value = "masterRefs", key = "'stores'")
+    @Cacheable(value = "masterRefs", key = "'stores-' + (#activeOnly == null ? 'all' : #activeOnly)")
     @GetMapping("/api/master/stores")
-    List<Map<String,Object>> storeList() {
-        return stores.findAll().stream().filter(StoreMaster::isActive).map(s -> {
-            Map<String,Object> m = new LinkedHashMap<>();
-            m.put("id", s.getId()); m.put("code", s.getCode()); m.put("name", s.getName());
-            m.put("description", s.getDescription()); m.put("storeType", s.getStoreType());
-            m.put("department", s.getDepartment()); m.put("locationRef", s.getLocationRef());
-            m.put("location", s.getLocationRef());
-            m.put("isQcHold", s.isQcHold()); m.put("isWip", s.isWip());
-            m.put("isFinished", s.isFinished()); m.put("isRaw", s.isRaw());
-            m.put("isScrap", s.isScrap()); m.put("isDispatch", s.isDispatch());
-            m.put("binLocation", s.getBinLocation()); m.put("capacity", s.getCapacity());
-            m.put("remarks", s.getRemarks()); m.put("active", s.isActive());
-            return m;
-        }).toList();
+    List<Map<String,Object>> storeList(@RequestParam(required = false) Boolean activeOnly) {
+        return stores.findAll().stream()
+            .filter(s -> activeOnly == null || !activeOnly || s.isActive())
+            .map(s -> {
+                Map<String,Object> m = new LinkedHashMap<>();
+                m.put("id", s.getId()); m.put("code", s.getCode()); m.put("name", s.getName());
+                m.put("description", s.getDescription()); m.put("storeType", s.getStoreType());
+                m.put("department", s.getDepartment()); m.put("locationRef", s.getLocationRef());
+                m.put("location", s.getLocationRef());
+                m.put("isQcHold", s.isQcHold()); m.put("isWip", s.isWip());
+                m.put("isFinished", s.isFinished()); m.put("isRaw", s.isRaw());
+                m.put("isScrap", s.isScrap()); m.put("isDispatch", s.isDispatch());
+                m.put("binLocation", s.getBinLocation()); m.put("capacity", s.getCapacity());
+                m.put("remarks", s.getRemarks()); m.put("active", s.isActive());
+                return m;
+            }).toList();
     }
     @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @PostMapping("/api/master/stores") @Transactional StoreMaster createStore(@RequestBody Map<String,Object> body){
@@ -1116,7 +1173,25 @@ public class MasterController {
         return stores.save(e);
     }
     @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
-    @DeleteMapping("/api/master/stores/{id}") void delStore(@PathVariable Long id){ stores.findById(id).ifPresent(s -> { s.setActive(false); stores.save(s); }); }
+    @DeleteMapping("/api/master/stores/{id}") @Transactional void delStore(@PathVariable Long id){
+        stores.findById(id).ifPresent(s -> {
+            List<BinMaster> bList = binMasters.findByStoreId(id);
+            if (bList != null && !bList.isEmpty()) {
+                binMasters.deleteAll(bList);
+            }
+            List<RackMaster> rList = rackMasters.findByStoreId(id);
+            if (rList != null && !rList.isEmpty()) {
+                for (RackMaster r : rList) {
+                    List<BinMaster> rbList = binMasters.findByRackId(r.getId());
+                    if (rbList != null && !rbList.isEmpty()) {
+                        binMasters.deleteAll(rbList);
+                    }
+                }
+                rackMasters.deleteAll(rList);
+            }
+            stores.delete(s);
+        });
+    }
 
     private void applyStoreFields(StoreMaster s, Map<String,Object> b) {
         if (b.containsKey("code")) s.setCode((String) b.get("code"));

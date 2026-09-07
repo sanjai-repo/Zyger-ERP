@@ -33,7 +33,7 @@ export default function ItemMasterScreen() {
   const [activeTab, setActiveTab] = useState('basic');
   const [groupRows, setGroupRows] = useState<Array<{id:number;code:string;name:string;itemType?:string}>>([]);
 
-  useEffect(() => { apiClient.get('/master/item-groups').then(r => setGroupRows(r.data ?? [])).catch(() => {}); }, []);
+  useEffect(() => { apiClient.get('/master/item-groups?activeOnly=false').then(r => setGroupRows(r.data ?? [])).catch(() => {}); }, []);
 
   const load = async () => {
     setLoading(true);

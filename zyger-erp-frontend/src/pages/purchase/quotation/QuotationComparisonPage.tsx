@@ -140,20 +140,30 @@ export default function QuotationComparisonPage() {
   const lineUom = (l?: QuotationLine) => l?.uom || 'PCS';
   const lineLead = (l?: QuotationLine) => Number(l?.deliveryLeadTime ?? 7);
 
-  // Supplier quotation line semantics: discount & tax are ₹ amounts, netPrice is the line total.
-  const lineDiscountAmt = (l?: QuotationLine) => Number(l?.discount ?? 0);
-  const lineTaxAmt = (l?: QuotationLine) => Number(l?.tax ?? 0);
+  // Supplier quotation line semantics: discount & tax are % values, netPrice is the line total.
+  const lineDiscountPct = (l?: QuotationLine) => Number(l?.discount ?? 0);
+  const lineTaxPct = (l?: QuotationLine) => Number(l?.tax ?? 0);
   const lineNet = (l?: QuotationLine): number => {
     if (!l) return 0;
+    const qty = lineQty(l);
+    const rate = lineRate(l);
+    const discPct = lineDiscountPct(l);
+    const taxPct = lineTaxPct(l);
+    const gross = qty * rate;
+    const discAmt = (gross * discPct) / 100;
+    const taxable = gross - discAmt;
+    const taxAmt = (taxable * taxPct) / 100;
+    const computedNet = taxable + taxAmt;
+    if (computedNet > 0 || (qty > 0 && rate > 0)) {
+      return computedNet;
+    }
     if (typeof l.netPrice === 'number' && l.netPrice > 0) {
-      return Number(l.netPrice) + lineTaxAmt(l);
+      return Number(l.netPrice);
     }
     if (typeof l.netAmount === 'number' && l.netAmount > 0) {
-      return Number(l.netAmount) + lineTaxAmt(l);
+      return Number(l.netAmount);
     }
-    const gross = lineQty(l) * lineRate(l);
-    const landed = gross - lineDiscountAmt(l);
-    return Math.max(0, landed) + lineTaxAmt(l);
+    return 0;
   };
 
   const headerCharges = (q: QuotationDoc): number =>
@@ -271,20 +281,38 @@ export default function QuotationComparisonPage() {
     setCreatingPO(true);
     try {
       const today = new Date().toISOString().split('T')[0];
-      const lines = quot.lines.map((l, idx) => ({
-        lineNo: idx + 1,
-        itemCode: l.itemCode,
-        itemName: l.itemName || l.description || l.itemCode,
-        description: l.itemName || l.description || l.itemCode,
-        orderQty: lineQty(l),
-        uom: l.uom || 'PCS',
-        unitPrice: lineRate(l),
-        discount: lineDiscountAmt(l),
-        tax: lineTaxAmt(l),
-        netAmount: lineNet(l),
-        requiredDate: today,
-        lineStatus: 'Open',
-      }));
+      const lines = quot.lines.map((l, idx) => {
+        const qty = lineQty(l);
+        const rate = lineRate(l);
+        const discPct = lineDiscountPct(l);
+        const taxPct = lineTaxPct(l);
+        const gross = qty * rate;
+        const discAmt = (gross * discPct) / 100;
+        const taxable = gross - discAmt;
+        const taxAmt = (taxable * taxPct) / 100;
+        const computedNet = taxable + taxAmt;
+
+        return {
+          lineNo: idx + 1,
+          itemCode: l.itemCode,
+          itemName: l.itemName || l.description || l.itemCode,
+          description: l.itemName || l.description || l.itemCode,
+          orderQty: qty,
+          requiredQty: qty,
+          qty: qty,
+          uom: l.uom || 'PCS',
+          unitPrice: rate,
+          rate: rate,
+          discount: discPct,
+          discountAmount: discAmt,
+          tax: taxPct,
+          taxAmount: taxAmt,
+          netAmount: computedNet,
+          netPrice: computedNet,
+          requiredDate: today,
+          lineStatus: 'Open',
+        };
+      });
 
       const payload: Record<string, unknown> = {
         supplier: quot.supplier,
@@ -292,6 +320,7 @@ export default function QuotationComparisonPage() {
         contactPerson: quot.contactPerson,
         phone: quot.phone,
         email: quot.email,
+        buyer: '',
         paymentTerms: quot.paymentTerms || '30 Days',
         deliveryTerms: quot.deliveryTerms || 'EXW - Ex Works',
         currency: 'INR',
@@ -578,14 +607,14 @@ export default function QuotationComparisonPage() {
                                 <div style={{ fontWeight: 700, color: 'var(--text)' }}>
                                   ₹{formatNumber(lineRate(l))} / {lineUom(l)}
                                 </div>
-                                {lineDiscountAmt(l) > 0 && (
+                                {lineDiscountPct(l) > 0 && (
                                   <div style={{ fontSize: 11, color: '#1f9d58', fontWeight: 600 }}>
-                                    Disc ₹{formatNumber(lineDiscountAmt(l))}
+                                    Disc {lineDiscountPct(l)}%
                                   </div>
                                 )}
-                                {lineTaxAmt(l) > 0 && (
+                                {lineTaxPct(l) > 0 && (
                                   <div style={{ fontSize: 11, color: '#7c3aed', fontWeight: 600 }}>
-                                    Tax ₹{formatNumber(lineTaxAmt(l))}
+                                    Tax {lineTaxPct(l)}%
                                   </div>
                                 )}
                                 <div className="mut" style={{ marginTop: 2 }}>Net ₹{formatNumber(lineNet(l))}</div>

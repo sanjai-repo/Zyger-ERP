@@ -76,12 +76,16 @@ export const INWARD_TYPES: Record<InwardType, InwardTypeConfig> = {
     qtyField: 'receivedQty',
     apiPath: '/inventory/documents/po-inward',
     headerFields: [
-      ...baseHeader(),
-      { key: 'supplier', label: 'Supplier', type: 'select', required: true, options: 'suppliers' },
+      { key: 'no', label: 'Doc No', type: 'auto' },
+      { key: 'date', label: 'Date', type: 'date', required: true },
+      { key: 'qcRequired', label: 'Quality Inspection Required', type: 'select', required: true, options: 'yn' },
       { key: 'purchaseOrderNo', label: 'Purchase Order', type: 'select', required: true, options: 'pos' },
-      { key: 'supplierChallanNo', label: 'Supplier Challan No', type: 'text' },
+      { key: 'supplier', label: 'Supplier', type: 'select', required: true, options: 'suppliers' },
+      { key: 'supplierInvoiceNo', label: 'Supplier Invoice Number', type: 'text' },
+      { key: 'dcNumber', label: 'DC Number', type: 'text' },
       { key: 'vehicleNo', label: 'Vehicle No', type: 'text' },
       { key: 'receivedBy', label: 'Received By', type: 'text', required: true },
+      { key: 'attachment', label: 'File Attachment (Invoice / Challan / Inspection Copy)', type: 'attachment', span: 2 },
       { key: 'remarks', label: 'Remarks', type: 'text', span: 2 },
     ],
   },
@@ -152,12 +156,16 @@ export const INWARD_TYPE_LIST: InwardTypeConfig[] = [
 
 export function buildLineFields(qtyField: string, inwardType?: InwardType): InwardFieldConfig[] {
   const fields: InwardFieldConfig[] = [
-    { key: 'itemCode', label: 'Item Code', type: 'item', required: true, wide: true },
+    { key: 'itemCode', label: 'Item Code', type: 'item', required: true },
     { key: 'itemDesc', label: 'Item Name', type: 'auto' },
-    { key: 'uom', label: 'UOM', type: 'auto' },
+    { key: 'description', label: 'Description', type: 'text' },
+    { key: 'uom', label: 'UOM', type: 'select', options: 'uoms' },
     { key: qtyField, label: 'Qty', type: 'number', required: true },
-    { key: 'rate', label: 'Rate', type: 'number' },
-    { key: 'amount', label: 'Amount', type: 'auto' },
+    { key: 'rate', label: 'Unit Price', type: 'number' },
+    { key: 'discount', label: 'Disc (%)', type: 'number' },
+    { key: 'tax', label: 'Tax (%)', type: 'number' },
+    { key: 'taxAmount', label: 'Tax Amt', type: 'auto' },
+    { key: 'netAmount', label: 'Net Amt', type: 'auto' },
     { key: 'acceptedQty', label: 'Accepted', type: 'number' },
     { key: 'rejectedQty', label: 'Rejected', type: 'number' },
   ];
@@ -170,7 +178,7 @@ export function buildLineFields(qtyField: string, inwardType?: InwardType): Inwa
   }
 
   fields.push(
-    { key: 'location', label: 'Location', type: 'select', required: true, options: 'locations' },
+    { key: 'location', label: 'Store Location', type: 'select', required: true, options: 'stores' },
     { key: 'remarks', label: 'Remarks', type: 'text' }
   );
 

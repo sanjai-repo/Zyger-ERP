@@ -52,7 +52,7 @@ export default function UomList({ onAdd, onEdit, onView }: Props) {
     <>
       <div className="pg-head">
         <h1>UOM Master</h1>
-        <p>Units of measurement with base conversions</p>
+        <p>Units of measurement</p>
       </div>
 
       <div className="panel">
@@ -75,22 +75,18 @@ export default function UomList({ onAdd, onEdit, onView }: Props) {
                   <th style={{ width: 50 }}>#</th>
                   <th>Code</th>
                   <th>Name</th>
-                  <th>Base UOM</th>
-                  <th>Conv. Factor</th>
                   <th>Status</th>
                   <th style={{ width: 120 }}>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 ? (
-                  <tr><td colSpan={7}><div className="empty"><span className="material-symbols-rounded">description</span> No UOMs found.</div></td></tr>
+                  <tr><td colSpan={5}><div className="empty"><span className="material-symbols-rounded">description</span> No UOMs found.</div></td></tr>
                 ) : rows.map((r, idx) => (
                   <tr key={r.id}>
                     <td>{page * PAGE_SIZE + idx + 1}</td>
                     <td className="cell-b">{r.code}</td>
                     <td>{r.name}</td>
-                    <td>{r.baseUom ?? '-'}</td>
-                    <td>{r.conversionFactor ?? '-'}</td>
                     <td><span className={`bdg bdg-${r.active ? 'COMPLETED' : 'CANCELLED'}`}>{r.active ? 'Active' : 'Inactive'}</span></td>
                     <td>
                       <div style={{ display: 'flex', gap: 4 }}>

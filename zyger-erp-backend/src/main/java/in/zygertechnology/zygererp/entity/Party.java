@@ -35,9 +35,12 @@ public class Party {
     @Column(name = "transport_mode", length = 60) String transportMode;
 
     // ---- Supplier-specific (existing) ----
+    @Column(name = "supplier_group", length = 60) String supplierGroup;
     @Column(name = "supplier_type", length = 60) String supplierType;
     @Column(name = "vendor_type", length = 60) String vendorType;
     @Column(name = "material_group", length = 100) String materialGroup;
+    @Builder.Default
+    @Column(name = "quality_cert_required") Boolean qualityCertRequired = false;
     @Builder.Default
     @Column(name = "inspection_required") Boolean inspectionRequiredParty = false;
     @Column(name = "lead_time_days") Integer leadTimeDays;
@@ -145,10 +148,30 @@ public class Party {
     @Column(name = "delivery_addresses_json", columnDefinition = "TEXT") @Builder.Default String deliveryAddressesJson = "[]";
     @Column(name = "bank_accounts_json", columnDefinition = "TEXT") @Builder.Default String bankAccountsJson = "[]";
     @Column(name = "documents_json", columnDefinition = "TEXT") @Builder.Default String documentsJson = "[]";
+    @Column(name = "items_supplied_json", columnDefinition = "TEXT") @Builder.Default String itemsSuppliedJson = "[]";
 
     // ---- Billing / Shipping Address ----
     @Column(name = "billing_address", columnDefinition = "TEXT") String billingAddress;
     @Column(name = "shipping_address", columnDefinition = "TEXT") String shippingAddress;
+
+    // ---- Additional Customer Form Fields ----
+    @Column(name = "print_name", length = 200) String printName;
+    @Column(name = "territory", length = 100) String territory;
+    @Column(name = "pricing_group", length = 60) String pricingGroup;
+    @Builder.Default
+    @Column(name = "tax_invoice_applicable") Boolean taxInvoiceApplicable = false;
+    @Column(name = "fax", length = 60) String fax;
+    @Column(name = "gst_reg_type", length = 60) String gstRegType;
+    @Column(name = "msme_no", length = 60) String msmeNo;
+    @Column(name = "msme_type", length = 60) String msmeType;
+    @Column(name = "discount_pct", precision = 5, scale = 2) BigDecimal discountPct;
+    @Column(name = "ledger_group", length = 100) String ledgerGroup;
+    @Column(name = "opening_balance", precision = 14, scale = 2) BigDecimal openingBalance;
+    @Column(name = "dr_cr", length = 10) String drCr;
+    @Column(name = "transporter_name", length = 200) String transporterName;
+    @Column(name = "lead_days") Integer leadDays;
+    @Builder.Default
+    @Column(name = "e_waybill_applicable") Boolean eWaybillApplicable = false;
 
     // ---- Audit fields ----
     @Builder.Default Boolean active = Boolean.TRUE;

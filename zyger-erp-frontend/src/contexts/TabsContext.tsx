@@ -105,27 +105,26 @@ function buildTabsFromIds(ids: string[]): Tab[] {
 export function TabsProvider({ children }: { children: ReactNode }) {
   const { screensLoaded, canScreen } = useAuth();
   const [tabs, setTabs] = useState<Tab[]>(() => {
-    // Prefer URL hash over localStorage for deep-linking support
     const hashScreen = readHashScreenId();
-    if (hashScreen && hashScreen !== 'dashboard') {
-      return buildTabsFromIds(['dashboard', hashScreen]);
-    }
     const saved = loadSavedState();
-    if (saved && saved.tabIds.length > 0) {
-      return buildTabsFromIds(saved.tabIds);
+    let initialIds: string[] = saved?.tabIds && saved.tabIds.length > 0 ? [...saved.tabIds] : ['dashboard'];
+    if (!initialIds.includes('dashboard')) {
+      initialIds.unshift('dashboard');
     }
-    return [];
+    if (hashScreen && hashScreen !== 'dashboard' && !initialIds.includes(hashScreen)) {
+      initialIds.push(hashScreen);
+    }
+    return buildTabsFromIds(initialIds);
   });
 
   const [activeTabId, setActiveTabId] = useState<string | null>(() => {
-    // Prefer URL hash for initial active tab
     const hashScreen = readHashScreenId();
     if (hashScreen) return hashScreen;
     const saved = loadSavedState();
     if (saved && saved.tabIds.includes(saved.activeTabId)) {
       return saved.activeTabId;
     }
-    return null;
+    return 'dashboard';
   });
 
   const isInitialMount = useRef(true);

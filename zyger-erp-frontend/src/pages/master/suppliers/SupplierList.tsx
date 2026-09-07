@@ -16,7 +16,7 @@ interface Props {
   onView?: (id: number) => void;
 }
 
-export default function SupplierList({ onAdd, onEdit }: Props) {
+export default function SupplierList({ onAdd, onEdit, onView }: Props) {
   const { toast } = useToast();
   const [rows, setRows] = useState<Party[]>([]);
   const [total, setTotal] = useState(0);
@@ -40,6 +40,7 @@ export default function SupplierList({ onAdd, onEdit }: Props) {
         addresses: typeof r.addressesJson === 'string' ? tryParseJson(r.addressesJson) : (r.addresses ?? []),
         bankAccounts: typeof r.bankAccountsJson === 'string' ? tryParseJson(r.bankAccountsJson) : (r.bankAccounts ?? []),
         documents: typeof r.documentsJson === 'string' ? tryParseJson(r.documentsJson) : (r.documents ?? []),
+        itemsSupplied: typeof r.itemsSuppliedJson === 'string' ? tryParseJson(r.itemsSuppliedJson) : ((r as any).itemsSupplied ?? []),
       }));
       setRows(content as unknown as Party[]);
       setTotal(data.totalElements ?? (Array.isArray(data) ? data.length : content.length));
@@ -116,12 +117,13 @@ export default function SupplierList({ onAdd, onEdit }: Props) {
             <table className="tbl">
               <thead>
                 <tr>
-                  <th style={{ width: '50px' }}>ID</th>
+                  <th style={{ width: '50px' }}>#</th>
                   <th>SUPPLIER CODE</th>
                   <th>SUPPLIER NAME</th>
                   <th>GROUP</th>
                   <th>TYPE</th>
                   <th>CITY / STATE</th>
+                  <th>CONTACT PERSON</th>
                   <th>MOBILE</th>
                   <th>EMAIL</th>
                   <th>GSTIN</th>
@@ -132,23 +134,26 @@ export default function SupplierList({ onAdd, onEdit }: Props) {
               </thead>
               <tbody>
                 {filteredRows.length === 0 ? (
-                  <tr><td colSpan={12} className="empty">No suppliers found.</td></tr>
+                  <tr><td colSpan={13} className="empty">No suppliers found.</td></tr>
                 ) : (
-                  filteredRows.map((r) => (
+                  filteredRows.map((r, idx) => (
                     <tr key={r.id}>
-                      <td>{r.id}</td>
+                      <td>{page * PAGE_SIZE + idx + 1}</td>
                       <td style={{ fontWeight: 700, color: '#0f172a' }}>{r.code}</td>
                       <td style={{ fontWeight: 600 }}>{r.name}</td>
-                      <td>{(r as any).supplierGroup || 'Raw Material'}</td>
-                      <td>{r.supplierType || 'Manufacturer'}</td>
+                      <td>{[(r as any).supplierGroup, (r as any).supplier_group, r.supplierType].find(s => Boolean(s && String(s).trim())) || 'Raw Material'}</td>
+                      <td>{r.supplierType || 'Raw Material Supplier'}</td>
                       <td>
-                        {r.addresses?.[0]?.city || (r as any).city || '—'}
-                        {r.addresses?.[0]?.state || (r as any).state ? `, ${r.addresses?.[0]?.state || (r as any).state}` : ''}
+                        {[r.addresses?.[0]?.city, (r as any).city].find(s => Boolean(s && String(s).trim())) || '—'}
+                        {[r.addresses?.[0]?.state, (r as any).state].find(s => Boolean(s && String(s).trim())) ? `, ${[r.addresses?.[0]?.state, (r as any).state].find(s => Boolean(s && String(s).trim()))}` : ''}
                       </td>
-                      <td>{r.contacts?.[0]?.mobileNumber || (r as any).phone || '—'}</td>
-                      <td style={{ color: '#0284c7' }}>{r.contacts?.[0]?.email || (r as any).email || '—'}</td>
+                      <td>
+                        {[(r as any).contactPerson, (r as any).contactPersonName, r.contacts?.find(c => c.primaryContact)?.contactPersonName, r.contacts?.[0]?.contactPersonName].find(s => Boolean(s && String(s).trim())) || '—'}
+                      </td>
+                      <td>{[(r as any).mobile, (r as any).phone, r.contacts?.find(c => c.primaryContact)?.mobileNumber, r.contacts?.[0]?.mobileNumber].find(s => Boolean(s && String(s).trim())) || '—'}</td>
+                      <td style={{ color: '#0284c7' }}>{[(r as any).email, r.contacts?.find(c => c.primaryContact)?.email, r.contacts?.[0]?.email].find(s => Boolean(s && String(s).trim())) || '—'}</td>
                       <td style={{ fontWeight: 600 }}>{r.gstin || '—'}</td>
-                      <td>{r.paymentTerms || '45 Days'}</td>
+                      <td>{r.paymentTerms || '30 Days'}</td>
                       <td>
                         <span style={{ fontWeight: 700, color: r.active !== false ? '#166534' : '#dc2626' }}>
                           {r.active !== false ? 'Active' : 'Inactive'}
@@ -156,6 +161,9 @@ export default function SupplierList({ onAdd, onEdit }: Props) {
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          <button type="button" className="ibtn" title="View" onClick={() => onView?.(r.id)}>
+                            <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>visibility</span>
+                          </button>
                           <button type="button" className="ibtn" title="Edit" onClick={() => onEdit(r.id)}>
                             <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>edit</span>
                           </button>

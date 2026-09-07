@@ -37,6 +37,7 @@ interface BinItem {
 export default function StoreScreen() {
   const { toast } = useToast();
   const [viewMode, setViewMode] = useState<'LIST' | 'FORM'>('LIST');
+  const [viewOnly, setViewOnly] = useState(false);
 
   // Stores state
   const [stores, setStores] = useState<StoreItem[]>([]);
@@ -87,6 +88,7 @@ export default function StoreScreen() {
   const openNewStore = () => {
     setStoreForm({ code: `STORE-0${stores.length + 1}`, name: '', location: '', description: '', active: true });
     setEditStoreId(null);
+    setViewOnly(false);
     setViewMode('FORM');
   };
 
@@ -112,10 +114,12 @@ export default function StoreScreen() {
 
   const delStore = async () => {
     if (!deleteStoreTarget) return;
+    const targetId = deleteStoreTarget.id;
     setBusy(true);
     try {
-      await apiClient.delete(`/master/stores/${deleteStoreTarget.id}`);
+      await apiClient.delete(`/master/stores/${targetId}`);
       toast('Store deleted.');
+      setStores(prev => prev.filter(s => s.id !== targetId));
       setDeleteStoreTarget(null);
       loadAll();
     } catch (e) { toast(getApiErrorMessage(e, 'Delete failed.'), 'error'); }
@@ -146,10 +150,12 @@ export default function StoreScreen() {
 
   const delRack = async () => {
     if (!deleteRackTarget) return;
+    const targetId = deleteRackTarget.id;
     setBusy(true);
     try {
-      await apiClient.delete(`/master/racks/${deleteRackTarget.id}`);
+      await apiClient.delete(`/master/racks/${targetId}`);
       toast('Rack deleted.');
+      setRacks(prev => prev.filter(r => r.id !== targetId));
       setDeleteRackTarget(null);
       loadAll();
     } catch (e) { toast(getApiErrorMessage(e, 'Delete failed.'), 'error'); }
@@ -180,10 +186,12 @@ export default function StoreScreen() {
 
   const delBin = async () => {
     if (!deleteBinTarget) return;
+    const targetId = deleteBinTarget.id;
     setBusy(true);
     try {
-      await apiClient.delete(`/master/bins/${deleteBinTarget.id}`);
+      await apiClient.delete(`/master/bins/${targetId}`);
       toast('Bin deleted.');
+      setBins(prev => prev.filter(b => b.id !== targetId));
       setDeleteBinTarget(null);
       loadAll();
     } catch (e) { toast(getApiErrorMessage(e, 'Delete failed.'), 'error'); }
@@ -218,7 +226,7 @@ export default function StoreScreen() {
             </button>
           )}
           <div>
-            <h1>{viewMode === 'LIST' ? 'Store Master' : 'Create Store Master'}</h1>
+            <h1>{viewMode === 'LIST' ? 'Store Master' : viewOnly ? 'View Store Master' : editStoreId ? 'Edit Store Master' : 'Create Store Master'}</h1>
             <p>Master -&gt; Inventory -&gt; Store Master. Maintain stores, racks, bins, and physical locations.</p>
           </div>
         </div>
@@ -229,11 +237,13 @@ export default function StoreScreen() {
             </button>
           ) : (
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button type="button" className="btn btn-primary" onClick={saveStore} disabled={busy}>
-                {busy ? 'Saving...' : 'Save Store'}
-              </button>
+              {!viewOnly && (
+                <button type="button" className="btn btn-primary" onClick={saveStore} disabled={busy}>
+                  {busy ? 'Saving...' : 'Save Store'}
+                </button>
+              )}
               <button type="button" className="btn btn-secondary" onClick={() => setViewMode('LIST')}>
-                Cancel
+                {viewOnly ? 'Back to List' : 'Cancel'}
               </button>
             </div>
           )}
@@ -258,6 +268,7 @@ export default function StoreScreen() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th style={{ width: '50px' }}>#</th>
                   <th>STORE CODE</th>
                   <th>STORE NAME</th>
                   <th>RACKS</th>
@@ -269,15 +280,16 @@ export default function StoreScreen() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={7} className="empty">Loading stores...</td></tr>
+                  <tr><td colSpan={8} className="empty">Loading stores...</td></tr>
                 ) : filteredStores.length === 0 ? (
-                  <tr><td colSpan={7} className="empty">No stores found.</td></tr>
+                  <tr><td colSpan={8} className="empty">No stores found.</td></tr>
                 ) : (
-                  filteredStores.map(s => {
+                  filteredStores.map((s, idx) => {
                     const rackCount = racks.filter(r => r.storeId === s.id).length;
                     const binCount = bins.filter(b => racks.some(r => r.storeId === s.id && (r.id === b.rackId || (b as any).storeId === s.id))).length;
                     return (
                       <tr key={s.id}>
+                        <td>{idx + 1}</td>
                         <td style={{ fontWeight: 700 }}>{s.code}</td>
                         <td style={{ fontWeight: 600 }}>{s.name}</td>
                         <td>
@@ -294,7 +306,10 @@ export default function StoreScreen() {
                         <td><span style={{ fontWeight: 700, color: s.active ? '#166534' : '#dc2626' }}>{s.active ? 'Active' : 'Inactive'}</span></td>
                         <td>
                           <div style={{ display: 'flex', gap: '6px' }}>
-                            <button type="button" className="ibtn" title="Edit" onClick={() => { setStoreForm(s); setEditStoreId(s.id); setViewMode('FORM'); }}>
+                            <button type="button" className="ibtn" title="View" onClick={() => { setStoreForm(s); setEditStoreId(s.id); setViewOnly(true); setViewMode('FORM'); }}>
+                              <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>visibility</span>
+                            </button>
+                            <button type="button" className="ibtn" title="Edit" onClick={() => { setStoreForm(s); setEditStoreId(s.id); setViewOnly(false); setViewMode('FORM'); }}>
                               <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>edit</span>
                             </button>
                             <button type="button" className="ibtn danger" title="Delete" onClick={() => setDeleteStoreTarget(s)}>
@@ -326,7 +341,7 @@ export default function StoreScreen() {
           <div className="sec-head" onClick={() => setOpenSec(s => ({ ...s, store: !s.store }))} style={{ cursor: 'pointer' }}>
             <div className="sec-title">
               <span className="material-symbols-rounded">location_on</span>
-              <span>Create Store</span>
+              <span>{viewOnly ? 'View Store Details' : editStoreId ? 'Edit Store Details' : 'Create Store'}</span>
             </div>
             <span className="material-symbols-rounded sec-toggle">{openSec.store ? 'expand_less' : 'expand_more'}</span>
           </div>
@@ -337,26 +352,40 @@ export default function StoreScreen() {
                 <div className="fgrid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
                   <label className="fld">
                     <span>STORE CODE *</span>
-                    <input className="in" type="text" required value={storeForm.code || ''} onChange={e => setStoreForm(c => ({ ...c, code: e.target.value }))} placeholder="STORE-01" />
+                    <input className="in" type="text" required disabled={viewOnly} value={storeForm.code || ''} onChange={e => setStoreForm(c => ({ ...c, code: e.target.value }))} placeholder="STORE-01" />
                   </label>
                   <label className="fld">
                     <span>STORE NAME *</span>
-                    <input className="in" type="text" required value={storeForm.name || ''} onChange={e => setStoreForm(c => ({ ...c, name: e.target.value }))} placeholder="Main Store" />
+                    <input className="in" type="text" required disabled={viewOnly} value={storeForm.name || ''} onChange={e => setStoreForm(c => ({ ...c, name: e.target.value }))} placeholder="Main Store" />
                   </label>
                   <label className="fld">
                     <span>LOCATION *</span>
-                    <input className="in" type="text" required value={storeForm.location || ''} onChange={e => setStoreForm(c => ({ ...c, location: e.target.value }))} placeholder="Plant / Building / Floor" />
+                    <input className="in" type="text" required disabled={viewOnly} value={storeForm.location || ''} onChange={e => setStoreForm(c => ({ ...c, location: e.target.value }))} placeholder="Plant / Building / Floor" />
                   </label>
-                  <label className="fld span3">
+                  <label className="fld">
+                    <span>STATUS</span>
+                    <select
+                      className="in"
+                      disabled={viewOnly}
+                      value={storeForm.active !== false ? 'Active' : 'Inactive'}
+                      onChange={e => setStoreForm(c => ({ ...c, active: e.target.value === 'Active' }))}
+                    >
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
+                    </select>
+                  </label>
+                  <label className="fld span2">
                     <span>DESCRIPTION</span>
-                    <textarea className="in" value={storeForm.description || ''} onChange={e => setStoreForm(c => ({ ...c, description: e.target.value }))} />
+                    <textarea className="in" disabled={viewOnly} value={storeForm.description || ''} onChange={e => setStoreForm(c => ({ ...c, description: e.target.value }))} />
                   </label>
                 </div>
 
-                <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
-                  <button type="submit" className="btn btn-primary" disabled={busy}>Save Store</button>
-                  <button type="button" className="btn btn-secondary" onClick={() => setViewMode('LIST')}>Cancel</button>
-                </div>
+                {!viewOnly && (
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+                    <button type="submit" className="btn btn-primary" disabled={busy}>Save Store</button>
+                    <button type="button" className="btn btn-secondary" onClick={() => setViewMode('LIST')}>Cancel</button>
+                  </div>
+                )}
               </form>
             </div>
           )}
@@ -376,7 +405,7 @@ export default function StoreScreen() {
                 <div className="fgrid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
                   <label className="fld">
                     <span>STORE *</span>
-                    <select className="in" required value={rackForm.storeId || ''} onChange={e => setRackForm(c => ({ ...c, storeId: e.target.value ? Number(e.target.value) : undefined }))}>
+                    <select className="in" required disabled={viewOnly} value={rackForm.storeId || ''} onChange={e => setRackForm(c => ({ ...c, storeId: e.target.value ? Number(e.target.value) : undefined }))}>
                       <option value="">Select...</option>
                       {stores.map(s => (
                         <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
@@ -385,26 +414,40 @@ export default function StoreScreen() {
                   </label>
                   <label className="fld">
                     <span>RACK CODE *</span>
-                    <input className="in" type="text" required value={rackForm.code || ''} onChange={e => setRackForm(c => ({ ...c, code: e.target.value }))} placeholder="RACK-A01" />
+                    <input className="in" type="text" required disabled={viewOnly} value={rackForm.code || ''} onChange={e => setRackForm(c => ({ ...c, code: e.target.value }))} placeholder="RACK-A01" />
                   </label>
                   <label className="fld">
                     <span>RACK NAME *</span>
-                    <input className="in" type="text" required value={rackForm.name || ''} onChange={e => setRackForm(c => ({ ...c, name: e.target.value }))} placeholder="Gear Rack" />
+                    <input className="in" type="text" required disabled={viewOnly} value={rackForm.name || ''} onChange={e => setRackForm(c => ({ ...c, name: e.target.value }))} placeholder="Gear Rack" />
                   </label>
                   <label className="fld">
                     <span>RACK LOCATION NOTE</span>
-                    <input className="in" type="text" value={rackForm.locationNote || ''} onChange={e => setRackForm(c => ({ ...c, locationNote: e.target.value }))} placeholder="Left aisle / Ground floor" />
+                    <input className="in" type="text" disabled={viewOnly} value={rackForm.locationNote || ''} onChange={e => setRackForm(c => ({ ...c, locationNote: e.target.value }))} placeholder="Left aisle / Ground floor" />
                   </label>
                   <label className="fld">
                     <span>CAPACITY</span>
-                    <input className="in" type="number" value={rackForm.capacity ?? ''} onChange={e => setRackForm(c => ({ ...c, capacity: e.target.value ? Number(e.target.value) : undefined }))} placeholder="250" />
+                    <input className="in" type="number" disabled={viewOnly} value={rackForm.capacity ?? ''} onChange={e => setRackForm(c => ({ ...c, capacity: e.target.value ? Number(e.target.value) : undefined }))} placeholder="250" />
+                  </label>
+                  <label className="fld">
+                    <span>STATUS</span>
+                    <select
+                      className="in"
+                      disabled={viewOnly}
+                      value={rackForm.active !== false ? 'Active' : 'Inactive'}
+                      onChange={e => setRackForm(c => ({ ...c, active: e.target.value === 'Active' }))}
+                    >
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
+                    </select>
                   </label>
                 </div>
 
-                <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
-                  <button type="submit" className="btn btn-primary" disabled={busy}>Save Rack</button>
-                  <button type="button" className="btn btn-secondary" onClick={() => setViewMode('LIST')}>Cancel</button>
-                </div>
+                {!viewOnly && (
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+                    <button type="submit" className="btn btn-primary" disabled={busy}>Save Rack</button>
+                    <button type="button" className="btn btn-secondary" onClick={() => setViewMode('LIST')}>Cancel</button>
+                  </div>
+                )}
               </form>
 
               {/* Racks List Table */}
@@ -418,6 +461,7 @@ export default function StoreScreen() {
                   <table className="tbl">
                     <thead>
                       <tr>
+                        <th style={{ width: '50px' }}>#</th>
                         <th>STORE</th>
                         <th>RACK CODE</th>
                         <th>RACK NAME</th>
@@ -429,10 +473,11 @@ export default function StoreScreen() {
                     </thead>
                     <tbody>
                       {filteredRacks.length === 0 ? (
-                        <tr><td colSpan={7} className="empty">No racks found.</td></tr>
+                        <tr><td colSpan={8} className="empty">No racks found.</td></tr>
                       ) : (
-                        filteredRacks.map(r => (
+                        filteredRacks.map((r, idx) => (
                           <tr key={r.id}>
+                            <td>{idx + 1}</td>
                             <td>{r.storeName || 'Production Store'}</td>
                             <td style={{ fontWeight: 700 }}>{r.code}</td>
                             <td style={{ fontWeight: 600 }}>{r.name}</td>
@@ -441,12 +486,16 @@ export default function StoreScreen() {
                             <td><span style={{ fontWeight: 700, color: r.active ? '#166534' : '#dc2626' }}>{r.active ? 'Active' : 'Inactive'}</span></td>
                             <td>
                               <div style={{ display: 'flex', gap: '6px' }}>
-                                <button type="button" className="ibtn" title="Edit" onClick={() => { setRackForm(r); setEditRackId(r.id); }}>
-                                  <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>edit</span>
-                                </button>
-                                <button type="button" className="ibtn danger" title="Delete" onClick={() => setDeleteRackTarget(r)}>
-                                  <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>delete</span>
-                                </button>
+                                {!viewOnly && (
+                                  <>
+                                    <button type="button" className="ibtn" title="Edit" onClick={() => { setRackForm(r); setEditRackId(r.id); }}>
+                                      <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>edit</span>
+                                    </button>
+                                    <button type="button" className="ibtn danger" title="Delete" onClick={() => setDeleteRackTarget(r)}>
+                                      <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>delete</span>
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -474,7 +523,7 @@ export default function StoreScreen() {
                 <div className="fgrid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
                   <label className="fld">
                     <span>RACK *</span>
-                    <select className="in" required value={binForm.rackId || ''} onChange={e => setBinForm(c => ({ ...c, rackId: e.target.value ? Number(e.target.value) : undefined }))}>
+                    <select className="in" required disabled={viewOnly} value={binForm.rackId || ''} onChange={e => setBinForm(c => ({ ...c, rackId: e.target.value ? Number(e.target.value) : undefined }))}>
                       <option value="">Select...</option>
                       {racks.map(r => (
                         <option key={r.id} value={r.id}>{r.name} ({r.code})</option>
@@ -483,22 +532,36 @@ export default function StoreScreen() {
                   </label>
                   <label className="fld">
                     <span>BIN CODE *</span>
-                    <input className="in" type="text" required value={binForm.code || ''} onChange={e => setBinForm(c => ({ ...c, code: e.target.value }))} placeholder="BIN-001" />
+                    <input className="in" type="text" required disabled={viewOnly} value={binForm.code || ''} onChange={e => setBinForm(c => ({ ...c, code: e.target.value }))} placeholder="BIN-001" />
                   </label>
                   <label className="fld">
                     <span>BIN NAME *</span>
-                    <input className="in" type="text" required value={binForm.name || ''} onChange={e => setBinForm(c => ({ ...c, name: e.target.value }))} placeholder="Gear" />
+                    <input className="in" type="text" required disabled={viewOnly} value={binForm.name || ''} onChange={e => setBinForm(c => ({ ...c, name: e.target.value }))} placeholder="Gear" />
                   </label>
-                  <label className="fld span2">
+                  <label className="fld">
                     <span>BIN LOCATION NOTE</span>
-                    <input className="in" type="text" value={binForm.locationNote || ''} onChange={e => setBinForm(c => ({ ...c, locationNote: e.target.value }))} placeholder="Shelf 1 / Level 2" />
+                    <input className="in" type="text" disabled={viewOnly} value={binForm.locationNote || ''} onChange={e => setBinForm(c => ({ ...c, locationNote: e.target.value }))} placeholder="Shelf 1 / Level 2" />
+                  </label>
+                  <label className="fld">
+                    <span>STATUS</span>
+                    <select
+                      className="in"
+                      disabled={viewOnly}
+                      value={binForm.active !== false ? 'Active' : 'Inactive'}
+                      onChange={e => setBinForm(c => ({ ...c, active: e.target.value === 'Active' }))}
+                    >
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
+                    </select>
                   </label>
                 </div>
 
-                <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
-                  <button type="submit" className="btn btn-primary" disabled={busy}>Save Bin</button>
-                  <button type="button" className="btn btn-secondary" onClick={() => setViewMode('LIST')}>Cancel</button>
-                </div>
+                {!viewOnly && (
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+                    <button type="submit" className="btn btn-primary" disabled={busy}>Save Bin</button>
+                    <button type="button" className="btn btn-secondary" onClick={() => setViewMode('LIST')}>Cancel</button>
+                  </div>
+                )}
               </form>
 
               {/* Bins List Table */}
@@ -512,6 +575,7 @@ export default function StoreScreen() {
                   <table className="tbl">
                     <thead>
                       <tr>
+                        <th style={{ width: '50px' }}>#</th>
                         <th>RACK</th>
                         <th>BIN CODE</th>
                         <th>BIN NAME</th>
@@ -522,10 +586,11 @@ export default function StoreScreen() {
                     </thead>
                     <tbody>
                       {filteredBins.length === 0 ? (
-                        <tr><td colSpan={6} className="empty">No bins found.</td></tr>
+                        <tr><td colSpan={7} className="empty">No bins found.</td></tr>
                       ) : (
-                        filteredBins.map(b => (
+                        filteredBins.map((b, idx) => (
                           <tr key={b.id}>
+                            <td>{idx + 1}</td>
                             <td>{b.rackName || 'Gear Rack'}</td>
                             <td style={{ fontWeight: 700 }}>{b.code}</td>
                             <td style={{ fontWeight: 600 }}>{b.name}</td>

@@ -177,6 +177,18 @@ export function useInwardOptions() {
     staleTime: 1000 * 60 * 5,
   });
 
+  const uoms = useQuery({
+    queryKey: ['master', 'uoms'],
+    queryFn: ({ signal }) => masterService.getUoms(signal),
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const stores = useQuery({
+    queryKey: ['master', 'stores'],
+    queryFn: ({ signal }) => masterService.getStores(signal),
+    staleTime: 1000 * 60 * 5,
+  });
+
   return {
     suppliers: suppliers.data ?? [],
     customers: customers.data ?? [],
@@ -185,6 +197,8 @@ export function useInwardOptions() {
     jobOrders: jobOrders.data ?? [],
     labourOrders: labourOrders.data ?? [],
     items: items.data ?? [],
+    uoms: uoms.data ?? [],
+    stores: stores.data ?? [],
     isLoading:
       suppliers.isPending ||
       locations.isPending ||

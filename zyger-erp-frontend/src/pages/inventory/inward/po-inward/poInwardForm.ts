@@ -9,10 +9,15 @@ import { toNumber, toOptionalNumber, todayISO } from '../../../../utils/format';
 export interface PoInwardLineFormState {
   itemCode: string;
   itemDesc: string;
+  description: string;
   uom: string;
   receivedQty: string;
   rate: string;
   amount: string;
+  discount: string;
+  tax: string;
+  taxAmount: string;
+  netAmount: string;
   acceptedQty: string;
   rejectedQty: string;
   batchNo: string;
@@ -37,8 +42,11 @@ export interface PoInwardFormState {
 
 const DIRTY_LINE_KEYS: Array<keyof PoInwardLineFormState> = [
   'itemCode',
+  'description',
   'receivedQty',
   'rate',
+  'discount',
+  'tax',
   'acceptedQty',
   'rejectedQty',
   'batchNo',
@@ -47,19 +55,24 @@ const DIRTY_LINE_KEYS: Array<keyof PoInwardLineFormState> = [
   'remarks',
 ];
 
-export function createEmptyLine(): PoInwardLineFormState {
+export function createEmptyLine(defaultLoc = ''): PoInwardLineFormState {
   return {
     itemCode: '',
     itemDesc: '',
+    description: '',
     uom: '',
     receivedQty: '',
     rate: '',
     amount: '',
+    discount: '',
+    tax: '',
+    taxAmount: '',
+    netAmount: '',
     acceptedQty: '',
     rejectedQty: '',
     batchNo: '',
     heatNo: '',
-    location: '',
+    location: defaultLoc,
     remarks: '',
   };
 }
@@ -95,12 +108,18 @@ function lineFromDto(
   return {
     itemCode: line.itemCode ?? '',
     itemDesc: line.itemDesc ?? item?.description ?? '',
+    description: line.description ?? line.itemDesc ?? item?.description ?? '',
     uom: line.uom ?? item?.uom ?? '',
-    receivedQty: line.receivedQty?.toString() ?? '',
+    receivedQty: line.receivedQty?.toString() ?? (line as any).qty?.toString() ?? '',
     rate: line.rate?.toString() ?? '',
     amount: line.amount?.toString() ?? '',
+    discount: line.discount?.toString() ?? '',
+    tax: line.tax?.toString() ?? '',
+    taxAmount: line.taxAmount?.toString() ?? '',
+    netAmount: line.netAmount?.toString() ?? '',
     acceptedQty: line.acceptedQty?.toString() ?? '',
     rejectedQty: line.rejectedQty?.toString() ?? '',
+    rejectedReason: (line as any).rejectedReason ?? '',
     batchNo: line.batchNo ?? '',
     heatNo: line.heatNo ?? '',
     location: line.location ?? '',
@@ -138,7 +157,7 @@ export function buildPayload(form: PoInwardFormState): PoInwardPayload {
   return {
     date: form.date,
     supplier: form.supplier.trim(),
-    purchaseOrderNo: form.purchaseOrderNo.trim(),
+    purchaseOrderNo: form.purchaseOrderNo.trim() || undefined,
     supplierChallanNo: form.supplierChallanNo.trim() || undefined,
     supplierInvoiceNo: form.supplierInvoiceNo.trim() || undefined,
     dcNumber: form.dcNumber.trim() || undefined,
@@ -148,10 +167,19 @@ export function buildPayload(form: PoInwardFormState): PoInwardPayload {
     remarks: form.remarks.trim() || undefined,
     lines: activeLines.map((line) => ({
       itemCode: line.itemCode.trim(),
+      itemDesc: line.itemDesc.trim() || undefined,
+      description: line.description.trim() || undefined,
+      uom: line.uom.trim() || undefined,
       receivedQty: toNumber(line.receivedQty),
       rate: toOptionalNumber(line.rate),
+      amount: toOptionalNumber(line.amount),
+      discount: toOptionalNumber(line.discount),
+      tax: toOptionalNumber(line.tax),
+      taxAmount: toOptionalNumber(line.taxAmount),
+      netAmount: toOptionalNumber(line.netAmount),
       acceptedQty: toOptionalNumber(line.acceptedQty),
       rejectedQty: toOptionalNumber(line.rejectedQty),
+      rejectedReason: line.rejectedReason?.trim() || undefined,
       batchNo: line.batchNo.trim() || undefined,
       heatNo: line.heatNo.trim() || undefined,
       location: line.location.trim(),

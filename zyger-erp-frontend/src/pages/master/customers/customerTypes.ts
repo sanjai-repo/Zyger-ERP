@@ -92,6 +92,14 @@ export const hydrateRow = (r: Party): Record<string, unknown> => {
   const rec = r as unknown as Record<string, unknown>;
   return {
     ...rec,
+    printName: rec.printName ?? rec.displayName ?? rec.legalName ?? '',
+    territory: rec.territory ?? rec.salesTerritory ?? '',
+    pricingGroup: rec.pricingGroup ?? rec.priceList ?? '',
+    eWaybillApplicable: rec.eWaybillApplicable ?? rec.eWayBillApplicable ?? false,
+    gstRegType: rec.gstRegType ?? rec.gstRegistrationType ?? '',
+    msmeNo: rec.msmeNo ?? rec.msmeNumber ?? '',
+    discountPct: rec.discountPct ?? rec.discount ?? 0,
+    leadDays: rec.leadDays ?? rec.leadTimeDays ?? 0,
     contacts: typeof rec.contactsJson === 'string' ? tryParseJson(rec.contactsJson as string) : (rec.contacts ?? []),
     addresses: typeof rec.addressesJson === 'string' ? tryParseJson(rec.addressesJson as string) : (rec.addresses ?? []),
     deliveryAddresses: typeof rec.deliveryAddressesJson === 'string' ? tryParseJson(rec.deliveryAddressesJson as string) : (rec.deliveryAddresses ?? []),
@@ -109,11 +117,12 @@ export const emptyDoc = (): CustomerDocument => ({ documentType: '', status: 'Ac
 
 export const defaultForm = (): Record<string, unknown> => ({
   kind: 'CUSTOMER', customerStatus: 'Active', gstRegistrationStatus: '',
+  contactPerson: '', mobile: '', phone: '', email: '', website: '', fax: '',
   gstin: '', gstRegistrationType: '', gstState: 'Maharashtra',
   eInvoiceApplicable: false, eWayBillApplicable: false, tdsApplicable: false, tcsApplicable: false,
   taxExemption: false, reverseChargeApplicable: false,
   currency: 'INR', paymentTerms: '30 Days', billingCycle: 'Immediate',
   creditHold: false, advanceRequired: false,
-  contacts: [emptyContact()], addresses: [emptyAddress()], deliveryAddresses: [emptyDelivery()],
+  contacts: [], addresses: [emptyAddress()], deliveryAddresses: [emptyDelivery()],
   bankAccounts: [emptyBank()], documents: [emptyDoc()],
 });

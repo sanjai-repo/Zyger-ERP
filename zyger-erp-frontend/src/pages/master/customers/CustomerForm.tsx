@@ -72,21 +72,57 @@ export default function CustomerForm({ customerId, viewOnly = false, onBack, onS
     if (!String(form.name ?? '').trim()) { toast('Customer Name is required.', 'error'); return; }
     setBusy(true);
     try {
-      const contacts = (form.contacts ?? []) as Contact[];
-      const addresses = (form.addresses ?? []) as Address[];
-      const firstContact = contacts[0];
-      const firstAddr = addresses[0];
+      const rawContacts = ((form.contacts as Contact[]) || []);
+      const rawAddresses = ((form.addresses as Address[]) || []);
+
+      const syncedAddresses = rawAddresses.length > 0 ? rawAddresses.map((a, i) => i === 0 ? {
+        ...a,
+        addressLine1: a.addressLine1 || (form.billingAddress as string) || '',
+        city: a.city || (form.city as string) || '',
+        state: a.state || (form.state as string) || '',
+        pinZipCode: a.pinZipCode || (form.pincode as string) || '',
+        country: a.country || (form.country as string) || 'India',
+      } : a) : [{
+        addressName: 'Main Office', addressType: 'Registered',
+        addressLine1: (form.billingAddress as string) || '',
+        city: (form.city as string) || '', state: (form.state as string) || '',
+        country: (form.country as string) || 'India', pinZipCode: (form.pincode as string) || '',
+        defaultAddress: true, active: true
+      }];
+
+      const firstAddr = syncedAddresses[0];
       const payload = {
         ...form,
         kind: 'CUSTOMER',
-        contactPerson: firstContact?.contactPersonName ?? '',
-        phone: firstContact?.mobileNumber ?? form.mobile ?? '',
-        email: firstContact?.email ?? form.email ?? '',
+        contactPerson: (form.contactPerson as string) || '',
+        mobile: (form.mobile as string) || '',
+        email: (form.email as string) || '',
+        phone: (form.phone as string) || '',
+        website: (form.website as string) || '',
+        fax: (form.fax as string) || '',
+        displayName: form.printName ?? form.displayName ?? '',
+        printName: form.printName ?? '',
+        salesTerritory: form.territory ?? form.salesTerritory ?? '',
+        territory: form.territory ?? form.salesTerritory ?? '',
+        priceList: form.pricingGroup ?? form.priceList ?? '',
+        pricingGroup: form.pricingGroup ?? form.priceList ?? '',
+        eWayBillApplicable: Boolean(form.eWaybillApplicable || form.eWayBillApplicable),
+        eWaybillApplicable: Boolean(form.eWaybillApplicable || form.eWayBillApplicable),
+        gstRegistrationType: form.gstRegType ?? form.gstRegistrationType ?? '',
+        gstRegType: form.gstRegType ?? form.gstRegistrationType ?? '',
+        msmeNumber: form.msmeNo ?? form.msmeNumber ?? '',
+        msmeNo: form.msmeNo ?? form.msmeNumber ?? '',
+        discount: form.discountPct ?? form.discount ?? 0,
+        discountPct: form.discountPct ?? form.discount ?? 0,
+        leadTimeDays: form.leadDays ?? form.leadTimeDays ?? 0,
+        leadDays: form.leadDays ?? form.leadTimeDays ?? 0,
         address: firstAddr ? [firstAddr.addressLine1, firstAddr.city, firstAddr.state].filter(Boolean).join(', ') : (form.billingAddress as string || ''),
         gstNumber: form.gstin ?? '',
         paymentTerms: form.paymentTerms ?? '',
-        contactsJson: JSON.stringify(form.contacts ?? []),
-        addressesJson: JSON.stringify(form.addresses ?? []),
+        contacts: rawContacts,
+        addresses: syncedAddresses,
+        contactsJson: JSON.stringify(rawContacts),
+        addressesJson: JSON.stringify(syncedAddresses),
         bankAccountsJson: JSON.stringify(form.bankAccounts ?? []),
         billingAddress: (form.billingAddress as string) || '',
         shippingAddress: (form.shippingAddress as string) || '',
@@ -185,7 +221,14 @@ export default function CustomerForm({ customerId, viewOnly = false, onBack, onS
             </label>
             <label className="fld">
               <span>STATUS</span>
-              <select className="in" value={String(form.customerStatus ?? 'Active')} onChange={e => updateForm('customerStatus', e.target.value)} disabled={viewOnly}>
+              <select className="in" value={String(form.customerStatus ?? (form.active !== false ? 'Active' : 'Inactive'))} onChange={e => {
+                const status = e.target.value;
+                setForm(c => ({
+                  ...c,
+                  customerStatus: status,
+                  active: status === 'Active'
+                }));
+              }} disabled={viewOnly}>
                 <option value="Active">Active</option>
                 <option value="Inactive">Inactive</option>
                 <option value="Blocked">Blocked</option>
@@ -211,7 +254,14 @@ export default function CustomerForm({ customerId, viewOnly = false, onBack, onS
               <span>E-Waybill Applicable</span>
             </label>
             <label className="fld chk">
-              <input type="checkbox" checked={Boolean(form.active ?? true)} onChange={e => updateForm('active', e.target.checked)} disabled={viewOnly} />
+              <input type="checkbox" checked={Boolean(form.active ?? true)} onChange={e => {
+                const activeVal = e.target.checked;
+                setForm(c => ({
+                  ...c,
+                  active: activeVal,
+                  customerStatus: activeVal ? 'Active' : 'Inactive'
+                }));
+              }} disabled={viewOnly} />
               <span>Active</span>
             </label>
           </div>
@@ -271,10 +321,13 @@ export default function CustomerForm({ customerId, viewOnly = false, onBack, onS
           </div>
         </div>
         <div className="sec-body" style={{ background: '#fff', border: '1px solid #bfdbfe', borderRadius: '0 0 12px 12px', padding: '24px', marginBottom: '24px' }}>
+          <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#1e3a8a', marginBottom: '16px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            MAIN PRIMARY CONTACT (COMPANY)
+          </div>
           <div className="fgrid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '20px' }}>
             <label className="fld">
-              <span>PHONE</span>
-              <input className="in" type="text" placeholder="Office landline" value={String(form.phone ?? '')} onChange={e => updateForm('phone', e.target.value)} disabled={viewOnly} />
+              <span>PRIMARY CONTACT PERSON</span>
+              <input className="in" type="text" placeholder="Full name of main contact" value={String(form.contactPerson ?? '')} onChange={e => updateForm('contactPerson', e.target.value)} disabled={viewOnly} />
             </label>
             <label className="fld">
               <span>MOBILE</span>
@@ -286,6 +339,10 @@ export default function CustomerForm({ customerId, viewOnly = false, onBack, onS
             </label>
 
             <label className="fld">
+              <span>PHONE / LANDLINE</span>
+              <input className="in" type="text" placeholder="Office landline" value={String(form.phone ?? '')} onChange={e => updateForm('phone', e.target.value)} disabled={viewOnly} />
+            </label>
+            <label className="fld">
               <span>WEBSITE</span>
               <input className="in" type="text" placeholder="https://www.customer.com" value={String(form.website ?? '')} onChange={e => updateForm('website', e.target.value)} disabled={viewOnly} />
             </label>
@@ -295,33 +352,41 @@ export default function CustomerForm({ customerId, viewOnly = false, onBack, onS
             </label>
           </div>
 
-          {/* Contact Persons Table */}
-          <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#1e3a8a', marginBottom: '12px', textTransform: 'uppercase' }}>CONTACT PERSONS</div>
+          {/* Additional Contact Persons Sub-Section */}
+          <div style={{ marginTop: '24px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#1e3a8a', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                ADDITIONAL / ALTERNATE CONTACT PERSONS
+              </div>
+            </div>
+            <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '14px' }}>
+              Add secondary or alternate contacts if the primary contact person is unavailable, or for specific departments (e.g. Accounts, Quality, Purchase).
+            </p>
+
             {((form.contacts as Contact[]) || []).map((c, i) => (
               <div key={i} style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '10px' }}>
-                <input className="in" style={{ flex: 1 }} placeholder="Full name" value={c.contactPersonName || ''} onChange={e => {
+                <input className="in" style={{ flex: 1 }} placeholder="Contact Person Name" value={c.contactPersonName || ''} onChange={e => {
                   const updated = [...((form.contacts as Contact[]) || [])];
                   updated[i] = { ...updated[i], contactPersonName: e.target.value };
                   updateForm('contacts', updated);
                 }} disabled={viewOnly} />
-                <input className="in" style={{ flex: 1 }} placeholder="Manager / Director" value={c.designation || ''} onChange={e => {
+                <input className="in" style={{ flex: 1 }} placeholder="Designation / Department (e.g. Accounts)" value={c.designation || ''} onChange={e => {
                   const updated = [...((form.contacts as Contact[]) || [])];
                   updated[i] = { ...updated[i], designation: e.target.value };
                   updateForm('contacts', updated);
                 }} disabled={viewOnly} />
-                <input className="in" style={{ flex: 1 }} placeholder="+91 00000 00000" value={c.mobileNumber || ''} onChange={e => {
+                <input className="in" style={{ flex: 1 }} placeholder="Mobile Number" value={c.mobileNumber || ''} onChange={e => {
                   const updated = [...((form.contacts as Contact[]) || [])];
                   updated[i] = { ...updated[i], mobileNumber: e.target.value };
                   updateForm('contacts', updated);
                 }} disabled={viewOnly} />
-                <input className="in" style={{ flex: 1 }} placeholder="email@company.com" value={c.email || ''} onChange={e => {
+                <input className="in" style={{ flex: 1 }} placeholder="Email Address" value={c.email || ''} onChange={e => {
                   const updated = [...((form.contacts as Contact[]) || [])];
                   updated[i] = { ...updated[i], email: e.target.value };
                   updateForm('contacts', updated);
                 }} disabled={viewOnly} />
                 {!viewOnly && (
-                  <button type="button" className="ibtn danger" onClick={() => {
+                  <button type="button" className="ibtn danger" title="Remove Contact" onClick={() => {
                     const updated = ((form.contacts as Contact[]) || []).filter((_, idx) => idx !== i);
                     updateForm('contacts', updated);
                   }}>
@@ -337,7 +402,7 @@ export default function CustomerForm({ customerId, viewOnly = false, onBack, onS
                 style={{ marginTop: '8px' }}
                 onClick={() => updateForm('contacts', [...((form.contacts as Contact[]) || []), { contactPersonName: '', designation: '', mobileNumber: '', email: '', primaryContact: false, active: true }])}
               >
-                + Add Contact Person
+                + Add Additional Contact Person
               </button>
             )}
           </div>
@@ -420,10 +485,10 @@ export default function CustomerForm({ customerId, viewOnly = false, onBack, onS
           <div className="fgrid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
             <label className="fld">
               <span>CURRENCY</span>
-              <select className="in" value={String(form.currency ?? 'INR - Indian Rupee')} onChange={e => updateForm('currency', e.target.value)} disabled={viewOnly}>
-                <option value="INR - Indian Rupee">INR - Indian Rupee</option>
-                <option value="USD - US Dollar">USD - US Dollar</option>
-                <option value="EUR - Euro">EUR - Euro</option>
+              <select className="in" value={String(form.currency ?? 'INR')} onChange={e => updateForm('currency', e.target.value)} disabled={viewOnly}>
+                <option value="INR">INR - Indian Rupee</option>
+                <option value="USD">USD - US Dollar</option>
+                <option value="EUR">EUR - Euro</option>
               </select>
             </label>
             <label className="fld">
@@ -596,9 +661,9 @@ export default function CustomerForm({ customerId, viewOnly = false, onBack, onS
                       <td style={{ fontWeight: 600 }}>{c.name}</td>
                       <td>{c.customerGroup || 'Others'}</td>
                       <td>{c.customerType || 'B2B'}</td>
-                      <td>{c.addresses?.[0]?.city || (c as any).city || '—'}</td>
-                      <td>{c.contacts?.[0]?.mobileNumber || (c as any).phone || '—'}</td>
-                      <td style={{ color: '#0284c7' }}>{c.contacts?.[0]?.email || (c as any).email || '—'}</td>
+                      <td>{[c.addresses?.[0]?.city, (c as any).city].find(s => Boolean(s && String(s).trim())) || '—'}</td>
+                      <td>{[c.contacts?.[0]?.mobileNumber, (c as any).mobile, (c as any).phone].find(s => Boolean(s && String(s).trim())) || '—'}</td>
+                      <td style={{ color: '#0284c7' }}>{[c.contacts?.[0]?.email, (c as any).email].find(s => Boolean(s && String(s).trim())) || '—'}</td>
                       <td style={{ fontWeight: 600 }}>{c.gstin || '—'}</td>
                       <td><span style={{ fontWeight: 700, color: c.active !== false ? '#166534' : '#dc2626' }}>{c.active !== false ? 'Active' : 'Inactive'}</span></td>
                     </tr>

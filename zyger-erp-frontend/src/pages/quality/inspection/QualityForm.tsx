@@ -312,23 +312,47 @@ export default function QualityForm({ documentId, viewOnly = false, onBack, defa
 
     void lookupDocumentByNumber(docTypeKey, value.trim()).then((doc) => {
       if (!doc) return;
+      const raw = doc.raw || {};
+      const firstLine = doc.lines && doc.lines.length > 0 ? doc.lines[0] : null;
+
+      const poNo = raw.purchaseOrderNo || raw.purchaseOrderNumber || raw.poNo || doc.jobOrderNo || doc.workOrderNo || '';
+      const suppCode = raw.supplierCode || raw.partyCode || raw.supplier || doc.supplier || doc.party || '';
+      const suppName = raw.supplierName || raw.partyName || doc.party || doc.supplier || suppCode;
+      const challanOrInvNo = raw.supplierInvoiceNo || raw.supplierChallanNo || raw.challanNo || raw.dcNumber || raw.invoiceNo || raw.referenceNo || '';
+      const itemCd = firstLine?.itemCode || raw.itemCode || raw.firstItemCode || '';
+      const itemNm = firstLine?.itemDesc || firstLine?.description || firstLine?.itemName || raw.itemDescription || raw.itemName || raw.firstItemName || '';
+      const qtyStr = firstLine?.qty != null && firstLine.qty > 0 ? String(firstLine.qty) : (firstLine?.receivedQty != null ? String(firstLine.receivedQty) : '');
+
       setHeader((current) => ({
         ...current,
         referenceDocNo: doc.docNo || value.trim(),
-        purchaseOrderNumber: doc.raw.purchaseOrderNo || doc.raw.purchaseOrderNumber || doc.raw.poNo || current.purchaseOrderNumber,
-        itemCode: current.itemCode || doc.lines[0]?.itemCode || '',
-        receivedQuantity: current.receivedQuantity || String(doc.lines[0]?.qty || ''),
-        inspectionQuantity: current.inspectionQuantity || String(doc.lines[0]?.qty || ''),
-        acceptedQuantity: current.acceptedQuantity || String(doc.lines[0]?.qty || ''),
-        batchNumber: current.batchNumber || doc.lines[0]?.batchNo || doc.raw.batchNo || '',
-        heatNumber: current.heatNumber || doc.lines[0]?.heatNo || doc.raw.heatNo || '',
-        partyCode: current.partyCode || doc.raw.supplierCode || doc.raw.partyCode || '',
-        partyName: current.partyName || doc.party || doc.supplier || doc.raw.supplierName || '',
-        drawingNumber: current.drawingNumber || doc.raw.drawingNo || doc.raw.drawingNumber || '',
-        drawingRevision: current.drawingRevision || doc.raw.drawingRev || doc.raw.drawingRevision || '',
-        materialGrade: current.materialGrade || doc.raw.materialGrade || doc.raw.grade || '',
-        supplierChallanNo: current.supplierChallanNo || doc.raw.supplierChallanNo || doc.raw.challanNo || '',
+        purchaseOrderNumber: poNo || current.purchaseOrderNumber,
+        partyCode: suppCode || current.partyCode,
+        partyName: suppName || current.partyName,
+        supplierChallanNo: challanOrInvNo || current.supplierChallanNo,
+        itemCode: itemCd || current.itemCode,
+        itemDescription: itemNm || current.itemDescription,
+        receivedQuantity: qtyStr || current.receivedQuantity,
+        inspectionQuantity: qtyStr || current.inspectionQuantity,
+        acceptedQuantity: qtyStr || current.acceptedQuantity,
+        batchNumber: firstLine?.batchNo || raw.batchNo || current.batchNumber,
+        heatNumber: firstLine?.heatNo || raw.heatNo || current.heatNumber,
+        drawingNumber: raw.drawingNo || raw.drawingNumber || firstLine?.drawingNumber || current.drawingNumber,
+        drawingRevision: raw.drawingRev || raw.drawingRevision || firstLine?.drawingRevision || current.drawingRevision,
+        materialGrade: raw.materialGrade || raw.grade || firstLine?.materialGrade || current.materialGrade,
       }));
+
+      if (itemCd) {
+        void masterService.getItems().then((items) => {
+          const item = items.find((i) => i.code === itemCd.trim());
+          if (item) {
+            setHeader((current) => ({
+              ...current,
+              itemDescription: current.itemDescription || item.description || '',
+            }));
+          }
+        });
+      }
 
       // Pre-seed default characteristic inspection lines if only 1 blank line exists
       const typeTemplates = TYPE_TEMPLATES[header.inspectionType as InspectionType];
@@ -350,6 +374,10 @@ export default function QualityForm({ documentId, viewOnly = false, onBack, defa
     void masterService.getItems().then((items) => {
       const item = items.find((i) => i.code === value.trim());
       if (item) {
+        setHeader((current) => ({
+          ...current,
+          itemDescription: item.description || current.itemDescription,
+        }));
         setDraftLines((current) =>
           current.map((line, idx) => (idx === 0 && !line.uom ? { ...line, uom: item.uom } : line))
         );
@@ -527,6 +555,9 @@ export default function QualityForm({ documentId, viewOnly = false, onBack, defa
     try {
       const created = await createMutation.mutateAsync({
         inspectionType: header.inspectionType,
+        inspectionStatus: 'PASS',
+        decisionStatus: 'PASS',
+        directInventoryUpdate: true,
         itemCode: header.itemCode.trim(),
         itemDescription: header.itemDescription.trim() || undefined,
         referenceDocNo: header.referenceDocNo.trim() || undefined,
@@ -559,7 +590,7 @@ export default function QualityForm({ documentId, viewOnly = false, onBack, defa
         lines: payloadLines,
       });
 
-      toast(`${created.docNo ?? 'Inspection'} created as draft.`);
+      toast(`${created.docNo ?? 'Inspection'} marked PASSED and inventory updated with accepted qty.`);
       onBack();
     } catch (createError) {
       toast(getApiErrorMessage(createError, 'Create failed.'), 'error');
@@ -787,28 +818,18 @@ export default function QualityForm({ documentId, viewOnly = false, onBack, defa
             <label className="fld">
               <span>Ref Doc No (GRN / Inward / JO / PO)</span>
               {isCreateMode && inwardOptions.length > 0 ? (
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <select
-                    className="in"
-                    style={{ flex: 1 }}
-                    value={header.referenceDocNo}
-                    onChange={(event) => updateReferenceDocNo(event.target.value)}
-                  >
-                    <option value="">-- Select Inward Doc --</option>
-                    {inwardOptions.map((opt) => (
-                      <option key={opt.docNo} value={opt.docNo}>
-                        {opt.docNo} {opt.purchaseOrderNo ? `(PO: ${opt.purchaseOrderNo})` : ''} {opt.supplier ? `• ${opt.supplier}` : ''} {opt.items ? `[${opt.items}]` : ''}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    className="in"
-                    style={{ width: '120px' }}
-                    placeholder="Or type..."
-                    value={header.referenceDocNo}
-                    onChange={(event) => updateReferenceDocNo(event.target.value)}
-                  />
-                </div>
+                <select
+                  className="in"
+                  value={header.referenceDocNo}
+                  onChange={(event) => updateReferenceDocNo(event.target.value)}
+                >
+                  <option value="">-- Select Reference Doc --</option>
+                  {inwardOptions.map((opt) => (
+                    <option key={opt.docNo} value={opt.docNo}>
+                      {opt.docNo} {opt.purchaseOrderNo ? `(PO: ${opt.purchaseOrderNo})` : ''} {opt.supplier ? `• ${opt.supplier}` : ''} {opt.items ? `[${opt.items}]` : ''}
+                    </option>
+                  ))}
+                </select>
               ) : (
                 <input
                   className="in"
@@ -838,11 +859,16 @@ export default function QualityForm({ documentId, viewOnly = false, onBack, defa
               <input
                 className="in"
                 placeholder="e.g. SUP-001 • Apex Metals Corp"
-                value={header.partyName ? `${header.partyCode ? `${header.partyCode} • ` : ''}${header.partyName}` : header.partyCode}
-                readOnly={!isCreateMode}
-                onChange={(event) =>
-                  setHeader((current) => ({ ...current, partyName: event.target.value }))
+                value={
+                  header.partyCode && header.partyName && !header.partyName.includes(header.partyCode)
+                    ? `${header.partyCode} • ${header.partyName}`
+                    : header.partyName || header.partyCode
                 }
+                readOnly={!isCreateMode}
+                onChange={(event) => {
+                  const val = event.target.value;
+                  setHeader((current) => ({ ...current, partyName: val }));
+                }}
               />
             </label>
 
@@ -1125,9 +1151,21 @@ export default function QualityForm({ documentId, viewOnly = false, onBack, defa
                 className="in"
                 value={header.acceptedQuantity}
                 readOnly={!isCreateMode}
-                onChange={(event) =>
-                  setHeader((current) => ({ ...current, acceptedQuantity: event.target.value }))
-                }
+                onChange={(event) => {
+                  const val = event.target.value;
+                  const accepted = Number(val);
+                  const recv = Number(header.receivedQuantity || header.inspectionQuantity || 0);
+                  let rejStr = header.rejectedQuantity;
+                  if (!isNaN(accepted) && recv > 0) {
+                    const rej = Math.max(0, recv - accepted);
+                    rejStr = String(rej);
+                  }
+                  setHeader((current) => ({
+                    ...current,
+                    acceptedQuantity: val,
+                    rejectedQuantity: rejStr,
+                  }));
+                }}
               />
             </label>
 

@@ -319,6 +319,7 @@ export default function PurchasableItemScreen() {
   const [search, setSearch] = useState('');
   const [form, setForm] = useState<PurchasableItemForm>(defaultFormState);
   const [editId, setEditId] = useState<number | null>(null);
+  const [isViewOnly, setIsViewOnly] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<PurchasableItemForm | null>(null);
 
   // Dynamic Grid Tables
@@ -328,7 +329,7 @@ export default function PurchasableItemScreen() {
   const [accessoriesRows, setAccessoriesRows] = useState<Array<any>>([]);
   const [uomRows, setUomRows] = useState<Array<any>>([]);
   const [altItemRows, setAltItemRows] = useState<Array<any>>([]);
-  const [itemGroupRows, setItemGroupRows] = useState<Array<{ id: number; code: string; name: string; itemType?: string }>>([]);
+  const [itemGroupRows, setItemGroupRows] = useState<Array<{ id: number; code: string; name: string; itemType?: string; active?: boolean }>>([]);
   const [uomOptions, setUomOptions] = useState<Array<{ id: number; code: string; name: string; symbol?: string }>>([]);
 
   // Section Collapse States (all open by default)
@@ -345,13 +346,13 @@ export default function PurchasableItemScreen() {
     try {
       const { data } = await apiClient.get('/master/items?size=500');
       const content = data?.content ?? data ?? [];
-      const purchased = content.filter((i: any) => {
+      const pitItems = content.filter((i: any) => {
         const t = (i.itemType || '').toUpperCase().replace(' ', '_');
-        return t === 'RAW_MATERIAL' || t === 'PURCHASABLE';
+        return t === 'PURCHASABLE' || t === 'RAW_MATERIAL' || t === 'BUY_ITEM';
       });
-      setRows(purchased);
+      setRows(pitItems);
     } catch (e) {
-      toast(getApiErrorMessage(e, 'Failed to load purchase items.'), 'error');
+      toast(getApiErrorMessage(e, 'Failed to load purchasable items.'), 'error');
     }
     setLoading(false);
   };
@@ -359,6 +360,7 @@ export default function PurchasableItemScreen() {
   const openNew = async () => {
     setForm(defaultFormState);
     setEditId(null);
+    setIsViewOnly(false);
     setViewMode('FORM');
     try {
       const { data } = await apiClient.get('/master/items/next-code?itemType=PURCHASABLE');
@@ -368,7 +370,7 @@ export default function PurchasableItemScreen() {
     }
   };
 
-  useEffect(() => { loadItems(); apiClient.get('/master/item-groups').then(r => setItemGroupRows(r.data ?? [])).catch(() => { }); apiClient.get('/master/uoms').then(r => setUomOptions(r.data ?? [])).catch(() => { }); }, []);
+  useEffect(() => { loadItems(); apiClient.get('/master/item-groups?activeOnly=false').then(r => setItemGroupRows(r.data ?? [])).catch(() => { }); apiClient.get('/master/uoms').then(r => setUomOptions(r.data ?? [])).catch(() => { }); }, []);
 
   const setFld = (k: keyof PurchasableItemForm, v: any) => setForm(c => ({ ...c, [k]: v }));
 
@@ -434,7 +436,15 @@ export default function PurchasableItemScreen() {
             </button>
           )}
           <div>
-            <h1>{viewMode === 'LIST' ? 'Purchasable Item Master' : 'New Purchasable Item'}</h1>
+            <h1>
+              {viewMode === 'LIST'
+                ? 'Purchasable Item Master'
+                : isViewOnly
+                ? 'View Purchasable Item'
+                : editId
+                ? 'Edit Purchasable Item'
+                : 'New Purchasable Item'}
+            </h1>
             <p>Inventory -&gt; Items -&gt; Purchasable Item</p>
           </div>
         </div>
@@ -443,10 +453,19 @@ export default function PurchasableItemScreen() {
             <button type="button" className="btn btn-primary" onClick={openNew}>
               + Add Purchasable Item
             </button>
+          ) : isViewOnly ? (
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button type="button" className="btn btn-primary" onClick={() => setIsViewOnly(false)}>
+                Edit
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setViewMode('LIST')}>
+                Back
+              </button>
+            </div>
           ) : (
             <div style={{ display: 'flex', gap: '10px' }}>
               <button type="button" className="btn btn-primary" onClick={save} disabled={busy}>
-                {busy ? 'Saving...' : 'Save'}
+                {busy ? 'Saving...' : editId ? 'Update' : 'Save'}
               </button>
               <button type="button" className="btn btn-secondary" onClick={() => setViewMode('LIST')}>
                 Cancel
@@ -474,6 +493,7 @@ export default function PurchasableItemScreen() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th>S.No</th>
                   <th>Item Code</th>
                   <th>Item Name</th>
                   <th>Item Group</th>
@@ -486,15 +506,16 @@ export default function PurchasableItemScreen() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={8} className="empty">Loading Purchase Items...</td></tr>
+                  <tr><td colSpan={9} className="empty">Loading Purchase Items...</td></tr>
                 ) : filteredRows.length === 0 ? (
-                  <tr><td colSpan={8} className="empty">No Purchase Items found.</td></tr>
+                  <tr><td colSpan={9} className="empty">No Purchase Items found.</td></tr>
                 ) : (
-                  filteredRows.map(r => (
+                  filteredRows.map((r, idx) => (
                     <tr key={r.id}>
+                      <td>{idx + 1}</td>
                       <td className="cell-b">{r.code}</td>
                       <td><b>{r.description}</b></td>
-                      <td>{(itemGroupRows.find(g => g.code === r.itemGroup)?.name ?? r.itemGroup) || '—'}</td>
+                      <td>{(itemGroupRows.find(g => g.code === r.itemGroup || g.name === r.itemGroup || String(g.id) === String(r.itemGroup))?.name ?? r.itemGroup) || '—'}</td>
                       <td>{r.uom}</td>
                       <td className="num">₹{r.purchaseRate || 0}</td>
                       <td className="num">₹{r.sellingRate || 0}</td>
@@ -505,7 +526,8 @@ export default function PurchasableItemScreen() {
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '6px' }}>
-                          <button type="button" className="btn btn-sm" onClick={() => { setForm(r); setEditId(r.id!); setViewMode('FORM'); }}>Edit</button>
+                          <button type="button" className="btn btn-sm btn-secondary" onClick={() => { setForm(r); setEditId(r.id!); setIsViewOnly(true); setViewMode('FORM'); }}>View</button>
+                          <button type="button" className="btn btn-sm" onClick={() => { setForm(r); setEditId(r.id!); setIsViewOnly(false); setViewMode('FORM'); }}>Edit</button>
                           <button type="button" className="btn btn-sm btn-d" onClick={() => setDeleteTarget(r)}>Delete</button>
                         </div>
                       </td>
@@ -518,6 +540,7 @@ export default function PurchasableItemScreen() {
         </div>
       ) : (
         <form onSubmit={save}>
+          <fieldset disabled={isViewOnly} style={{ border: 'none', padding: 0, margin: 0 }}>
           {/* SECTION 1: Item Information */}
           <div className="sec-head" onClick={() => toggleSec('sec1')} style={{ cursor: 'pointer' }}>
             <div className="sec-title">
@@ -543,7 +566,7 @@ export default function PurchasableItemScreen() {
                   <span>Item Group</span>
                   <select className="in" value={form.itemGroup} onChange={e => setFld('itemGroup', e.target.value)}>
                     <option value="">Select...</option>
-                    {itemGroupRows.filter(g => g.itemType === 'PURCHASABLE' || g.itemType === 'RAW_MATERIAL').map(g => <option key={g.id} value={g.code}>{g.name}</option>)}
+                    {itemGroupRows.filter(g => (g.active !== false && (g.itemType === 'PURCHASABLE' || g.itemType === 'RAW_MATERIAL')) || g.code === form.itemGroup || g.name === form.itemGroup).map(g => <option key={g.id} value={g.code}>{g.name}</option>)}
                   </select>
                 </label>
 
@@ -557,16 +580,12 @@ export default function PurchasableItemScreen() {
                 </label>
                 <label className="fld">
                   <span>Item Catalog</span>
-                  <select className="in" value={form.itemCatalog} onChange={e => setFld('itemCatalog', e.target.value)}>
-                    <option value="">Select...</option>
-                  </select>
+                  <input className="in" type="text" placeholder="Item Catalog" value={form.itemCatalog || ''} onChange={e => setFld('itemCatalog', e.target.value)} />
                 </label>
 
                 <label className="fld">
                   <span>Formula</span>
-                  <select className="in" value={form.formula} onChange={e => setFld('formula', e.target.value)}>
-                    <option value="">Select...</option>
-                  </select>
+                  <input className="in" type="text" placeholder="Formula" value={form.formula || ''} onChange={e => setFld('formula', e.target.value)} />
                 </label>
                 <label className="fld">
                   <span>Manufacturing Cost</span>
@@ -574,23 +593,16 @@ export default function PurchasableItemScreen() {
                 </label>
                 <label className="fld">
                   <span>Primary Department</span>
-                  <select className="in" value={form.primaryDepartment} onChange={e => setFld('primaryDepartment', e.target.value)}>
-                    <option value="">Select...</option>
-                    <option value="STORES">Stores</option>
-                    <option value="PURCHASE">Purchase</option>
-                    <option value="PRODUCTION">Production</option>
-                  </select>
+                  <input className="in" type="text" placeholder="Primary Department" value={form.primaryDepartment || ''} onChange={e => setFld('primaryDepartment', e.target.value)} />
                 </label>
 
                 <label className="fld">
                   <span>Drawing Number</span>
-                  <input className="in" type="text" placeholder="Drawing Number" value={form.drawingNumber} onChange={e => setFld('drawingNumber', e.target.value)} />
+                  <input className="in" type="text" placeholder="Drawing Number" value={form.drawingNumber || ''} onChange={e => setFld('drawingNumber', e.target.value)} />
                 </label>
                 <label className="fld">
                   <span>Amount Calculation Type</span>
-                  <select className="in" value={form.amountCalculationType} onChange={e => setFld('amountCalculationType', e.target.value)}>
-                    <option value="">Select...</option>
-                  </select>
+                  <input className="in" type="text" placeholder="Amount Calculation Type" value={form.amountCalculationType || ''} onChange={e => setFld('amountCalculationType', e.target.value)} />
                 </label>
                 <label className="fld">
                   <span>Store / Location</span>
@@ -745,8 +757,12 @@ export default function PurchasableItemScreen() {
                 </label>
                 <label className="fld">
                   <span>Warranty Type</span>
-                  <select className="in" value={form.warrantyType} onChange={e => setFld('warrantyType', e.target.value)}>
+                  <select className="in" value={form.warrantyType || ''} onChange={e => setFld('warrantyType', e.target.value)}>
                     <option value="">Select...</option>
+                    <option value="Standard">Standard Warranty</option>
+                    <option value="Extended">Extended Warranty</option>
+                    <option value="Manufacturer">Manufacturer Warranty</option>
+                    <option value="None">None</option>
                   </select>
                 </label>
                 <label className="fld">
@@ -849,8 +865,12 @@ export default function PurchasableItemScreen() {
                 </label>
                 <label className="fld">
                   <span>Kanban Stock Policy</span>
-                  <select className="in" value={form.kanbanStockPolicy} onChange={e => setFld('kanbanStockPolicy', e.target.value)}>
+                  <select className="in" value={form.kanbanStockPolicy || ''} onChange={e => setFld('kanbanStockPolicy', e.target.value)}>
                     <option value="">Select...</option>
+                    <option value="Min-Max">Min-Max</option>
+                    <option value="Reorder Point">Reorder Point</option>
+                    <option value="Kanban 2-Bin">Kanban 2-Bin</option>
+                    <option value="Safety Stock">Safety Stock</option>
                   </select>
                 </label>
                 <label className="fld">
@@ -933,11 +953,16 @@ export default function PurchasableItemScreen() {
               <div className="fgrid">
                 <label className="fld">
                   <span>Shape</span>
-                  <select className="in" value={form.shape} onChange={e => setFld('shape', e.target.value)}>
+                  <select className="in" value={form.shape || ''} onChange={e => setFld('shape', e.target.value)}>
                     <option value="">Select...</option>
                     <option value="ROUND">Round</option>
                     <option value="SQUARE">Square</option>
                     <option value="FLAT">Flat</option>
+                    <option value="HEXAGONAL">Hexagonal</option>
+                    <option value="SHEET">Sheet</option>
+                    <option value="COIL">Coil</option>
+                    <option value="TUBE">Tube</option>
+                    <option value="OTHER">Other</option>
                   </select>
                 </label>
                 <label className="fld">
@@ -1008,8 +1033,12 @@ export default function PurchasableItemScreen() {
               <div className="fgrid">
                 <label className="fld">
                   <span>Inventory Calculation</span>
-                  <select className="in" value={form.inventoryCalculation} onChange={e => setFld('inventoryCalculation', e.target.value)}>
+                  <select className="in" value={form.inventoryCalculation || ''} onChange={e => setFld('inventoryCalculation', e.target.value)}>
                     <option value="">Select...</option>
+                    <option value="FIFO">FIFO</option>
+                    <option value="LIFO">LIFO</option>
+                    <option value="Weighted Average">Weighted Average</option>
+                    <option value="Standard Cost">Standard Cost</option>
                   </select>
                 </label>
                 <label className="fld">
@@ -1322,8 +1351,13 @@ export default function PurchasableItemScreen() {
               <div className="fgrid">
                 <label className="fld">
                   <span>Packing Type</span>
-                  <select className="in" value={form.packingType} onChange={e => setFld('packingType', e.target.value)}>
+                  <select className="in" value={form.packingType || ''} onChange={e => setFld('packingType', e.target.value)}>
                     <option value="">Select...</option>
+                    <option value="Box Packaging">Box Packaging</option>
+                    <option value="Wooden Crate">Wooden Crate</option>
+                    <option value="Palletized">Palletized</option>
+                    <option value="Bag">Bag</option>
+                    <option value="Loose">Loose</option>
                   </select>
                 </label>
                 <label className="fld">
@@ -1332,8 +1366,11 @@ export default function PurchasableItemScreen() {
                 </label>
                 <label className="fld">
                   <span>PO Inward Type</span>
-                  <select className="in" value={form.poInwardType} onChange={e => setFld('poInwardType', e.target.value)}>
+                  <select className="in" value={form.poInwardType || ''} onChange={e => setFld('poInwardType', e.target.value)}>
                     <option value="">Select...</option>
+                    <option value="Standard Inward">Standard Inward</option>
+                    <option value="Direct Store">Direct Store</option>
+                    <option value="Quality Inspection">Quality Inspection</option>
                   </select>
                 </label>
                 <label className="fld">
@@ -1521,13 +1558,23 @@ export default function PurchasableItemScreen() {
 
             </div>
           )}
+          </fieldset>
 
           {/* Save / Action Bar at bottom */}
           <div className="actbar" style={{ marginTop: '24px' }}>
-            <button type="button" className="btn btn-secondary" onClick={openNew}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={busy}>
-              {busy ? 'Saving Item...' : 'Save Purchase Item'}
-            </button>
+            {isViewOnly ? (
+              <>
+                <button type="button" className="btn btn-secondary" onClick={() => setViewMode('LIST')}>Back</button>
+                <button type="button" className="btn btn-primary" onClick={() => setIsViewOnly(false)}>Edit Item</button>
+              </>
+            ) : (
+              <>
+                <button type="button" className="btn btn-secondary" onClick={() => setViewMode('LIST')}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={busy}>
+                  {busy ? 'Saving Item...' : editId ? 'Update Purchase Item' : 'Save Purchase Item'}
+                </button>
+              </>
+            )}
           </div>
         </form>
       )}

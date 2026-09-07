@@ -329,6 +329,7 @@ export default function ManufacturingItemScreen() {
   const [search, setSearch] = useState('');
   const [form, setForm] = useState<ManufacturingItemForm>(defaultFormState);
   const [editId, setEditId] = useState<number | null>(null);
+  const [isViewOnly, setIsViewOnly] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ManufacturingItemForm | null>(null);
 
   // Dynamic Grid Tables
@@ -338,7 +339,7 @@ export default function ManufacturingItemScreen() {
   const [accessoriesRows, setAccessoriesRows] = useState<Array<any>>([]);
   const [uomRows, setUomRows] = useState<Array<any>>([]);
   const [altItemRows, setAltItemRows] = useState<Array<any>>([]);
-  const [itemGroupRows, setItemGroupRows] = useState<Array<{id:number;code:string;name:string;itemType?:string}>>([]);
+  const [itemGroupRows, setItemGroupRows] = useState<Array<{id:number;code:string;name:string;itemType?:string;active?:boolean}>>([]);
   const [uomOptions, setUomOptions] = useState<Array<{id:number;code:string;name:string;symbol?:string}>>([]);
 
   const [openSec, setOpenSec] = useState<Record<string, boolean>>({
@@ -368,6 +369,7 @@ export default function ManufacturingItemScreen() {
   const openNew = async () => {
     setForm(defaultFormState);
     setEditId(null);
+    setIsViewOnly(false);
     setViewMode('FORM');
     try {
       const { data } = await apiClient.get('/master/items/next-code?itemType=MANUFACTURING');
@@ -377,7 +379,7 @@ export default function ManufacturingItemScreen() {
     }
   };
 
-  useEffect(() => { loadItems(); apiClient.get('/master/item-groups').then(r => setItemGroupRows(r.data ?? [])).catch(() => {}); apiClient.get('/master/uoms').then(r => setUomOptions(r.data ?? [])).catch(() => {}); }, []);
+  useEffect(() => { loadItems(); apiClient.get('/master/item-groups?activeOnly=false').then(r => setItemGroupRows(r.data ?? [])).catch(() => {}); apiClient.get('/master/uoms').then(r => setUomOptions(r.data ?? [])).catch(() => {}); }, []);
 
   const setFld = (k: keyof ManufacturingItemForm, v: any) => setForm(c => ({ ...c, [k]: v }));
 
@@ -443,7 +445,15 @@ export default function ManufacturingItemScreen() {
             </button>
           )}
           <div>
-            <h1>{viewMode === 'LIST' ? 'Manufacturing Item Master' : 'New Manufacturing Item'}</h1>
+            <h1>
+              {viewMode === 'LIST'
+                ? 'Manufacturing Item Master'
+                : isViewOnly
+                ? 'View Manufacturing Item'
+                : editId
+                ? 'Edit Manufacturing Item'
+                : 'New Manufacturing Item'}
+            </h1>
             <p>Inventory -&gt; Items -&gt; Manufacturing Item</p>
           </div>
         </div>
@@ -452,10 +462,19 @@ export default function ManufacturingItemScreen() {
             <button type="button" className="btn btn-primary" onClick={openNew}>
               + Add Manufacturing Item
             </button>
+          ) : isViewOnly ? (
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button type="button" className="btn btn-primary" onClick={() => setIsViewOnly(false)}>
+                Edit
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setViewMode('LIST')}>
+                Back
+              </button>
+            </div>
           ) : (
             <div style={{ display: 'flex', gap: '10px' }}>
               <button type="button" className="btn btn-primary" onClick={save} disabled={busy}>
-                {busy ? 'Saving...' : 'Save'}
+                {busy ? 'Saving...' : editId ? 'Update' : 'Save'}
               </button>
               <button type="button" className="btn btn-secondary" onClick={() => setViewMode('LIST')}>
                 Cancel
@@ -482,6 +501,7 @@ export default function ManufacturingItemScreen() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th>S.No</th>
                   <th>Item Code</th>
                   <th>Item Name</th>
                   <th>Item Group</th>
@@ -494,15 +514,16 @@ export default function ManufacturingItemScreen() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={8} className="empty">Loading Manufacturing Items...</td></tr>
+                  <tr><td colSpan={9} className="empty">Loading Manufacturing Items...</td></tr>
                 ) : filteredRows.length === 0 ? (
-                  <tr><td colSpan={8} className="empty">No Manufacturing Items found.</td></tr>
+                  <tr><td colSpan={9} className="empty">No Manufacturing Items found.</td></tr>
                 ) : (
-                  filteredRows.map(r => (
+                  filteredRows.map((r, idx) => (
                     <tr key={r.id}>
+                      <td>{idx + 1}</td>
                       <td className="cell-b">{r.code}</td>
                       <td><b>{r.description}</b></td>
-                      <td>{(itemGroupRows.find(g => g.code === r.itemGroup)?.name ?? r.itemGroup) || '—'}</td>
+                      <td>{(itemGroupRows.find(g => g.code === r.itemGroup || g.name === r.itemGroup || String(g.id) === String(r.itemGroup))?.name ?? r.itemGroup) || '—'}</td>
                       <td>{r.drawingNumber || '—'}</td>
                       <td>{r.uom}</td>
                       <td className="num">₹{r.manufacturingCost || 0}</td>
@@ -513,7 +534,8 @@ export default function ManufacturingItemScreen() {
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '6px' }}>
-                          <button type="button" className="btn btn-sm" onClick={() => { setForm(r); setEditId(r.id!); setViewMode('FORM'); }}>Edit</button>
+                          <button type="button" className="btn btn-sm btn-secondary" onClick={() => { setForm(r); setEditId(r.id!); setIsViewOnly(true); setViewMode('FORM'); }}>View</button>
+                          <button type="button" className="btn btn-sm" onClick={() => { setForm(r); setEditId(r.id!); setIsViewOnly(false); setViewMode('FORM'); }}>Edit</button>
                           <button type="button" className="btn btn-sm btn-d" onClick={() => setDeleteTarget(r)}>Delete</button>
                         </div>
                       </td>
@@ -526,6 +548,7 @@ export default function ManufacturingItemScreen() {
         </div>
       ) : (
         <form onSubmit={save}>
+          <fieldset disabled={isViewOnly} style={{ border: 'none', padding: 0, margin: 0 }}>
           {/* SECTION 1: Item Information */}
           <div className="sec-head" onClick={() => toggleSec('sec1')} style={{ cursor: 'pointer' }}>
             <div className="sec-title">
@@ -551,7 +574,7 @@ export default function ManufacturingItemScreen() {
                   <span>Item Group</span>
                   <select className="in" value={form.itemGroup} onChange={e => setFld('itemGroup', e.target.value)}>
                     <option value="">Select...</option>
-                    {itemGroupRows.filter(g => g.itemType === 'MANUFACTURING' || g.itemType === 'FG' || g.itemType === 'SEMI_FG').map(g => <option key={g.id} value={g.code}>{g.name}</option>)}
+                    {itemGroupRows.filter(g => (g.active !== false && (g.itemType === 'MANUFACTURING' || g.itemType === 'FG' || g.itemType === 'SEMI_FG')) || g.code === form.itemGroup || g.name === form.itemGroup).map(g => <option key={g.id} value={g.code}>{g.name}</option>)}
                   </select>
                 </label>
 
@@ -578,9 +601,7 @@ export default function ManufacturingItemScreen() {
                 </label>
                 <label className="fld">
                   <span>Item Catalog</span>
-                  <select className="in" value={form.itemCatalog} onChange={e => setFld('itemCatalog', e.target.value)}>
-                    <option value="">Select...</option>
-                  </select>
+                  <input className="in" type="text" placeholder="Item Catalog" value={form.itemCatalog} onChange={e => setFld('itemCatalog', e.target.value)} />
                 </label>
                 <label className="fld">
                   <span>Process Group</span>
@@ -591,9 +612,7 @@ export default function ManufacturingItemScreen() {
 
                 <label className="fld">
                   <span>Formula</span>
-                  <select className="in" value={form.formula} onChange={e => setFld('formula', e.target.value)}>
-                    <option value="">Select...</option>
-                  </select>
+                  <input className="in" type="text" placeholder="Formula" value={form.formula} onChange={e => setFld('formula', e.target.value)} />
                 </label>
                 <label className="fld">
                   <span>Salable Price</span>
@@ -606,9 +625,7 @@ export default function ManufacturingItemScreen() {
 
                 <label className="fld">
                   <span>Primary Department</span>
-                  <select className="in" value={form.primaryDepartment} onChange={e => setFld('primaryDepartment', e.target.value)}>
-                    <option value="">Select...</option>
-                  </select>
+                  <input className="in" type="text" placeholder="Primary Department" value={form.primaryDepartment} onChange={e => setFld('primaryDepartment', e.target.value)} />
                 </label>
                 <label className="fld">
                   <span>Drawing Number</span>
@@ -616,9 +633,7 @@ export default function ManufacturingItemScreen() {
                 </label>
                 <label className="fld">
                   <span>Amount Calculation Type</span>
-                  <select className="in" value={form.amountCalculationType} onChange={e => setFld('amountCalculationType', e.target.value)}>
-                    <option value="">Select...</option>
-                  </select>
+                  <input className="in" type="text" placeholder="Amount Calculation Type" value={form.amountCalculationType} onChange={e => setFld('amountCalculationType', e.target.value)} />
                 </label>
 
                 <label className="fld">
@@ -1367,12 +1382,22 @@ export default function ManufacturingItemScreen() {
               <button type="button" className="btn btn-sm btn-p" style={{ marginTop: '12px' }} onClick={() => setAltItemRows(r => [...r, {}])}>+ Add Alternative Item</button>
             </div>
           )}
+          </fieldset>
 
           <div className="actbar" style={{ marginTop: '24px' }}>
-            <button type="button" className="btn btn-secondary" onClick={() => setViewMode('LIST')}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={busy}>
-              {busy ? 'Saving Item...' : 'Save Manufacturing Item'}
-            </button>
+            {isViewOnly ? (
+              <>
+                <button type="button" className="btn btn-secondary" onClick={() => setViewMode('LIST')}>Back</button>
+                <button type="button" className="btn btn-primary" onClick={() => setIsViewOnly(false)}>Edit Item</button>
+              </>
+            ) : (
+              <>
+                <button type="button" className="btn btn-secondary" onClick={() => setViewMode('LIST')}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={busy}>
+                  {busy ? 'Saving Item...' : editId ? 'Update Manufacturing Item' : 'Save Manufacturing Item'}
+                </button>
+              </>
+            )}
           </div>
         </form>
       )}

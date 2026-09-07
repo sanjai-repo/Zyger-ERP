@@ -14,7 +14,7 @@ interface Props {
   onView?: (id: number) => void;
 }
 
-export default function ItemGroupList({ onAdd, onEdit }: Props) {
+export default function ItemGroupList({ onAdd, onEdit, onView }: Props) {
   const { toast } = useToast();
   const [rows, setRows] = useState<ItemGroup[]>([]);
   const [total, setTotal] = useState(0);
@@ -45,11 +45,16 @@ export default function ItemGroupList({ onAdd, onEdit }: Props) {
 
   const del = async () => {
     if (!deleteTarget) return;
+    const targetId = deleteTarget.id;
     setBusy(true);
     try {
-      const { data } = await apiClient.delete(`/master/item-groups/${deleteTarget.id}`);
-      if (data?.deactivated) toast(data.message || 'Item Group is in use; it was deactivated.', 'success');
-      else toast('Item Group deleted.');
+      const { data } = await apiClient.delete(`/master/item-groups/${targetId}`);
+      if (data?.deactivated) {
+        toast(data.message || 'Item Group is in use; it was deactivated.', 'success');
+      } else {
+        toast('Item Group deleted.');
+        setRows(prev => prev.filter(r => r.id !== targetId));
+      }
       setDeleteTarget(null);
       load();
     } catch (e) {
@@ -124,6 +129,7 @@ export default function ItemGroupList({ onAdd, onEdit }: Props) {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th style={{ width: '50px' }}>#</th>
                   <th>GROUP ID</th>
                   <th>GROUP NAME</th>
                   <th>TYPE</th>
@@ -135,13 +141,14 @@ export default function ItemGroupList({ onAdd, onEdit }: Props) {
               <tbody>
                 {filteredRows.length === 0 ? (
                   <tr>
-                    <td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>
+                    <td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>
                       No item groups found.
                     </td>
                   </tr>
                 ) : (
-                  filteredRows.map((r) => (
+                  filteredRows.map((r, idx) => (
                     <tr key={r.id}>
+                      <td>{page * PAGE_SIZE + idx + 1}</td>
                       <td style={{ fontWeight: 700, color: '#0f172a' }}>{r.code}</td>
                       <td style={{ fontWeight: 600 }}>{r.name}</td>
                       <td>
@@ -157,6 +164,11 @@ export default function ItemGroupList({ onAdd, onEdit }: Props) {
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          {onView && (
+                            <button type="button" className="ibtn" title="View" onClick={() => onView(r.id)}>
+                              <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>visibility</span>
+                            </button>
+                          )}
                           <button type="button" className="ibtn" title="Edit" onClick={() => onEdit(r.id)}>
                             <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>edit</span>
                           </button>
