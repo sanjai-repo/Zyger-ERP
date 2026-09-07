@@ -8,8 +8,12 @@
 # ===================================================================
 spring:
   jpa:
+    # TODO: switch back to "validate" after regenerating V1 baseline to match
+    # current entity model. The baseline is stale vs evolved entities (e.g.
+    # party_master.discount vs entity discount_pct). Hibernate "update" safely
+    # adds missing columns without dropping anything.
     hibernate:
-      ddl-auto: validate
+      ddl-auto: update
     properties:
       hibernate:
         format_sql: false

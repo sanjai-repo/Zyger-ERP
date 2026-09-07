@@ -17,6 +17,8 @@ export type InwardOptionsSource =
   | 'suppliers'
   | 'customers'
   | 'locations'
+  | 'stores'
+  | 'uoms'
   | 'pos'
   | 'jos'
   | 'los'

@@ -20,6 +20,7 @@ export interface PoInwardLineFormState {
   netAmount: string;
   acceptedQty: string;
   rejectedQty: string;
+  rejectedReason: string;
   batchNo: string;
   heatNo: string;
   location: string;
@@ -70,6 +71,7 @@ export function createEmptyLine(defaultLoc = ''): PoInwardLineFormState {
     netAmount: '',
     acceptedQty: '',
     rejectedQty: '',
+    rejectedReason: '',
     batchNo: '',
     heatNo: '',
     location: defaultLoc,
@@ -119,7 +121,7 @@ function lineFromDto(
     netAmount: line.netAmount?.toString() ?? '',
     acceptedQty: line.acceptedQty?.toString() ?? '',
     rejectedQty: line.rejectedQty?.toString() ?? '',
-    rejectedReason: (line as any).rejectedReason ?? '',
+    rejectedReason: line.rejectedReason ?? '',
     batchNo: line.batchNo ?? '',
     heatNo: line.heatNo ?? '',
     location: line.location ?? '',

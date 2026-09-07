@@ -860,7 +860,7 @@ export default function InwardForm({
             padding: '5px 6px',
             fontSize: '.74rem',
             width: '100%',
-            textAlign: field.type === 'number' ? 'right' : 'left',
+textAlign: 'left',
           }}
           value={value}
           readOnly

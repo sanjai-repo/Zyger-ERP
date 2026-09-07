@@ -63,6 +63,7 @@ export interface PoInwardLineDto {
   netAmount?: number;
   acceptedQty?: number;
   rejectedQty?: number;
+  rejectedReason?: string;
   batchNo?: string;
   heatNo?: string;
   location?: string;

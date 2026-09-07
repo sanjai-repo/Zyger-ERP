@@ -30,6 +30,9 @@ export interface CharacteristicLinePayload {
 
 export interface InspectionCreatePayload {
   inspectionType: InspectionType;
+  inspectionStatus?: InspectionStatus;
+  decisionStatus?: DecisionStatus;
+  directInventoryUpdate?: boolean;
   itemCode: string;
   itemDescription?: string;
   receivedQuantity: number;

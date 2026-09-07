@@ -21,14 +21,22 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 COMPOSE_FILE="$PROJECT_ROOT/docker-compose.staging.yml"
 ENV_FILE="$PROJECT_ROOT/.env.staging"
 
-PORT="${NGINX_PORT:-80}"
-BASE_URL="http://localhost:${PORT}"
-
 GREEN='\033[0;32m'; RED='\033[0;31m'; NC='\033[0m'
 PASS=0; FAIL=0
 
 passed()  { echo -e "${GREEN}  [PASS]${NC} $1"; PASS=$((PASS+1)); }
 failed()  { echo -e "${RED}  [FAIL]${NC} $1"; FAIL=$((FAIL+1)); }
+
+# ---------- Load environment so PORT/NGINX_PORT are available ----------
+if [ -f "$ENV_FILE" ]; then
+    set -a
+    # shellcheck source=/dev/null
+    source "$ENV_FILE"
+    set +a
+fi
+
+PORT="${NGINX_PORT:-80}"
+BASE_URL="http://localhost:${PORT}"
 
 echo "=== Zyger ERP — Staging Health Check ==="
 echo "Endpoint: $BASE_URL"

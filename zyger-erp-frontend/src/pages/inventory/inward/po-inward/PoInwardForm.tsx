@@ -850,7 +850,9 @@ export default function PoInwardForm({
             >
               <span className="material-symbols-rounded">add</span>
               Add Line
-            </          <div className="twrap">
+            </button>
+          </div>
+          <div className="twrap">
             <table className="tbl lines">
               <thead>
                 <tr>
