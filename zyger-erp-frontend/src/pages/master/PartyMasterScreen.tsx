@@ -138,6 +138,16 @@ export default function PartyMasterScreen() {
             <span>Payment Terms</span>
             <input className="in" value={String(form.paymentTerms ?? '')} onChange={(e) => setForm((c) => ({ ...c, paymentTerms: e.target.value }))} />
           </label>
+          {String(form.kind ?? '') === 'SUPPLIER' && (
+            <label className="fld">
+              <span>Approved Vendor Status</span>
+              <select className="in" value={String(form.approvedVendorStatus ?? 'APPROVED')} onChange={(e) => setForm((c) => ({ ...c, approvedVendorStatus: e.target.value }))}>
+                <option value="APPROVED">APPROVED</option>
+                <option value="CONDITIONAL">CONDITIONAL</option>
+                <option value="BLOCKED">BLOCKED</option>
+              </select>
+            </label>
+          )}
           <label className="fld span2">
             <span>Billing Address</span>
             <textarea className="in" rows={2} value={String(form.billingAddress ?? '')} onChange={(e) => setForm((c) => ({ ...c, billingAddress: e.target.value }))} />

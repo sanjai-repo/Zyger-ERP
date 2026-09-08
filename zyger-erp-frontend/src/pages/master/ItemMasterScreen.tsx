@@ -207,6 +207,21 @@ export default function ItemMasterScreen() {
                   <option value="false">No</option><option value="true">Yes</option>
                 </select>
               </label>
+              <label className="fld"><span>Batch/Heat Mandatory</span>
+                <select className="in" value={String(form.batchHeatMandatory ?? false)} onChange={(e) => set('batchHeatMandatory', e.target.value === 'true')}>
+                  <option value="false">No</option><option value="true">Yes</option>
+                </select>
+              </label>
+              <label className="fld"><span>Serial Generation Rule</span>
+                <select className="in" value={String(form.serialGenerationRule ?? 'NONE')} onChange={(e) => set('serialGenerationRule', e.target.value)}>
+                  <option value="NONE">None</option>
+                  <option value="AUTO_SEQUENTIAL">Auto Sequential</option>
+                  <option value="WO_LINKED">Work Order Linked</option>
+                </select>
+              </label>
+              <label className="fld"><span>FG Serial Prefix Pattern</span>
+                <input className="in" placeholder="e.g. {ItemCode}-{WONumber}" value={String(form.fgSerialPrefix ?? '')} onChange={(e) => set('fgSerialPrefix', e.target.value)} />
+              </label>
             </>
           )}
         </div>

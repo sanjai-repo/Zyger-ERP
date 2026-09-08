@@ -730,7 +730,7 @@ public class DocumentFacade {
 
     private String nextNumberFor(String key, Map<String, Object> body) {
         if ("issue-internal-external".equals(key)) {
-            String prefix = "INTERNAL".equalsIgnoreCase(strVal(body.get("issueType"))) ? "INT" : "EXT";
+            String prefix = "INTERNAL".equalsIgnoreCase(strVal(body.get("issueType"))) ? "ISI" : "EXT";
             return numbers.next(key, prefix);
         }
         return numbers.next(key);

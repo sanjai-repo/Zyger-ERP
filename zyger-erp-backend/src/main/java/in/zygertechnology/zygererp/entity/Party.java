@@ -55,6 +55,10 @@ public class Party {
     @Column(name = "credit_limit", precision = 14, scale = 2) BigDecimal creditLimit;
     @Column(name = "quality_rating", length = 30) String qualityRating;
     @Column(name = "on_time_delivery", length = 30) String onTimeDelivery;
+    @Column(name = "approved_vendor_status", length = 30) @Builder.Default String approvedVendorStatus = "APPROVED";
+    @Column(name = "quality_acceptance_rate", precision = 5, scale = 2) BigDecimal qualityAcceptanceRate;
+    @Column(name = "otif_rate", precision = 5, scale = 2) BigDecimal otifRate;
+    @Column(name = "overall_supplier_grade", length = 5) @Builder.Default String overallSupplierGrade = "A";
     @Column(name = "total_business", precision = 14, scale = 2) BigDecimal totalBusiness;
     @Column(name = "blacklist_status", length = 30) String blacklistStatus;
     @Builder.Default

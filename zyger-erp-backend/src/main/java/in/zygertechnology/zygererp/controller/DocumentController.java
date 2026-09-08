@@ -82,7 +82,7 @@ public class DocumentController {
         if ("issue-internal-external".equals(type)) {
             String issueType = q.get("issueType");
             if (issueType != null && !issueType.isBlank()) {
-                String prefix = "INTERNAL".equalsIgnoreCase(issueType) ? "INT" : "EXT";
+                String prefix = "INTERNAL".equalsIgnoreCase(issueType) ? "ISI" : "EXT";
                 return Map.of("prefix", prefix, "nextNumber", svc.peekNumber(type, prefix));
             }
         }

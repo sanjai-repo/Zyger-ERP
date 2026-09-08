@@ -46,7 +46,7 @@ public final class DocTypes {
         reg("inward-return",          "IRT", Effect.IN,     "INWARD_RETURN",          "returnedQty", true);
         reg("dc-return",              "DRT", Effect.IN,     "DC_RETURN",              "returnedQty", true);
         reg("invoice-return",         "IVT", Effect.IN,     "INVOICE_RETURN",         "returnedQty", true);
-        reg("internal-return",        "INT", Effect.IN,     "INTERNAL_RETURN",        "returnedQty", true);
+        reg("internal-return",        "IRN", Effect.IN,     "INTERNAL_RETURN",        "returnedQty", true);
         reg("received-against-issue", "RAI", Effect.IN,     "RECEIVED_AGAINST_ISSUE", "returnedQty", true);
         reg("receipt-return",         "RCT", Effect.IN,     "RECEIPT_RETURN",         "returnedQty", true);
         reg("stock-allotment",        "SA",  Effect.NONE,   "STOCK_ALLOTMENT",        "allottedQty", true);

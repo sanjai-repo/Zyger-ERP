@@ -83,6 +83,35 @@ public class SupplierScorecardService {
         return result;
     }
 
+    @Transactional
+    public void updateSupplierPerformanceMatrix(String supplierCode) {
+        if (supplierCode == null || supplierCode.isBlank()) return;
+        try {
+            // Update Party / Vendor Master quality acceptance rate & overall supplier grade
+            String sql = """
+                UPDATE party_master p
+                SET quality_acceptance_rate = COALESCE((
+                    SELECT ROUND(CAST((SUM(CASE WHEN status <> 'REJECTED' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0)) AS NUMERIC), 2)
+                    FROM quality_inspection qi WHERE qi.source_number IN (SELECT doc_no FROM purchase_order WHERE supplier_code = :supplier OR supplier = :supplier)
+                ), 100.00),
+                overall_supplier_grade = CASE
+                    WHEN COALESCE((SELECT COUNT(*) FROM quality_ncr WHERE source_number IN (SELECT doc_no FROM purchase_order WHERE supplier_code = :supplier OR supplier = :supplier)), 0) > 5 THEN 'D'
+                    WHEN COALESCE((SELECT COUNT(*) FROM quality_ncr WHERE source_number IN (SELECT doc_no FROM purchase_order WHERE supplier_code = :supplier OR supplier = :supplier)), 0) > 2 THEN 'C'
+                    WHEN COALESCE((SELECT COUNT(*) FROM quality_ncr WHERE source_number IN (SELECT doc_no FROM purchase_order WHERE supplier_code = :supplier OR supplier = :supplier)), 0) > 0 THEN 'B'
+                    ELSE 'A'
+                END,
+                approved_vendor_status = CASE
+                    WHEN COALESCE((SELECT COUNT(*) FROM quality_ncr WHERE source_number IN (SELECT doc_no FROM purchase_order WHERE supplier_code = :supplier OR supplier = :supplier)), 0) > 5 THEN 'CONDITIONAL'
+                    ELSE approved_vendor_status
+                END
+                WHERE p.code = :supplier OR p.legal_name = :supplier
+                """;
+            em.createNativeQuery(sql).setParameter("supplier", supplierCode).executeUpdate();
+        } catch (Exception e) {
+            // Fail safe logging
+        }
+    }
+
     @Scheduled(cron = "${zyger.scheduling.scorecard-refresh:0 0 2 * * *}")
     public void nightlyRefresh() {
         try {

@@ -97,8 +97,8 @@ public class PurchaseService {
         }
         if (supplierCode != null && !supplierCode.isBlank() && isPurchaseDoc(key)) {
             parties.findByCode(supplierCode).ifPresent(p -> {
-                if ("BLOCKED".equals(p.getApprovalStatus())) {
-                    throw new IllegalStateException("Supplier " + p.getCode() + " is BLOCKED and cannot be used in purchase documents");
+                if ("BLOCKED".equalsIgnoreCase(p.getApprovalStatus()) || "BLOCKED".equalsIgnoreCase(p.getApprovedVendorStatus())) {
+                    throw new IllegalStateException("Supplier " + p.getCode() + " is BLOCKED (Approved Vendor Status = BLOCKED) and cannot be used in purchase documents");
                 }
             });
         }

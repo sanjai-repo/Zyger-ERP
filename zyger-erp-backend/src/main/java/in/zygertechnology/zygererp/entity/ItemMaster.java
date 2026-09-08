@@ -32,6 +32,9 @@ public class ItemMaster {
     @Builder.Default Boolean batchControl = Boolean.FALSE;
     @Builder.Default Boolean serialControl = Boolean.FALSE;
     @Column(name = "inspection_required") @Builder.Default Boolean inspectionRequired = Boolean.FALSE;
+    @Column(name = "batch_heat_mandatory") @Builder.Default Boolean batchHeatMandatory = Boolean.FALSE;
+    @Column(name = "serial_generation_rule", length = 30) @Builder.Default String serialGenerationRule = "NONE";
+    @Column(name = "fg_serial_prefix", length = 60) String fgSerialPrefix;
     @Column(name = "default_warehouse", length = 60) String defaultWarehouse;
     @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "item_group_id") ItemGroup itemGroup;
     @Column(name = "material_grade", length = 100) String materialGrade;
