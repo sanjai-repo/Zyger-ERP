@@ -106,9 +106,10 @@ export default function ReturnManagementForm({
     nextNumberQuery.data?.nextNumber ||
     'Auto';
 
-  // For Internal Return & Received Against Issue, load stock issue documents for select dropdown
-  const isIssueReturn = config.transactionType === 'INTERNAL_RETURN' || config.transactionType === 'ISSUE_RETURN';
-  const [stockIssueDocs, setStockIssueDocs] = useState<Array<{ docNo: string; department?: string; lines?: any[] }>>([]);
+  // For Stock Return & Received Against Issue, load stock issue documents for select dropdown
+  const isIssueReturn = config.transactionType === 'STOCK_RETURN' || config.screenId === 'stock-return' || config.transactionType === 'ISSUE_RETURN';
+  const [stockIssueDocs, setStockIssueDocs] = useState<Array<{ docNo: string; department?: string; jobOrderNo?: string; issueType?: string; lines?: any[] }>>([]);
+  const [sourceIssueType, setSourceIssueType] = useState('rm-issue');
 
   // For DC Return, load active/posted Sales DC documents for select dropdown
   const isDcReturn = config.screenId === 'dc-return' || config.transactionType === 'DC_RETURN';
@@ -176,22 +177,48 @@ export default function ReturnManagementForm({
 
   useEffect(() => {
     if (!isIssueReturn) return;
-    // Load approved/posted stock issue documents
-    axiosClient.get('/inventory/stock-issue/general-issue?status=POSTED&size=100')
-      .then((res) => {
-        const data = res.data?.content || res.data || [];
-        setStockIssueDocs(Array.isArray(data) ? data : []);
-      })
-      .catch(() => {
-        setStockIssueDocs([
-          { docNo: 'GEI-2026-0001', department: 'Production', lines: [
-            { itemCode: 'ITEM-001', issueQty: 50, location: 'MAIN_STORE', batchNo: 'BT-001' },
-          ]},
-          { docNo: 'GEI-2026-0002', department: 'Maintenance', lines: [
-            { itemCode: 'ITEM-003', issueQty: 10, location: 'MAIN_STORE', batchNo: 'BT-002' },
-          ]},
-        ]);
-      });
+    // Load posted stock issue documents across all sources: RM Issue (JO),
+    // General Issue, and Internal/External Issue (IIE).
+    const sourceTypes: Array<[string, string]> = [
+      ['rm-issue', 'JO Issue'],
+      ['general-issue', 'General Issue'],
+      ['issue-internal-external', 'Internal Issue'],
+    ];
+    let cancelled = false;
+
+    Promise.all(
+      sourceTypes.map(([type]) =>
+        axiosClient.get(`/inventory/stock-issue/${type}?status=POSTED&size=100`)
+          .then((res) => {
+            const data = res.data?.content || res.data || [];
+            return (Array.isArray(data) ? data : []).map((d: any) => ({
+              docNo: d.docNo,
+              department: d.department || d.party || '',
+              jobOrderNo: d.jobOrderNo || d.jobCardNumber || d.workOrderNumber || '',
+              issueType: type,
+              lines: d.lines || [],
+            }));
+          })
+          .catch(() => [] as any[])
+      )
+    ).then((lists) => {
+      if (!cancelled) {
+        const flat = lists.flat();
+        if (flat.length === 0) {
+          setStockIssueDocs([
+            { docNo: 'RMI-2026-0001', department: 'Production', jobOrderNo: 'JO-2026-0001', issueType: 'rm-issue', lines: [
+              { itemCode: 'ITEM-001', issueQty: 50, location: 'MAIN_STORE', batchNo: 'BT-001' },
+            ]},
+            { docNo: 'GEI-2026-0002', department: 'Maintenance', issueType: 'general-issue', lines: [
+              { itemCode: 'ITEM-003', issueQty: 10, location: 'MAIN_STORE', batchNo: 'BT-002' },
+            ]},
+          ]);
+        } else {
+          setStockIssueDocs(flat);
+        }
+      }
+    });
+    return () => { cancelled = true; };
   }, [isIssueReturn]);
 
   const handleOriginalDocSelect = (docNoVal: string) => {
@@ -217,6 +244,8 @@ export default function ReturnManagementForm({
             batchNo: l.batchNo || l.batchNumber || '',
             heatNo: l.heatNo || l.heatNumber || '',
             location: l.location || locations[0]?.code || 'MAIN_STORE',
+            stockStatus: 'FREE',
+            originalIssueNo: docNoVal,
             remarks: l.remarks || `Return against ${docNoVal}`,
           })) : prev.lines,
         }));
@@ -241,6 +270,8 @@ export default function ReturnManagementForm({
             batchNo: l.batchNo || '',
             heatNo: l.heatNo || '',
             location: l.location || locations[0]?.code || '',
+            stockStatus: 'FREE',
+            originalIssueNo: docNoVal,
             remarks: l.remarks || '',
           })) : prev.lines,
         }));
@@ -250,28 +281,76 @@ export default function ReturnManagementForm({
 
     if (isIssueReturn) {
       const selectedIssue = stockIssueDocs.find(d => d.docNo === docNoVal);
-      if (!selectedIssue) return;
 
-      if (selectedIssue.department) {
+      if (selectedIssue?.department) {
         updateField('party', selectedIssue.department);
       }
-
-      if (selectedIssue.lines && selectedIssue.lines.length > 0) {
-        setForm((prev) => ({
-          ...prev,
-          lines: selectedIssue.lines!.map((l: any) => ({
-            itemCode: l.itemCode || '',
-            itemDesc: itemsMap.get(l.itemCode)?.description || l.itemDesc || '',
-            returnedQty: String(l.issueQty || l.qty || ''),
-            acceptedQty: String(l.issueQty || l.qty || ''),
-            rejectedQty: '0',
-            batchNo: l.batchNo || '',
-            heatNo: l.heatNo || '',
-            location: l.location || '',
-            remarks: `Return against ${docNoVal}`,
-          })),
-        }));
+      if (selectedIssue?.jobOrderNo) {
+        updateField('jobOrderNo', selectedIssue.jobOrderNo);
       }
+      if (selectedIssue?.issueType) {
+        updateField('originalIssueType', sourceIssueType === 'all' ? selectedIssue.issueType : sourceIssueType);
+      }
+
+      // Stock Return uses the server-side source-line lookup which resolves the
+      // issuing document type automatically and returns issued / already-returned /
+      // balance quantities (Return Management FRS v1.0 §2 B#3).
+      const sourceKey =
+        config.screenId === 'stock-return' || config.transactionType === 'STOCK_RETURN'
+          ? 'stock-return'
+          : 'invoice-return';
+
+      axiosClient.get(`/return-management/source-lines/${sourceKey}`, {
+        params: {
+          docNo: docNoVal,
+          sourceType:
+            config.screenId === 'stock-return' || config.transactionType === 'STOCK_RETURN'
+              ? selectedIssue?.issueType || sourceIssueType || undefined
+              : undefined,
+        },
+      })
+        .then((res) => {
+          const look = res.data || {};
+          const srcLines: any[] = look.lines || [];
+          const mapped = srcLines.length > 0
+            ? srcLines.map((l: any) => ({
+                itemCode: l.itemCode || '',
+                itemDesc: itemsMap.get(l.itemCode)?.description || l.itemDesc || '',
+                returnedQty: String(l.balanceQty ?? l.issuedQty ?? ''),
+                acceptedQty: String(l.balanceQty ?? l.issuedQty ?? ''),
+                rejectedQty: '0',
+                batchNo: l.batchNo || '',
+                heatNo: l.heatNo || '',
+                location: l.location || locations[0]?.code || '',
+                stockStatus: l.stockStatus || 'FREE',
+                originalIssueNo: l.issueDocNo || docNoVal,
+                remarks: `Return against ${docNoVal}`,
+              }))
+            : [];
+          setForm((prev) =>
+            mapped.length > 0 ? { ...prev, lines: mapped } : prev
+          );
+        })
+        .catch(() => {
+          if (selectedIssue && selectedIssue.lines && selectedIssue.lines.length > 0) {
+            setForm((prev) => ({
+              ...prev,
+              lines: selectedIssue.lines!.map((l: any) => ({
+                itemCode: l.itemCode || '',
+                itemDesc: itemsMap.get(l.itemCode)?.description || l.itemDesc || '',
+                returnedQty: String(l.issueQty || l.qty || ''),
+                acceptedQty: String(l.issueQty || l.qty || ''),
+                rejectedQty: '0',
+                batchNo: l.batchNo || '',
+                heatNo: l.heatNo || '',
+                location: l.location || '',
+                stockStatus: 'FREE',
+                originalIssueNo: docNoVal,
+                remarks: `Return against ${docNoVal}`,
+              })),
+            }));
+          }
+        });
     }
   };
 
@@ -360,6 +439,8 @@ export default function ReturnManagementForm({
             batchNo: l.batchNo || '',
             heatNo: l.heatNo || '',
             location: l.location || locations[0]?.code || '',
+            stockStatus: 'FREE',
+            originalIssueNo: value,
             remarks: l.remarks || '',
           })) : prev.lines;
 
@@ -764,7 +845,9 @@ export default function ReturnManagementForm({
                   style={{ fontWeight: 700, color: '#1e3a8a' }}
                 >
                   <option value="">— Select Stock Issue No —</option>
-                  {stockIssueDocs.map((doc) => (
+                  {stockIssueDocs
+                    .filter((doc) => sourceIssueType === 'all' || !doc.issueType || doc.issueType === sourceIssueType)
+                    .map((doc) => (
                     <option key={doc.docNo} value={doc.docNo}>
                       {doc.docNo} — {doc.department || 'Dept'}
                     </option>
@@ -819,6 +902,72 @@ export default function ReturnManagementForm({
                       updateField('customerPoNumber', event.target.value)
                     }
                   />
+                </label>
+              </>
+            )}
+
+            {isIssueReturn && config.screenId === 'stock-return' && (
+              <>
+                <label className="fld">
+                  <span>Source Issue Type</span>
+                  <select
+                    className="in"
+                    value={sourceIssueType}
+                    disabled={!editable}
+                    onChange={(event) => setSourceIssueType(event.target.value)}
+                  >
+                    <option value="all">All Issue Types</option>
+                    <option value="rm-issue">JO Issue (RM Issue)</option>
+                    <option value="general-issue">General Issue</option>
+                    <option value="issue-internal-external">Internal Issue</option>
+                  </select>
+                </label>
+
+                <label className="fld">
+                  <span>Job Order No</span>
+                  <input
+                    className="in"
+                    value={form.jobOrderNo}
+                    readOnly={!editable}
+                    onChange={(event) =>
+                      updateField('jobOrderNo', event.target.value)
+                    }
+                  />
+                </label>
+
+                <label className="fld">
+                  <span>Condition of Goods</span>
+                  <select
+                    className="in"
+                    value={form.condition}
+                    disabled={!editable}
+                    onChange={(event) =>
+                      updateField('condition', event.target.value)
+                    }
+                  >
+                    <option value="FREE">Free (Reusable)</option>
+                    <option value="DAMAGED">Damaged</option>
+                    <option value="REJECTED">Rejected</option>
+                    <option value="SCRAP">Scrap</option>
+                  </select>
+                </label>
+
+                <label className="fld">
+                  <span>Reduce Production Consumption</span>
+                  <select
+                    className="in"
+                    value={form.reduceConsumption ? 'true' : 'false'}
+                    disabled={!editable}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        reduceConsumption: event.target.value === 'true',
+                      }))
+                    }
+                  >
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </select>
                 </label>
               </>
             )}

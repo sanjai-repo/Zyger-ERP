@@ -42,7 +42,7 @@ const PurchaseInvoicePage = lazy(() => import('../pages/inventory/supplier-invoi
 const SubcontractInvoicePage = lazy(() => import('../pages/inventory/supplier-invoice/subcontract-invoice/SubcontractInvoicePage'));
 const DcReturnPage = lazy(() => import('../pages/inventory/return-management/dc-return/DcReturnPage'));
 const InvoiceReturnPage = lazy(() => import('../pages/inventory/return-management/invoice-return/InvoiceReturnPage'));
-const InternalReturnPage = lazy(() => import('../pages/inventory/return-management/internal-return/InternalReturnPage'));
+const StockReturnPage = lazy(() => import('../pages/inventory/return-management/stock-return/StockReturnPage'));
 const StockAllotmentPage = lazy(() => import('../pages/inventory/allotment/stock-allotment/StockAllotmentPage'));
 const StockReleasePage = lazy(() => import('../pages/inventory/allotment/stock-release/StockReleasePage'));
 const StockAmendmentPage = lazy(() => import('../pages/inventory/adjustment/stock-amendment/StockAmendmentPage'));
@@ -209,7 +209,7 @@ export const SCREEN_REGISTRY: Record<string, ScreenDefinition> = Object.fromEntr
     'subcontract-invoice': SubcontractInvoicePage,
     'dc-return': DcReturnPage,
     'invoice-return': InvoiceReturnPage,
-    'internal-return': InternalReturnPage,
+    'stock-return': StockReturnPage,
     'stock-allotment': StockAllotmentPage,
     'stock-release': StockReleasePage,
     'stock-amendment': StockAmendmentPage,

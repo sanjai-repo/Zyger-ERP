@@ -24,6 +24,8 @@ public class DocumentController {
     private final PrintService printer;
     private final DcPrintLogRepository dcPrintLogs;
     private final in.zygertechnology.zygererp.service.DeliveryChallanReportService dcReports;
+    private final in.zygertechnology.zygererp.service.ReturnReportService returnReports;
+    private final in.zygertechnology.zygererp.service.AllotmentAdjustmentReportService allotmentReports;
 
     private static String principalName(Principal p) { return p != null ? p.getName() : "system"; }
 
@@ -222,6 +224,97 @@ public class DocumentController {
         return dcReports.getDcWiseItemMovement(dcType, startDate, endDate, party, itemCode, status);
     }
 
+    // ---------- Return Management FRS v1.0 §11 reports -----------------------------
+    @GetMapping("/return-management/reports/register")
+    List<Map<String, Object>> getReturnRegister(
+            @RequestParam(required = false) String returnType,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(required = false) String party,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String sourceNo) {
+        return returnReports.getReturnRegister(returnType, startDate, endDate, party, status, sourceNo);
+    }
+
+    @GetMapping("/return-management/reports/pending-dc-return")
+    List<Map<String, Object>> getPendingDcReturn() { return returnReports.getPendingDcReturn(); }
+
+    @GetMapping("/return-management/reports/pending-invoice-return")
+    List<Map<String, Object>> getPendingInvoiceReturn() { return returnReports.getPendingInvoiceReturn(); }
+
+    @GetMapping("/return-management/reports/pending-stock-return")
+    List<Map<String, Object>> getPendingStockReturn() { return returnReports.getPendingStockReturn(); }
+
+    @GetMapping("/return-management/reports/damaged-rejected-scrap")
+    List<Map<String, Object>> getDamagedRejectedScrap(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String location,
+            @RequestParam(required = false) String itemCode) {
+        return returnReports.getDamagedRejectedScrapStock(status, location, itemCode);
+    }
+
+    @GetMapping("/return-management/reports/consumption-adjustment")
+    List<Map<String, Object>> getConsumptionAdjustment(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(required = false) String jobRef,
+            @RequestParam(required = false) String itemCode) {
+        return returnReports.getConsumptionAdjustment(startDate, endDate, jobRef, itemCode);
+    }
+
+    /** Return Management FRS v1.0 §2 B#3 — source-line lookup for return forms. */
+    @GetMapping("/return-management/source-lines/{returnKey}")
+    Map<String, Object> getReturnSourceLines(@PathVariable String returnKey, @RequestParam String docNo,
+            @RequestParam(required = false) String sourceType) {
+        var lookup = svc.getReturnSourceLines(returnKey, docNo, sourceType);
+        return Map.of(
+                "lines", lookup.lines(),
+                "totalOriginal", lookup.totalOriginal(),
+                "totalReturned", lookup.totalReturned());
+    }
+
+    // ---------- Stock Allotment & Adjustment FRS v1.0 §11 reports -------------------
+    @GetMapping("/allotment/reports/register")
+    List<Map<String, Object>> getAllotmentRegister(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(required = false) String status) {
+        return allotmentReports.getAllotmentRegister(startDate, endDate, status);
+    }
+
+    @GetMapping("/allotment/reports/ageing")
+    List<Map<String, Object>> getAllotmentAgeing() { return allotmentReports.getAllotmentAgeing(); }
+
+    @GetMapping("/allotment/reports/release-register")
+    List<Map<String, Object>> getReleaseRegister(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(required = false) String status) {
+        return allotmentReports.getReleaseRegister(startDate, endDate, status);
+    }
+
+    @GetMapping("/adjustment/reports/amendment-analysis")
+    List<Map<String, Object>> getAmendmentAnalysis(
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(required = false) String reasonCode) {
+        return allotmentReports.getAmendmentAnalysis(type, startDate, endDate, reasonCode);
+    }
+
+    @GetMapping("/allotment/reports/pending-approval")
+    List<Map<String, Object>> getPendingApproval(
+            @RequestParam(required = false) String module) {
+        return allotmentReports.getPendingApproval(module);
+    }
+
+    @GetMapping("/adjustment/reports/physical-variance")
+    List<Map<String, Object>> getPhysicalVariance(
+            @RequestParam(required = false) String location,
+            @RequestParam(required = false) String itemCode) {
+        return allotmentReports.getPhysicalVariance(location, itemCode);
+    }
+
     /** Printable PDF of a GRN / Store Receipt (inline for print, attachment when download=true). */
     @GetMapping({"/store-receipt/{type}/{id}/print"})
     ResponseEntity<byte[]> printGrn(@PathVariable String type, @PathVariable Long id,
@@ -249,11 +342,17 @@ public class DocumentController {
         Map<String, Object> row = svc.getRow(type, id);
         String docNo = String.valueOf(row.getOrDefault("docNo", type)).replaceAll("[^A-Za-z0-9_-]", "_");
         String disposition = download ? "attachment" : "inline";
+        byte[] pdf = switch (type) {
+            case "dc-return", "invoice-return", "stock-return" -> printer.returnNote(row, type);
+            case "stock-allotment", "stock-release" -> printer.allotmentIssuance(row, type);
+            case "stock-amendment", "physical-stock-amendment" -> printer.amendmentNote(row, type);
+            default -> printer.salesDoc(row, type);
+        };
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         disposition + "; filename=\"" + docNo + ".pdf\"")
                 .contentType(MediaType.APPLICATION_PDF)
-                .body(printer.salesDoc(row, type));
+                .body(pdf);
     }
 
     /** Printable PDF for stock-issue-request. */

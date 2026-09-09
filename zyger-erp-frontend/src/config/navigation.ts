@@ -484,9 +484,9 @@ export const NAV_ITEMS: NavTopItem[] = [
           },
           {
             type: 'item',
-            id: 'internal-return',
-            label: 'Internal Return',
-            screenId: 'internal-return',
+            id: 'stock-return',
+            label: 'Stock Return',
+            screenId: 'stock-return',
             tabIcon: 'assignment_return',
           },
         ],

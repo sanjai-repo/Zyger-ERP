@@ -82,7 +82,7 @@ public class DataSeeder implements CommandLineRunner {
                                       "STOCK_ISSUE_REQUEST", "RM_ISSUE", "GENERAL_ISSUE", "JO_DC", "INTERNAL_ISSUE", "ISSUE_AGAINST_RECEIPT",
                                       "SALES_DC", "JO_DC_ISSUE", "GENERAL_DC", "RETURN_DC", "TRANSFER_DC",
                                       "PURCHASE_INVOICE", "SUBCONTRACT_INVOICE",
-                                      "INWARD_RETURN", "DC_RETURN", "INVOICE_RETURN", "INTERNAL_RETURN", "RECEIVED_AGAINST_ISSUE", "RECEIPT_RETURN",
+                                      "INWARD_RETURN", "DC_RETURN", "INVOICE_RETURN", "STOCK_RETURN", "RECEIVED_AGAINST_ISSUE", "RECEIPT_RETURN",
                                       "STOCK_ALLOTMENT", "STOCK_RELEASE", "STOCK_AMENDMENT", "PHYSICAL_STOCK_AMENDMENT",
                                       "STOCK_LEDGER", "STOCK_BALANCE"},
             "PURCHASE", new String[]{"PURCHASE_REQUEST", "SUPPLIER_ENQUIRY", "SUPPLIER_QUOTATION", "PURCHASE_ORDER",

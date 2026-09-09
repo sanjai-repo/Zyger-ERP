@@ -98,7 +98,7 @@ public class ScreenSeedService {
         put("inward-return", "Inward Return", "INVENTORY");
         put("dc-return", "DC Return", "INVENTORY");
         put("invoice-return", "Invoice Return", "INVENTORY");
-        put("internal-return", "Internal Return", "INVENTORY");
+        put("stock-return", "Stock Return", "INVENTORY");
         put("received-against-issue", "Received Against Issue", "INVENTORY");
         put("receipt-return", "Receipt Return", "INVENTORY");
         put("stock-allotment", "Stock Allotment", "INVENTORY");

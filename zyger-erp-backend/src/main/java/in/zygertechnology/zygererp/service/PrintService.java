@@ -1573,4 +1573,224 @@ public class PrintService {
             throw new IllegalStateException("PDF print failed", e);
         }
     }
+
+    /** Return Note (DC / Invoice / Stock Return) — Return Management FRS v1.0 §12. */
+    public byte[] returnNote(Map<String, Object> doc, String type) {
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            Document pdf = new Document(PageSize.A4, 40, 40, 44, 44);
+            PdfWriter.getInstance(pdf, baos);
+            pdf.open();
+            String title;
+            switch (type) {
+                case "invoice-return" -> title = "INVOICE RETURN NOTE";
+                case "stock-return" -> title = "STOCK RETURN NOTE";
+                default -> title = "DC RETURN NOTE";
+            }
+            PdfPTable titleBar = new PdfPTable(1);
+            titleBar.setWidthPercentage(100);
+            PdfPCell tc = new PdfPCell(new Phrase(title, FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, Color.WHITE)));
+            tc.setBackgroundColor(DARK);
+            tc.setPadding(12);
+            tc.setHorizontalAlignment(Element.ALIGN_CENTER);
+            titleBar.addCell(tc);
+            pdf.add(titleBar);
+            pdf.add(spacer(4));
+
+            PdfPTable details = new PdfPTable(4);
+            details.setWidthPercentage(100);
+            details.setWidths(new float[]{18, 32, 18, 32});
+            field(details, "Return No", str(doc.get("docNo")));
+            field(details, "Return Date", str(doc.get("docDate")));
+            field(details, "Source No", str(doc.get("sourceNo")));
+            field(details, "Status", str(doc.get("status")));
+            Object reason = doc.get("reasonCode");
+            field(details, "Reason", reason == null ? "" : str(reason));
+            Object cond = doc.get("condition");
+            field(details, "Condition", cond == null ? "" : str(cond));
+            pdf.add(details);
+            pdf.add(spacer(6));
+
+            pdf.add(section("RETURNED ITEMS", doc));
+            PdfPTable t = new PdfPTable(7);
+            t.setWidthPercentage(100);
+            t.setWidths(new float[]{10, 26, 12, 18, 12, 10, 12});
+            header(t, "Sl No");
+            header(t, "Item Code");
+            header(t, "Location");
+            header(t, "Batch / Heat");
+            header(t, "Qty");
+            header(t, "Status");
+            header(t, "Ret Qty");
+            int i = 1;
+            for (Object o : lines(doc)) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> line = (Map<String, Object>) o;
+                cell(t, String.valueOf(i++), true);
+                cell(t, str(line.get("itemCode")), false);
+                cell(t, firstOf(line, "location"), false);
+                cell(t, firstOf(line, "batchNo", "batchNumber", "heatNo"), false);
+                cell(t, num(line.get("qty")), true);
+                cell(t, firstOf(line, "stockStatus"), false);
+                cell(t, num(firstOfObj(line, "currentReturnQty", "returnedQty")), true);
+            }
+            pdf.add(t);
+            pdf.add(spacer(12));
+            pdf.add(signatures());
+            pdf.close();
+            return baos.toByteArray();
+        } catch (Exception e) {
+            log.error("Return Note PDF generation failed", e);
+            throw new IllegalStateException("PDF print failed", e);
+        }
+    }
+
+    /** Allotment / Release note — Stock Allotment & Adjustment FRS v1.0 §12. */
+    public byte[] allotmentIssuance(Map<String, Object> doc, String type) {
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            Document pdf = new Document(PageSize.A4, 40, 40, 44, 44);
+            PdfWriter.getInstance(pdf, baos);
+            pdf.open();
+            String title = "stock-release".equals(type) ? "STOCK RELEASE NOTE" : "STOCK ALLOTMENT NOTE";
+            PdfPTable titleBar = new PdfPTable(1);
+            titleBar.setWidthPercentage(100);
+            PdfPCell tc = new PdfPCell(new Phrase(title, FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, Color.WHITE)));
+            tc.setBackgroundColor(DARK);
+            tc.setPadding(12);
+            tc.setHorizontalAlignment(Element.ALIGN_CENTER);
+            titleBar.addCell(tc);
+            pdf.add(titleBar);
+            pdf.add(spacer(4));
+
+            PdfPTable details = new PdfPTable(4);
+            details.setWidthPercentage(100);
+            details.setWidths(new float[]{18, 32, 18, 32});
+            field(details, "Doc No", str(doc.get("docNo")));
+            field(details, "Date", str(doc.get("docDate")));
+            field(details, "Item Code", str(doc.get("itemCode")));
+            field(details, "Status", str(doc.get("status")));
+            Object ref = doc.get("referenceNo");
+            field(details, "Reference", ref == null ? "" : str(ref));
+            pdf.add(details);
+            pdf.add(spacer(6));
+
+            pdf.add(section("ITEMS", doc));
+            PdfPTable t = new PdfPTable(6);
+            t.setWidthPercentage(100);
+            t.setWidths(new float[]{8, 26, 18, 16, 16, 16});
+            header(t, "Sl No");
+            header(t, "Item Code");
+            header(t, "Location");
+            header(t, "Batch / Heat");
+            header(t, "Qty");
+            header(t, "Status");
+            int i = 1;
+            for (Object o : lines(doc)) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> line = (Map<String, Object>) o;
+                cell(t, String.valueOf(i++), true);
+                cell(t, str(line.get("itemCode")), false);
+                cell(t, firstOf(line, "location"), false);
+                cell(t, firstOf(line, "batchNo", "batchNumber", "heatNo"), false);
+                cell(t, num(line.get("qty")), true);
+                cell(t, firstOf(line, "stockStatus"), false);
+            }
+            pdf.add(t);
+            pdf.add(spacer(12));
+            pdf.add(signatures());
+            pdf.close();
+            return baos.toByteArray();
+        } catch (Exception e) {
+            log.error("Allotment/Release PDF generation failed", e);
+            throw new IllegalStateException("PDF print failed", e);
+        }
+    }
+
+    /** Stock / Physical Amendment note — Stock Allotment & Adjustment FRS v1.0 §12. */
+    public byte[] amendmentNote(Map<String, Object> doc, String type) {
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            Document pdf = new Document(PageSize.A4, 40, 40, 44, 44);
+            PdfWriter.getInstance(pdf, baos);
+            pdf.open();
+            String title = "physical-stock-amendment".equals(type) ? "PHYSICAL STOCK AMENDMENT" : "STOCK AMENDMENT";
+            PdfPTable titleBar = new PdfPTable(1);
+            titleBar.setWidthPercentage(100);
+            PdfPCell tc = new PdfPCell(new Phrase(title, FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, Color.WHITE)));
+            tc.setBackgroundColor(DARK);
+            tc.setPadding(12);
+            tc.setHorizontalAlignment(Element.ALIGN_CENTER);
+            titleBar.addCell(tc);
+            pdf.add(titleBar);
+            pdf.add(spacer(4));
+
+            PdfPTable details = new PdfPTable(4);
+            details.setWidthPercentage(100);
+            details.setWidths(new float[]{18, 32, 18, 32});
+            field(details, "Doc No", str(doc.get("docNo")));
+            field(details, "Date", str(doc.get("docDate")));
+            field(details, "Item Code", str(doc.get("itemCode")));
+            field(details, "Status", str(doc.get("status")));
+            Object reason = doc.get("reasonCode");
+            field(details, "Reason", reason == null ? "" : str(reason));
+            pdf.add(details);
+            pdf.add(spacer(6));
+
+            pdf.add(section("ADJUSTMENT LINES", doc));
+            boolean physical = "physical-stock-amendment".equals(type);
+            PdfPTable t = new PdfPTable(physical ? 7 : 5);
+            t.setWidthPercentage(100);
+            if (physical) t.setWidths(new float[]{8, 26, 12, 12, 12, 14, 16});
+            else t.setWidths(new float[]{8, 26, 20, 18, 28});
+            header(t, "Sl No");
+            header(t, "Item Code");
+            header(t, "Location");
+            header(t, "Batch / Heat");
+            if (physical) {
+                header(t, "System");
+                header(t, "Physical");
+                header(t, "Variance");
+            } else {
+                header(t, "Diff Qty");
+            }
+            int i = 1;
+            for (Object o : lines(doc)) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> line = (Map<String, Object>) o;
+                cell(t, String.valueOf(i++), true);
+                cell(t, str(line.get("itemCode")), false);
+                cell(t, firstOf(line, "location", "storeLocation"), false);
+                cell(t, firstOf(line, "batchNo", "batchNumber", "heatNo"), false);
+                if (physical) {
+                    cell(t, num(line.get("systemQty")), true);
+                    cell(t, num(line.get("physicalQty")), true);
+                    cell(t, num(line.get("varianceQty")), true);
+                } else {
+                    cell(t, num(line.get("differenceQty")), true);
+                }
+            }
+            pdf.add(t);
+            pdf.add(spacer(12));
+            pdf.add(signatures());
+            pdf.close();
+            return baos.toByteArray();
+        } catch (Exception e) {
+            log.error("Amendment PDF generation failed", e);
+            throw new IllegalStateException("PDF print failed", e);
+        }
+    }
+
+    private String firstOf(Map<String, Object> m, String... keys) {
+        for (String k : keys) {
+            Object v = m.get(k);
+            if (v != null && !String.valueOf(v).isBlank()) return str(v);
+        }
+        return "";
+    }
+
+    private Object firstOfObj(Map<String, Object> m, String... keys) {
+        for (String k : keys) {
+            Object v = m.get(k);
+            if (v != null) return v;
+        }
+        return null;
+    }
 }

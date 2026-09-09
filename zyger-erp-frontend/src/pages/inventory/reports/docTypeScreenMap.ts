@@ -3,7 +3,7 @@ const DOC_KEYS = [
   'general-dc',
   'general-inward',
   'general-issue',
-  'internal-return',
+  'stock-return',
   'invoice-return',
   'issue-internal-external',
   'jo-dc',

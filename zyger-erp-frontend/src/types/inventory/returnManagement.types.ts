@@ -28,6 +28,8 @@ export interface ReturnManagementLinePayload {
   batchNo?: string;
   heatNo?: string;
   location: string;
+  stockStatus?: string;
+  originalIssueNo?: string;
   remarks?: string;
 }
 
@@ -38,6 +40,10 @@ export interface ReturnManagementPayload {
   originalDcDate?: string;
   soNumber?: string;
   customerPoNumber?: string;
+  originalIssueType?: string;
+  jobOrderNo?: string;
+  condition?: string;
+  reduceConsumption?: boolean;
   reasonCode: string;
   inspectionRequired?: string;
   remarks?: string;
@@ -53,6 +59,8 @@ export interface ReturnManagementLineDto {
   batchNo?: string;
   heatNo?: string;
   location?: string;
+  stockStatus?: string;
+  originalIssueNo?: string;
   remarks?: string;
 }
 
@@ -65,6 +73,10 @@ export interface ReturnManagementDto {
   originalDcDate?: string;
   soNumber?: string;
   customerPoNumber?: string;
+  originalIssueType?: string;
+  jobOrderNo?: string;
+  condition?: string;
+  reduceConsumption?: boolean;
   reasonCode: string;
   inspectionRequired?: string;
   remarks?: string;

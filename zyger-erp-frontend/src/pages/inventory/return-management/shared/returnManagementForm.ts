@@ -16,6 +16,8 @@ export interface ReturnManagementLineFormState {
   batchNo: string;
   heatNo: string;
   location: string;
+  stockStatus: string;
+  originalIssueNo: string;
   remarks: string;
 }
 
@@ -26,6 +28,10 @@ export interface ReturnManagementFormState {
   originalDcDate: string;
   soNumber: string;
   customerPoNumber: string;
+  originalIssueType: string;
+  jobOrderNo: string;
+  condition: string;
+  reduceConsumption: boolean;
   reasonCode: string;
   inspectionRequired: string;
   remarks: string;
@@ -54,6 +60,8 @@ export function createEmptyLine(
     batchNo: '',
     heatNo: '',
     location: defaultLocation,
+    stockStatus: 'FREE',
+    originalIssueNo: '',
     remarks: '',
   };
 }
@@ -66,6 +74,10 @@ export function createEmptyForm(): ReturnManagementFormState {
     originalDcDate: '',
     soNumber: '',
     customerPoNumber: '',
+    originalIssueType: '',
+    jobOrderNo: '',
+    condition: 'FREE',
+    reduceConsumption: true,
     reasonCode: '',
     inspectionRequired: '',
     remarks: '',
@@ -97,6 +109,8 @@ function lineFromDto(
     batchNo: line.batchNo ?? '',
     heatNo: line.heatNo ?? '',
     location: line.location ?? fallbackLocation,
+    stockStatus: line.stockStatus ?? 'FREE',
+    originalIssueNo: line.originalIssueNo ?? '',
     remarks: line.remarks ?? '',
   };
 }
@@ -114,6 +128,10 @@ export function formFromDto(
     originalDcDate: dto.originalDcDate || (dto as any).originalDcDate || (dto as any).dcDate || '',
     soNumber: dto.soNumber || (dto as any).salesOrderNumber || '',
     customerPoNumber: dto.customerPoNumber || (dto as any).customerPo || '',
+    originalIssueType: dto.originalIssueType ?? '',
+    jobOrderNo: dto.jobOrderNo ?? '',
+    condition: dto.condition ?? 'FREE',
+    reduceConsumption: dto.reduceConsumption !== false,
     reasonCode: dto.reasonCode ?? '',
     inspectionRequired: dto.inspectionRequired ?? '',
     remarks: dto.remarks ?? '',
@@ -136,6 +154,10 @@ export function buildPayload(
     originalDcDate: form.originalDcDate.trim() || undefined,
     soNumber: form.soNumber.trim() || undefined,
     customerPoNumber: form.customerPoNumber.trim() || undefined,
+    originalIssueType: form.originalIssueType.trim() || undefined,
+    jobOrderNo: form.jobOrderNo.trim() || undefined,
+    condition: form.condition.trim() || undefined,
+    reduceConsumption: form.reduceConsumption,
     reasonCode: form.reasonCode.trim(),
     inspectionRequired: form.inspectionRequired.trim() || undefined,
     remarks: form.remarks.trim() || undefined,
@@ -147,6 +169,8 @@ export function buildPayload(
       batchNo: line.batchNo.trim() || undefined,
       heatNo: line.heatNo.trim() || undefined,
       location: line.location.trim(),
+      stockStatus: line.stockStatus.trim() || 'FREE',
+      originalIssueNo: line.originalIssueNo.trim() || undefined,
       remarks: line.remarks.trim() || undefined,
     })),
   };

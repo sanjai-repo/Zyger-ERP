@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ReturnManagementTypeConfig } from '../../../../types/inventory/returnManagement.types';
 import ReturnManagementList from './ReturnManagementList';
 import ReturnManagementForm from './ReturnManagementForm';
+import ReturnManagementReports from './ReturnManagementReports';
 
 interface ReturnManagementScreenProps {
   initialDocId?: string;
@@ -14,7 +15,7 @@ export default function ReturnManagementScreen({
   initialDocId,
   viewOnly: viewOnlyProp,
 }: ReturnManagementScreenProps) {
-  const [mode, setMode] = useState<'list' | 'form'>('list');
+  const [mode, setMode] = useState<'list' | 'form' | 'reports'>('list');
   const [documentId, setDocumentId] = useState<string | null>(null);
   const [formKey, setFormKey] = useState(0);
   const [viewOnly, setViewOnly] = useState(false);
@@ -70,12 +71,38 @@ export default function ReturnManagementScreen({
     );
   }
 
+  if (mode === 'reports') {
+    return (
+      <div>
+        <div style={{ marginBottom: '16px' }}>
+          <button type="button" className="btn" onClick={handleBack}>
+            <span className="material-symbols-rounded">arrow_back</span>
+            Back to List
+          </button>
+        </div>
+        <ReturnManagementReports />
+      </div>
+    );
+  }
+
   return (
-    <ReturnManagementList
-      config={config}
-      onAdd={openAdd}
-      onEdit={openEdit}
-      onView={openView}
-    />
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => setMode('reports')}
+        >
+          <span className="material-symbols-rounded">analytics</span>
+          Registers & Reports
+        </button>
+      </div>
+      <ReturnManagementList
+        config={config}
+        onAdd={openAdd}
+        onEdit={openEdit}
+        onView={openView}
+      />
+    </div>
   );
 }

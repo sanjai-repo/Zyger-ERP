@@ -31,34 +31,49 @@ public class DocumentValidationService {
      * Validates return eligibility for return documents.
      */
     public void validateReturnEligibility(String key, DocEntity e) {
-        if (!Set.of("dc-return", "invoice-return", "inward-return", "internal-return", "receipt-return").contains(key)) return;
+        if (!Set.of("dc-return", "invoice-return", "inward-return", "stock-return", "receipt-return").contains(key)) return;
 
         String originalDocNo = null;
-        String origDocType = null;
+        java.util.List<String> candidateTypes = java.util.List.of();
         if ("dc-return".equals(key) && e instanceof DcReturn dr) {
+            // Return Management FRS v1.0 §2: dc-return accepts jo-dc / general-dc /
+            // transfer-dc sources, with the legacy sales-dc path kept for backward compat.
             originalDocNo = dr.getOriginalDcNumber();
-            origDocType = "sales-dc";
+            candidateTypes = java.util.List.of("jo-dc", "general-dc", "transfer-dc", "sales-dc");
         } else if ("invoice-return".equals(key) && e instanceof InvoiceReturn ir) {
             originalDocNo = ir.getOriginalInvoiceNumber();
-            origDocType = "sales-invoice";
+            candidateTypes = java.util.List.of("sales-invoice");
         } else if ("inward-return".equals(key) && e instanceof InwardReturn ir) {
             originalDocNo = ir.getOriginalDocumentNo();
-            origDocType = "po-inward";
-        } else if ("internal-return".equals(key) && e instanceof InternalReturn ir) {
-            originalDocNo = ir.getOriginalDocumentNo();
-            origDocType = "general-issue";
+            candidateTypes = java.util.List.of("po-inward");
+        } else if ("stock-return".equals(key) && e instanceof StockReturn sr) {
+            originalDocNo = sr.getOriginalDocumentNo();
+            String hint = sr.getOriginalIssueType();
+            if (hint != null && !hint.isBlank()) {
+                candidateTypes = java.util.List.of(hint);
+            } else {
+                candidateTypes = java.util.List.of("rm-issue", "general-issue", "issue-internal-external");
+            }
         } else if ("receipt-return".equals(key) && e instanceof ReceiptReturn rr) {
             originalDocNo = rr.getOriginalDocumentNo();
-            origDocType = "general-inward";
+            candidateTypes = java.util.List.of("general-inward");
         }
 
-        if (originalDocNo != null && origDocType != null) {
+        if (originalDocNo != null && !originalDocNo.isBlank() && !candidateTypes.isEmpty()) {
             try {
-                String en = resolveEntityName(origDocType);
-                Long count = em.createQuery("select count(d) from " + en + " d where d.docNo = :docNo", Long.class)
-                        .setParameter("docNo", originalDocNo)
-                        .getSingleResult();
-                if (count == null || count == 0) {
+                String entityName = null;
+                for (String t : candidateTypes) {
+                    String en = resolveEntityName(t);
+                    if (en == null) continue;
+                    Long count = em.createQuery("select count(d) from " + en + " d where d.docNo = :docNo", Long.class)
+                            .setParameter("docNo", originalDocNo)
+                            .getSingleResult();
+                    if (count != null && count > 0) {
+                        entityName = en;
+                        break;
+                    }
+                }
+                if (entityName == null) {
                     throw new IllegalArgumentException("Original document not found: " + originalDocNo);
                 }
             } catch (IllegalArgumentException ex) {
@@ -161,11 +176,16 @@ public class DocumentValidationService {
         // For now, return a simple mapping
         return switch (docType) {
             case "sales-dc" -> "SalesDc";
+            case "jo-dc" -> "JoDc";
+            case "general-dc" -> "GeneralDc";
+            case "transfer-dc" -> "TransferDc";
             case "sales-invoice" -> "SalesInvoice";
             case "po-inward" -> "PoInward";
             case "general-issue" -> "GeneralIssue";
+            case "issue-internal-external" -> "IssueInternalExternal";
             case "general-inward" -> "GeneralInward";
-            default -> "DocEntity";
+            case "rm-issue" -> "RmIssue";
+            default -> null;
         };
     }
 }

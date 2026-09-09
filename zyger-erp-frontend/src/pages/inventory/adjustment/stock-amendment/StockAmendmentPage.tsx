@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import StockAmendmentList from './StockAmendmentList';
 import StockAmendmentForm from './StockAmendmentForm';
+import AllotmentAdjustmentReports from '../../allotment/shared/AllotmentAdjustmentReports';
 
 export default function StockAmendmentPage({ initialDocId, viewOnly: viewOnlyProp }: { initialDocId?: string; viewOnly?: boolean } = {}) {
-  const [mode, setMode] = useState<'list' | 'form'>('list');
+  const [mode, setMode] = useState<'list' | 'form' | 'reports'>('list');
   const [documentId, setDocumentId] = useState<string | null>(null);
   const [formKey, setFormKey] = useState(0);
   const [viewOnly, setViewOnly] = useState(false);
@@ -58,7 +59,33 @@ export default function StockAmendmentPage({ initialDocId, viewOnly: viewOnlyPro
     );
   }
 
+  if (mode === 'reports') {
+    return (
+      <div>
+        <div style={{ marginBottom: '16px' }}>
+          <button type="button" className="btn" onClick={handleBack}>
+            <span className="material-symbols-rounded">arrow_back</span>
+            Back to List
+          </button>
+        </div>
+        <AllotmentAdjustmentReports />
+      </div>
+    );
+  }
+
   return (
-    <StockAmendmentList onAdd={openAdd} onEdit={openEdit} onView={openView} />
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => setMode('reports')}
+        >
+          <span className="material-symbols-rounded">analytics</span>
+          Registers & Reports
+        </button>
+      </div>
+      <StockAmendmentList onAdd={openAdd} onEdit={openEdit} onView={openView} />
+    </div>
   );
 }

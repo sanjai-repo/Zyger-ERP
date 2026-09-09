@@ -23,5 +23,11 @@ public class InvoiceReturnLine extends BaseLine implements LineEntity {
     @Column(name="return_reason", length=200) String returnReason;
     @Column(name="material_condition", length=100) String materialCondition;
 
+    // Return Management FRS v1.0 §3 — value fields
+    @Column(precision=18, scale=4) BigDecimal rate;
+    @Column(precision=18, scale=4) BigDecimal taxPercent;
+    @Column(precision=18, scale=2) BigDecimal amount;
+    @Column(name="line_condition", length=100) String lineCondition;
+
     @Override public BigDecimal getQty() { return currentReturnQty == null ? BigDecimal.ZERO : currentReturnQty; }
 }

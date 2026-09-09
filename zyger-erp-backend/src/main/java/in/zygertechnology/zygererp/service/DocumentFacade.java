@@ -379,13 +379,15 @@ public class DocumentFacade {
             "batchNumber", "batchNo",
             "heatNumber", "heatNo",
             "lineRemark", "remarks",
-            "disposition", "materialCondition"
+            "disposition", "materialCondition",
+            "returnedQty", "currentReturnQty"
         ),
         "invoice-return", Map.of(
             "batchNumber", "batchNo",
             "heatNumber", "heatNo",
             "lineRemark", "remarks",
-            "disposition", "materialCondition"
+            "disposition", "materialCondition",
+            "returnedQty", "currentReturnQty"
         )
     );
 
@@ -451,7 +453,7 @@ public class DocumentFacade {
             "po-inward", "lo-inward", "jo-inward", "general-inward", "return-inward", "grn",
             "rm-issue", "general-issue", "jo-dc-issue", "issue-internal-external",
             "issue-against-receipt", "sales-dc", "jo-dc", "general-dc", "return-dc",
-            "transfer-dc", "dc-return", "invoice-return", "inward-return", "internal-return",
+            "transfer-dc", "dc-return", "invoice-return", "inward-return", "stock-return",
             "received-against-issue", "receipt-return", "stock-allotment", "stock-release",
             "stock-issue-request", "physical-stock-amendment", "subcontract-invoice",
             // Purchase
@@ -930,7 +932,12 @@ public class DocumentFacade {
         // Legacy fallback validation for doc types not yet in the workflow engine
         try {
             switch (action) {
-                case "submit" -> requireStatus(e, "DRAFT", "REJECTED");
+                case "submit" -> {
+                    requireStatus(e, "DRAFT", "REJECTED");
+                    // Stock Allotment & Adjustment FRS v1.0 §5/§6: out-of-tolerance
+                    // amendments must be submitted (they cannot bypass approval).
+                    applyThresholdRouting(key, e);
+                }
                 case "approve" -> {
                     requireStatus(e, "DRAFT", "SUBMITTED");
                     validateApprovalReferences(key, e);
@@ -946,6 +953,15 @@ public class DocumentFacade {
                         if (Set.of("CONFIRMED", "POSTED", "RECEIVED").contains(e.getStatus())) {
                             reverseDcStock(key, e, user);
                         }
+                    }
+                    // Return Management FRS v1.0 §7 B#5: cancelling a posted return
+                    // reverses the stock-in and restores the source doc status.
+                    if (Set.of("dc-return", "invoice-return", "stock-return").contains(key)
+                            && "POSTED".equals(e.getStatus())) {
+                        if (note == null || note.isBlank()) {
+                            throw new IllegalArgumentException("Cancellation remark is mandatory for a posted return");
+                        }
+                        reverseReturnStock(key, e, user);
                     }
                 }
                 case "confirm-receipt", "confirm_receipt" -> {
@@ -972,6 +988,10 @@ public class DocumentFacade {
                         requireStatus(e, "APPROVED");
                     }
                     if ("sales-dc".equals(key)) enforceFinalInspectionGate(e, options);
+                    // Stock Allotment & Adjustment FRS v1.0 §5/§6: amendments whose
+                    // |difference| (qty or value) or physical variance exceeds the
+                    // configured tolerance must be explicitly approved before posting.
+                    requireThresholdApproved(key, e);
                     post(key, e, boolVal(options.get("authorizedOverride")));
                     e.setStatus("POSTED");
                     postToVendorLedger(key, e);
@@ -1150,6 +1170,13 @@ public class DocumentFacade {
         }
         if (joDcReceiving && e instanceof JoDc joDc) {
             updateJobOrderReceiptStatus(joDc, e.getCreatedBy());
+        }
+
+        // Return Management FRS v1.0 §6/§7/§8: after a return posts its stock-in,
+        // propagate PARTIALLY/FULLY_RETURNED to the source doc and (for Stock Return)
+        // reduce booked consumption.
+        if (Set.of("dc-return", "invoice-return", "stock-return").contains(key)) {
+            afterPostReturnHooks(key, e, e.getCreatedBy());
         }
     }
 
@@ -1437,14 +1464,25 @@ public class DocumentFacade {
             }
             return "FREE";
         }
-        boolean isReturn = Set.of("dc-return", "invoice-return").contains(key);
+        boolean isReturn = Set.of("dc-return", "invoice-return", "stock-return").contains(key);
         if (isReturn) {
+            if ("stock-return".equals(key)) {
+                String condition = headerStr(e, "condition");
+                String mapped = returnStockStatus(condition);
+                if ("SCRAP".equals(mapped) || "DAMAGED".equals(mapped) || "REJECTED".equals(mapped)) {
+                    return mapped;
+                }
+                return "FREE";
+            }
             String disposition = headerStr(e, "disposition");
             if ("PENDING_INSPECTION".equalsIgnoreCase(disposition) || "REWORK".equalsIgnoreCase(disposition)) {
                 return "QC_HOLD";
             }
             if ("SCRAP".equalsIgnoreCase(disposition)) {
                 return "SCRAP";
+            }
+            if ("DAMAGED".equalsIgnoreCase(disposition) || "REJECTED".equalsIgnoreCase(disposition)) {
+                return disposition.toUpperCase();
             }
             return "FREE";
         }
@@ -1541,7 +1579,7 @@ public class DocumentFacade {
     }
 
     private void validateReturnEligibility(String key, DocEntity e) {
-        if (!Set.of("dc-return", "invoice-return", "inward-return", "internal-return", "receipt-return", "purchase-return").contains(key)) return;
+        if (!Set.of("dc-return", "invoice-return", "inward-return", "stock-return", "receipt-return", "purchase-return").contains(key)) return;
 
         String originalDocNo = null;
         String origDocType = null;
@@ -1550,16 +1588,16 @@ public class DocumentFacade {
             origDocType = "purchase-order".equals(pr.getOriginalDocumentType()) ? "purchase-order" : "po-inward";
         } else if ("dc-return".equals(key) && e instanceof DcReturn dr) {
             originalDocNo = dr.getOriginalDcNumber();
-            origDocType = "sales-dc";
+            origDocType = originalDocTypeForDcReturn(dr);
         } else if ("invoice-return".equals(key) && e instanceof InvoiceReturn ir) {
             originalDocNo = ir.getOriginalInvoiceNumber();
             origDocType = "sales-invoice";
         } else if ("inward-return".equals(key) && e instanceof InwardReturn ir) {
             originalDocNo = ir.getOriginalDocumentNo();
             origDocType = "po-inward";
-        } else if ("internal-return".equals(key) && e instanceof InternalReturn ir) {
-            originalDocNo = ir.getOriginalDocumentNo();
-            origDocType = "general-issue";
+        } else if ("stock-return".equals(key) && e instanceof StockReturn sr) {
+            originalDocNo = sr.getOriginalDocumentNo();
+            origDocType = originalWhat("stock-return", "rm-issue", e, sr.getOriginalIssueType());
         } else if ("receipt-return".equals(key) && e instanceof ReceiptReturn rr) {
             originalDocNo = headerStr(e, "originalDocumentNo");
             origDocType = "rm-issue";
@@ -1593,7 +1631,7 @@ public class DocumentFacade {
 
             // NOTE: lineClass/qtyField must match the persistent attribute name on each
             // line entity — DcReturnLine/InvoiceReturnLine only expose a Java getQty()
-            // override backed by currentReturnQty, InternalReturnLine/InwardReturnLine/
+            // override backed by currentReturnQty, StockReturnLine/InwardReturnLine/
             // ReceiptReturnLine are backed by returnedQty. HQL resolves against mapped
             // attributes, not interface method overrides, so "l.qty" always threw
             // UnknownPathException here, and inward-return fell through to the
@@ -1601,7 +1639,7 @@ public class DocumentFacade {
             // original-document reference from ever being created.
             String lineClass = switch (key) {
                 case "dc-return" -> "DcReturnLine";
-                case "internal-return" -> "InternalReturnLine";
+                case "stock-return" -> "StockReturnLine";
                 case "receipt-return" -> "ReceiptReturnLine";
                 case "inward-return" -> "InwardReturnLine";
                 case "purchase-return" -> "PurchaseReturnLine";
@@ -1615,7 +1653,7 @@ public class DocumentFacade {
             String origField = switch (key) {
                 case "dc-return" -> "doc.originalDcNumber";
                 case "invoice-return" -> "doc.originalInvoiceNumber";
-                case "inward-return", "internal-return", "receipt-return", "purchase-return" -> "doc.originalDocumentNo";
+                case "inward-return", "stock-return", "receipt-return", "purchase-return" -> "doc.originalDocumentNo";
                 default -> null;
             };
 
@@ -1747,6 +1785,13 @@ public class DocumentFacade {
                 throw new IllegalStateException("Amendment reason code is required (INV-ADJ-01)");
             }
         }
+        // Stock Allotment & Adjustment FRS v1.0 §6 D: a Physical Stock Amendment must
+        // reference the Stock Verification / Count Sheet that produced the physical qty.
+        if ("physical-stock-amendment".equals(key) && e instanceof PhysicalStockAmendment psa) {
+            if (psa.getCountSheetNo() == null || psa.getCountSheetNo().isBlank()) {
+                throw new IllegalStateException("Physical Stock Amendment requires a Count Sheet reference (INV-PHY-ADJ-04)");
+            }
+        }
     }
 
     private void validateReleaseBalance(String key, DocEntity e) {
@@ -1771,7 +1816,7 @@ public class DocumentFacade {
             double alreadyReleased = 0;
             try {
                 var result = em.createQuery(
-                    "SELECT COALESCE(SUM(l.qty), 0) FROM StockReleaseLine l WHERE l.doc.allotmentNo = :allotmentNo AND l.doc.status = 'POSTED' AND l.itemCode = :itemCode AND l.doc.docNo != :docNo", java.math.BigDecimal.class)
+                    "SELECT COALESCE(SUM(l.releasedQty), 0) FROM StockReleaseLine l WHERE l.doc.allotmentNo = :allotmentNo AND l.doc.status = 'POSTED' AND l.itemCode = :itemCode AND l.doc.docNo != :docNo", java.math.BigDecimal.class)
                     .setParameter("allotmentNo", allotmentNo)
                     .setParameter("itemCode", itemCode)
                     .setParameter("docNo", e.getDocNo() != null ? e.getDocNo() : "")
@@ -1957,10 +2002,15 @@ public class DocumentFacade {
             String targetType = null;
             String refNo = null;
             switch (key) {
-                case "dc-return" -> { if (e instanceof DcReturn d) { refNo = d.getOriginalDcNumber(); targetType = "sales-dc"; } }
+                case "dc-return" -> { if (e instanceof DcReturn d) { refNo = d.getOriginalDcNumber(); targetType = originalDocTypeForDcReturn(d); } }
                 case "invoice-return" -> { if (e instanceof InvoiceReturn d) { refNo = d.getOriginalInvoiceNumber(); targetType = "sales-invoice"; } }
                 case "inward-return" -> { if (e instanceof InwardReturn d) { refNo = d.getOriginalDocumentNo(); targetType = "po-inward"; } }
-                case "internal-return" -> { if (e instanceof InternalReturn d) { refNo = d.getOriginalDocumentNo(); targetType = "general-issue"; } }
+                case "stock-return" -> {
+                    if (e instanceof StockReturn d) {
+                        refNo = d.getOriginalDocumentNo();
+                        targetType = originalWhat("stock-return", "rm-issue", d, d.getOriginalIssueType());
+                    }
+                }
                 case "receipt-return" -> { refNo = headerStr(e, "originalDocumentNo"); targetType = "rm-issue"; }
                 case "rm-issue" -> { if (e instanceof RmIssue d) { refNo = d.getIssueRequestNo(); targetType = "stock-issue-request"; } }
                 case "stock-release" -> { if (e instanceof StockRelease d) { refNo = d.getAllotmentNo(); targetType = "stock-allotment"; } }
@@ -1997,6 +2047,324 @@ public class DocumentFacade {
             docLinks.record(key, e.getId(), targetType, target.getId(), user);
         } catch (Exception ex) {
             log.warn("recordDocLinks skipped for {} {}: {}", key, e.getDocNo(), ex.getMessage());
+        }
+    }
+
+    @Autowired @Lazy StockReturnConsumptionService consumptionAdjustment;
+    @Autowired in.zygertechnology.zygererp.config.ApplicationProperties appProps;
+
+    /**
+     * DC Module FRS v1.0 / Return Management FRS v1.0 §2 B#3:
+     * a DC Return references a Delivery Challan.  FRS §2 allows JO DC / General DC /
+     * Transfer DC; the existing sales-dc legacy path is also supported for backward
+     * compatibility.  We try the FRS types first and fall back to sales-dc.
+     */
+    private String originalDocTypeForDcReturn(DcReturn dr) {
+        if (dr == null) return "jo-dc";
+        for (String t : List.of("jo-dc", "general-dc", "transfer-dc", "sales-dc")) {
+            try {
+                getByNumber(t, dr.getOriginalDcNumber());
+                return t;
+            } catch (IllegalArgumentException ignored) {}
+        }
+        return "jo-dc";
+    }
+
+    /**
+     * Return Management FRS v1.0 §2 B#3: Stock Return references a Stock Issue document.
+     * The original issue type is either provided by the frontend via
+     * {@code StockReturn.originalIssueType} or resolved by probing the known issue
+     * types for the given document number.  If {@code explicitHint} is provided and
+     * valid it is tried first.
+     */
+    private String originalWhat(String returnKey, String defaultType, DocEntity e, String explicitHint) {
+        String issueNo = switch (returnKey) {
+            case "stock-return" -> e instanceof StockReturn sr ? sr.getOriginalDocumentNo() : "";
+            case "dc-return" -> e instanceof DcReturn dr ? dr.getOriginalDcNumber() : "";
+            default -> "";
+        };
+        if (issueNo == null || issueNo.isBlank()) return defaultType;
+
+        if (explicitHint != null && !explicitHint.isBlank()) {
+            try {
+                getByNumber(explicitHint, issueNo);
+                return explicitHint;
+            } catch (IllegalArgumentException ignored) {}
+        }
+
+        for (String t : List.of("rm-issue", "general-issue", "issue-internal-external")) {
+            try {
+                getByNumber(t, issueNo);
+                return t;
+            } catch (IllegalArgumentException ignored) {}
+        }
+        return defaultType;
+    }
+
+    // ---------- Return Management FRS v1.0 §6 / §7 / §8 / §9 -------------------
+
+    private void afterPostReturnHooks(String key, DocEntity e, String user) {
+        updateSourceReturnStatus(key, e, user);
+        if ("stock-return".equals(key) && e instanceof StockReturn sr) {
+            reduceStockReturnConsumption(sr, user);
+        }
+    }
+
+    private void updateSourceReturnStatus(String key, DocEntity e, String user) {
+        String srcType = null;
+        String srcNo = null;
+        if ("dc-return".equals(key) && e instanceof DcReturn dr) {
+            srcType = originalDocTypeForDcReturn(dr);
+            srcNo  = dr.getOriginalDcNumber();
+        } else if ("invoice-return".equals(key) && e instanceof InvoiceReturn ir) {
+            srcType = "sales-invoice";
+            srcNo  = ir.getOriginalInvoiceNumber();
+        } else if ("stock-return".equals(key) && e instanceof StockReturn sr) {
+            srcType = originalWhat("stock-return", "rm-issue", sr, sr.getOriginalIssueType());
+            srcNo  = sr.getOriginalDocumentNo();
+        }
+        if (srcType == null || srcNo == null || srcNo.isBlank()) return;
+        try {
+            DocEntity src = getByNumber(srcType, srcNo);
+            if ("CANCELLED".equals(src.getStatus())) return;
+            if (!(src instanceof DocEntity de)) return;
+            BigDecimal totalReturned = computeTotalReturned(srcType, srcNo, key, e.getDocNo());
+            BigDecimal originalQty = computeOriginalIssueQty(srcType, srcNo);
+            if (originalQty.compareTo(BigDecimal.ZERO) <= 0) return;
+            String target = totalReturned.compareTo(originalQty) >= 0 ? "FULLY_RETURNED" : "PARTIALLY_RETURNED";
+            if (!target.equals(src.getStatus())) {
+                de.setStatus(target);
+                de.setUpdatedBy(user);
+                de.setUpdatedAt(Instant.now());
+            }
+        } catch (Exception ex) {
+            log.warn("updateSourceReturnStatus skipped for {} {}: {}", key, e.getDocNo(), ex.getMessage());
+        }
+    }
+
+    private BigDecimal computeTotalReturned(String srcType, String srcNo, String ignoreReturnKey, String ignoreReturnDocNo) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (String rt : List.of("dc-return", "invoice-return", "stock-return")) {
+            String lineClass = switch (rt) {
+                case "dc-return" -> "DcReturnLine";
+                case "stock-return" -> "StockReturnLine";
+                default -> "InvoiceReturnLine";
+            };
+            String origField = switch (rt) {
+                case "dc-return" -> "doc.originalDcNumber";
+                case "invoice-return" -> "doc.originalInvoiceNumber";
+                default -> "doc.originalDocumentNo";
+            };
+            try {
+                String qtyField = switch (rt) {
+                    case "dc-return", "invoice-return" -> "currentReturnQty";
+                    default -> "returnedQty";
+                };
+                BigDecimal sum = (BigDecimal) em.createQuery(
+                    "SELECT COALESCE(SUM(" + qtyField + "), 0) FROM " + lineClass + " l " +
+                    "WHERE l.doc.status = 'POSTED' AND " + origField + " = :origNo AND l.doc.docNo != :ignoreDocNo")
+                    .setParameter("origNo", srcNo)
+                    .setParameter("ignoreDocNo", ignoreReturnDocNo)
+                    .getSingleResult();
+                total = total.add(sum != null ? sum : BigDecimal.ZERO);
+            } catch (Exception ignored) {}
+        }
+        return total;
+    }
+
+    private BigDecimal computeOriginalIssueQty(String srcType, String srcNo) {
+        try {
+            DocEntity src = getByNumber(srcType, srcNo);
+            BigDecimal qty = BigDecimal.ZERO;
+            for (LineEntity l : src.getLines()) {
+                qty = qty.add(l.getQty() != null ? l.getQty() : BigDecimal.ZERO);
+            }
+            return qty;
+        } catch (Exception e) { return BigDecimal.ZERO; }
+    }
+
+    private void reduceStockReturnConsumption(StockReturn sr, String user) {
+        try {
+            String issueNo = sr.getOriginalDocumentNo();
+            if (issueNo == null || issueNo.isBlank()) return;
+            RmIssue rmIssue = (RmIssue) getByNumber("rm-issue", issueNo);
+            String jobCardNo = rmIssue.getJobOrderNo();
+            if (jobCardNo == null || jobCardNo.isBlank()) return;
+
+            for (StockReturnLine line : sr.getLines()) {
+                BigDecimal retQty = line.getReturnedQty();
+                if (retQty == null || retQty.signum() <= 0) continue;
+                String stockStatus = line.getStockStatus();
+                if ("DAMAGED".equalsIgnoreCase(stockStatus) || "SCRAP".equalsIgnoreCase(stockStatus)) continue;
+                consumptionAdjustment.reduceConsumedQty(jobCardNo, line.getItemCode(),
+                        line.getBatchNo() != null ? line.getBatchNo() : "", retQty, user);
+            }
+        } catch (Exception ex) {
+            log.warn("reduceStockReturnConsumption skipped for {}: {}", sr.getDocNo(), ex.getMessage());
+        }
+    }
+
+    // ---------- Cancel-reverse for returns (FRS §7 B#5) --------------------------
+
+    private void reverseReturnStock(String key, DocEntity e, String user) {
+        if (e.getLines() == null) return;
+        LocalDate now = LocalDate.now();
+        String sourceLoc = headerStr(e, "sourceLocation");
+        for (LineEntity line : e.getLines()) {
+            String stockStatus = "FREE";
+            try {
+                if (e instanceof DcReturn dr && dr.getDisposition() != null) {
+                    stockStatus = returnStockStatus(dr.getDisposition());
+                } else if (e instanceof InvoiceReturn ir && ir.getDisposition() != null) {
+                    stockStatus = returnStockStatus(ir.getDisposition());
+                } else if (e instanceof StockReturn sr) {
+                    stockStatus = returnStockStatus(headerStr(e, "condition"));
+                }
+            } catch (Exception ignored) {}
+
+            String loc = stockStatus.equals("FREE") && !sourceLoc.isBlank() ? sourceLoc : findReturnReverseLocation(e, stockStatus);
+            stockService.recordStockOut(e.getDocNo(), key, key.toUpperCase().replace("-", "_") + "_CANCEL",
+                    line.getItemCode(), loc, line.getBatchNo(), line.getHeatNo(),
+                    line.getQty(), now, user, true);
+        }
+    }
+
+    private String findReturnReverseLocation(DocEntity e, String stockStatus) {
+        if ("FREE".equals(stockStatus)) return headerStr(e, "sourceLocation");
+        return headerStr(e, "sourceLocation");
+    }
+
+    private String returnStockStatus(String condition) {
+        if (condition == null) return "FREE";
+        return switch (condition.toUpperCase()) {
+            case "DAMAGED" -> "DAMAGED";
+            case "REJECTED" -> "REJECTED";
+            case "SCRAP" -> "SCRAP";
+            default -> "FREE";
+        };
+    }
+
+    // ---------- Threshold auto-approval routing (Allotment & Adjustment FRS §5/§6) -
+
+    private boolean amendmentExceedsThreshold(String key, DocEntity e) {
+        if ("stock-amendment".equals(key) && e instanceof StockAmendment sa) {
+            BigDecimal diff = sa.getDifferenceQty();
+            if (diff == null) diff = BigDecimal.ZERO;
+            // Stock Allotment & Adjustment FRS v1.0 §5: threshold is on absolute
+            // difference quantity (value threshold is reserved for when a rate is
+            // carried; none of the amendment entities exposes one today).
+            return diff.abs().doubleValue() >= appProps.getAdjustmentThresholdQty();
+        }
+        if ("physical-stock-amendment".equals(key) && e instanceof PhysicalStockAmendment psa) {
+            for (PhysicalStockAmendmentLine pl : psa.getLines()) {
+                BigDecimal system = pl.getSystemQty() == null ? BigDecimal.ZERO : pl.getSystemQty();
+                BigDecimal physical = pl.getPhysicalQty() == null ? BigDecimal.ZERO : pl.getPhysicalQty();
+                BigDecimal variancePct = (system.compareTo(BigDecimal.ZERO) == 0)
+                        ? (physical.compareTo(BigDecimal.ZERO) == 0 ? BigDecimal.ZERO : BigDecimal.valueOf(100))
+                        : physical.subtract(system).abs()
+                            .divide(system, 6, java.math.RoundingMode.HALF_UP)
+                            .multiply(BigDecimal.valueOf(100));
+                if (variancePct.doubleValue() >= appProps.getPhysicalVarianceTolerancePct()) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private void applyThresholdRouting(String key, DocEntity e) {
+        if (!Set.of("stock-amendment", "physical-stock-amendment").contains(key)) return;
+        if (amendmentExceedsThreshold(key, e)) {
+            throw new BusinessRuleException("APPROVAL_REQUIRED_THRESHOLD",
+                    "Adjustment exceeds configured tolerance — has been routed for approval",
+                    Map.of("docKey", key, "docId", e.getId() != null ? e.getId() : 0));
+        }
+    }
+
+    /** Blocks posting an out-of-tolerance amendment unless it has explicit approval. */
+    private void requireThresholdApproved(String key, DocEntity e) {
+        if (!Set.of("stock-amendment", "physical-stock-amendment").contains(key)) return;
+        if (amendmentExceedsThreshold(key, e) && !"APPROVED".equals(e.getStatus())) {
+            throw new IllegalStateException(
+                    "Adjustment exceeds configured tolerance — requires explicit approval before posting");
+        }
+    }
+
+    private String systemUser(DocEntity e) {
+        String u = e.getUpdatedBy();
+        return (u == null || u.isBlank()) ? "system" : u;
+    }
+
+    // ---------- Source-line lookup endpoint for return forms ----------------------
+
+    public record SourceLineInfo(String itemCode, String itemDesc, BigDecimal originalQty, BigDecimal alreadyReturned, String condition) {}
+    public record ReturnSourceLookup(List<SourceLineInfo> lines, BigDecimal totalOriginal, BigDecimal totalReturned) {}
+
+    public ReturnSourceLookup getReturnSourceLines(String key, String docNo) {
+        return getReturnSourceLines(key, docNo, null);
+    }
+
+    public ReturnSourceLookup getReturnSourceLines(String key, String docNo, String sourceTypeHint) {
+        String origDocType = switch (key) {
+            case "dc-return" -> "jo-dc";
+            case "invoice-return" -> "sales-invoice";
+            case "stock-return" -> "rm-issue";
+            default -> "";
+        };
+        if (sourceTypeHint != null && !sourceTypeHint.isBlank()) {
+            try { getByNumber(sourceTypeHint, docNo); origDocType = sourceTypeHint; } catch (IllegalArgumentException ignored) {}
+        }
+        if ("dc-return".equals(key)) {
+            for (String t : List.of("jo-dc", "general-dc", "transfer-dc", "sales-dc")) {
+                try { getByNumber(t, docNo); origDocType = t; break; } catch (IllegalArgumentException ignored) {}
+            }
+        }
+        try {
+            DocEntity origDoc = getByNumber(origDocType, docNo);
+            Map<String, SourceLineInfo> byKey = new LinkedHashMap<>();
+            for (LineEntity l : origDoc.getLines()) {
+                String ik = l.getItemCode() + "|" + (l.getBatchNo() == null ? "" : l.getBatchNo());
+                BigDecimal origQty = l.getQty() != null ? l.getQty() : BigDecimal.ZERO;
+                String desc = itemCache.findByCode(l.getItemCode()).map(ItemMaster::getDescription).orElse("");
+                byKey.computeIfAbsent(ik, k -> new SourceLineInfo(ik.split("\\|")[0], desc, BigDecimal.ZERO, BigDecimal.ZERO, null));
+                SourceLineInfo cur = byKey.get(ik);
+                byKey.put(ik, new SourceLineInfo(cur.itemCode(), desc, cur.originalQty().add(origQty), cur.alreadyReturned(), null));
+            }
+            BigDecimal totalOriginal = BigDecimal.ZERO;
+            BigDecimal totalReturned = BigDecimal.ZERO;
+            List<SourceLineInfo> out = new ArrayList<>();
+            for (SourceLineInfo si : byKey.values()) {
+                BigDecimal alreadyReturned = BigDecimal.ZERO;
+                try {
+                    String lineClass = switch (key) {
+                        case "dc-return" -> "DcReturnLine";
+                        case "stock-return" -> "StockReturnLine";
+                        default -> "InvoiceReturnLine";
+                    };
+                    String origField = switch (key) {
+                        case "dc-return" -> "doc.originalDcNumber";
+                        case "invoice-return" -> "doc.originalInvoiceNumber";
+                        default -> "doc.originalDocumentNo";
+                    };
+                    String qtyField = switch (key) {
+                        case "dc-return", "invoice-return" -> "currentReturnQty";
+                        default -> "returnedQty";
+                    };
+                    alreadyReturned = (BigDecimal) em.createQuery(
+                        "SELECT COALESCE(SUM(l." + qtyField + "), 0) FROM " + lineClass + " l " +
+                        "WHERE l.doc.status = 'POSTED' AND " + origField + " = :origNo AND l.itemCode = :itemCode")
+                        .setParameter("origNo", docNo)
+                        .setParameter("itemCode", si.itemCode())
+                        .getSingleResult();
+                    if (alreadyReturned == null) alreadyReturned = BigDecimal.ZERO;
+                } catch (Exception ignored) {}
+                totalOriginal = totalOriginal.add(si.originalQty());
+                totalReturned = totalReturned.add(alreadyReturned);
+                out.add(new SourceLineInfo(si.itemCode(), si.itemDesc(), si.originalQty(), alreadyReturned, null));
+            }
+            return new ReturnSourceLookup(out, totalOriginal, totalReturned);
+        } catch (Exception e) {
+            return new ReturnSourceLookup(List.of(), BigDecimal.ZERO, BigDecimal.ZERO);
         }
     }
 }

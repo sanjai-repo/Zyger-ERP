@@ -11,7 +11,7 @@ export const REASON_CODE_OPTIONS = [
 export const DC_RETURN_CONFIG: ReturnManagementTypeConfig = {
   screenId: 'dc-return',
   title: 'DC Return',
-  prefix: 'DRT',
+  prefix: 'DCRET',
   icon: 'assignment_return',
   subtitle: 'DC Return — stock increases on posting',
   apiPath: '/inventory/return-management/dc-return',
@@ -23,7 +23,7 @@ export const DC_RETURN_CONFIG: ReturnManagementTypeConfig = {
 export const INVOICE_RETURN_CONFIG: ReturnManagementTypeConfig = {
   screenId: 'invoice-return',
   title: 'Invoice Return',
-  prefix: 'IVR',
+  prefix: 'INVRET',
   icon: 'assignment_return',
   subtitle: 'Invoice Return — stock increases on posting',
   apiPath: '/inventory/return-management/invoice-return',
@@ -32,14 +32,14 @@ export const INVOICE_RETURN_CONFIG: ReturnManagementTypeConfig = {
   partyLabel: 'Customer',
 };
 
-export const INTERNAL_RETURN_CONFIG: ReturnManagementTypeConfig = {
-  screenId: 'internal-return',
-  title: 'Internal Return',
-  prefix: 'INR',
+export const STOCK_RETURN_CONFIG: ReturnManagementTypeConfig = {
+  screenId: 'stock-return',
+  title: 'Stock Return',
+  prefix: 'STKRET',
   icon: 'assignment_return',
-  subtitle: 'Internal Return — stock increases on posting',
-  apiPath: '/inventory/return-management/internal-return',
-  transactionType: 'INTERNAL_RETURN',
+  subtitle: 'Stock Return — stock increases on posting, consumption reduced on posting',
+  apiPath: '/inventory/return-management/stock-return',
+  transactionType: 'STOCK_RETURN',
   partySource: 'departments',
   partyLabel: 'Department',
 };

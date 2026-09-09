@@ -44,15 +44,20 @@ public final class DocTypes {
         reg("purchase-invoice",       "PI",  Effect.NONE,   "PURCHASE_INVOICE",       null, false);
         reg("subcontract-invoice",    "SI",  Effect.NONE,   "SUBCONTRACT_INVOICE",    "processedQty", true);
         reg("inward-return",          "IRT", Effect.IN,     "INWARD_RETURN",          "returnedQty", true);
-        reg("dc-return",              "DRT", Effect.IN,     "DC_RETURN",              "returnedQty", true);
-        reg("invoice-return",         "IVT", Effect.IN,     "INVOICE_RETURN",         "returnedQty", true);
-        reg("internal-return",        "IRN", Effect.IN,     "INTERNAL_RETURN",        "returnedQty", true);
+        // Return Management Module FRS v1.0 §8: numbering prefixes canonicalized to
+        // DCRET / INVRET / STKRET (previously DRT / IVT / IRN).
+        reg("dc-return",              "DCRET", Effect.IN,   "DC_RETURN",              "currentReturnQty", true);
+        reg("invoice-return",         "INVRET", Effect.IN,  "INVOICE_RETURN",         "currentReturnQty", true);
+        reg("stock-return",           "STKRET", Effect.IN,  "STOCK_RETURN",           "returnedQty", true);
         reg("received-against-issue", "RAI", Effect.IN,     "RECEIVED_AGAINST_ISSUE", "returnedQty", true);
         reg("receipt-return",         "RCT", Effect.IN,     "RECEIPT_RETURN",         "returnedQty", true);
-        reg("stock-allotment",        "SA",  Effect.NONE,   "STOCK_ALLOTMENT",        "allottedQty", true);
-        reg("stock-release",          "SR",  Effect.OUT,    "STOCK_RELEASE",          "releasedQty", true);
-        reg("stock-amendment",        "SAM", Effect.ADJUST, "STOCK_AMENDMENT",        null, false);
-        reg("physical-stock-amendment","PSA",Effect.ADJUST, "PHYSICAL_STOCK_AMENDMENT","physicalQty", true);
+        // Stock Allotment & Adjustment Modules FRS v1.0 §10: numbering prefixes
+        // canonicalized to STKALT / STKREL / STKAMD / PHYAMD (previously SA / SR /
+        // SAM / PSA).
+        reg("stock-allotment",        "STKALT", Effect.NONE,   "STOCK_ALLOTMENT",        "allottedQty", true);
+        reg("stock-release",          "STKREL", Effect.OUT,    "STOCK_RELEASE",          "releasedQty", true);
+        reg("stock-amendment",        "STKAMD", Effect.ADJUST, "STOCK_AMENDMENT",        null, false);
+        reg("physical-stock-amendment","PHYAMD",Effect.ADJUST, "PHYSICAL_STOCK_AMENDMENT","physicalQty", true);
         reg("quality-inspection",      "QI",  Effect.NONE,  "QUALITY_INSPECTION",     null, true);
         reg("quality-ncr",             "NCR", Effect.NONE,  "QUALITY_NCR",            null, true);
         reg("quality-concession",      "CON", Effect.NONE,  "QUALITY_CONCESSION",     null, false);
