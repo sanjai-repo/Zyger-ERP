@@ -13,6 +13,7 @@ import type {
   DeliveryChallanTypeConfig,
 } from '../../../../types/inventory/deliveryChallan.types';
 import { getApiErrorMessage } from '../../../../utils/apiError';
+import { filterPurchaseRelevantItems } from '../../../../utils/itemClassification';
 import { lookupDocumentByNumber } from '../../../../utils/documentLookup';
 import StatusBadge from '../../../../components/common/StatusBadge';
 import ConfirmActionModal from '../../../../components/common/ConfirmActionModal';
@@ -70,18 +71,64 @@ export default function DeliveryChallanForm({
   const [actionModal, setActionModal] = useState<ActionModalState | null>(
     null
   );
+  const [showPrintPreview, setShowPrintPreview] = useState<boolean>(false);
 
   const validationBoxRef = useRef<HTMLDivElement | null>(null);
   const initializedFor = useRef<string | null>(null);
 
   const items = lookups.items;
-  const locations = lookups.locations;
+  const locations = lookups.stores ?? [];
   const partyOptions = lookups.partyOptions;
 
   const itemsMap = useMemo(
     () => new Map(items.map((item) => [item.code, item])),
     [items]
   );
+
+  const allowedItems = useMemo(() => filterPurchaseRelevantItems(items), [items]);
+
+  const partyDetailsMap = useMemo(() => {
+    const map = new Map<
+      string,
+      { address: string; gstin: string; contactPerson: string; phone: string }
+    >();
+    if (config.partySource === 'customers') {
+      const customers = lookups.parties as Array<{
+        code: string;
+        address?: string;
+        billingAddress?: string;
+        shippingAddress?: string;
+        gstin?: string;
+        contactPerson?: string;
+        phone?: string;
+        mobile?: string;
+      }>;
+      for (const p of customers) {
+        map.set(p.code, {
+          address: p.billingAddress || p.address || p.shippingAddress || '',
+          gstin: p.gstin || '',
+          contactPerson: p.contactPerson || '',
+          phone: p.phone || p.mobile || '',
+        });
+      }
+    }
+    return map;
+  }, [lookups.parties, config.partySource]);
+
+  useEffect(() => {
+    if (config.partySource !== 'customers') return;
+    const info = partyDetailsMap.get(form.party);
+    if (!info) return;
+    setForm((prev) => ({
+      ...prev,
+      partyAddress: info.address,
+      partyGstin: info.gstin,
+      partyContactPerson: info.contactPerson,
+      partyPhone: info.phone,
+      billingAddress: prev.billingAddress || info.address,
+      gstin: prev.gstin || info.gstin,
+    }));
+  }, [form.party, partyDetailsMap, config.partySource]);
 
   const status = currentDocument?.status ?? 'DRAFT';
   const editable = !viewOnly && (status === 'DRAFT' || status === 'REJECTED');
@@ -107,36 +154,26 @@ export default function DeliveryChallanForm({
   }, [documentId, documentQuery.data, items]);
 
   useEffect(() => {
-    if (!items.length) {
-      return;
-    }
+    if (!items.length) return;
 
     setForm((previous) => ({
       ...previous,
       lines: previous.lines.map((line) => {
-        if (!line.itemCode) {
-          return line;
-        }
-
+        if (!line.itemCode) return line;
         const item = itemsMap.get(line.itemCode);
-
-        if (!item) {
-          return line;
-        }
-
+        if (!item) return line;
         return {
           ...line,
           itemDesc: line.itemDesc || item.description,
+          hsnCode: line.hsnCode || (item as any)?.hsnCode || (item as any)?.hsn || '',
+          uom: line.uom || item.uom || 'PCS',
         };
       }),
     }));
   }, [items, itemsMap]);
 
   const validationErrors = useMemo(() => {
-    if (!validationMode) {
-      return [];
-    }
-
+    if (!validationMode) return [];
     return validateDeliveryChallanForm(
       config,
       form,
@@ -156,7 +193,7 @@ export default function DeliveryChallanForm({
 
   const updateField = (
     key: keyof Omit<DeliveryChallanFormState, 'lines'>,
-    value: string
+    value: any
   ) => {
     setForm((previous) => {
       const next = {
@@ -166,36 +203,106 @@ export default function DeliveryChallanForm({
 
       if (key === 'sourceLocation') {
         next.lines = previous.lines.map((line) =>
-          line.location ? line : { ...line, location: value }
+          (!line.location || line.location === previous.sourceLocation)
+            ? { ...line, location: value }
+            : line
         );
+      }
+
+      if (key === 'party') {
+        const info = partyDetailsMap.get(value);
+        if (info) {
+          next.partyAddress = info.address;
+          next.partyGstin = info.gstin;
+          next.partyContactPerson = info.contactPerson;
+          next.partyPhone = info.phone;
+          if (config.screenId === 'general-dc') {
+            next.billingAddress = info.address;
+            next.gstin = info.gstin;
+          }
+        }
       }
 
       return next;
     });
 
-    if (key === 'linkedDocumentNo' && value) {
-      const isInv = value.toUpperCase().startsWith('INV');
-      const docTypeKey = isInv ? 'sales-invoice' : config.screenId === 'sales-dc' ? 'sales-order' : config.screenId === 'jo-dc' ? 'job-order' : config.screenId === 'return-dc' ? 'sales-dc' : 'general-inward';
-      void lookupDocumentByNumber(docTypeKey, value).then((doc) => {
+    if (key === 'jobOrderNo' && value) {
+      lookupDocumentByNumber('job-order', value).then((doc: any) => {
         if (!doc) return;
-        setForm((prev) => {
-          const nextParty = doc.party || doc.customer || doc.supplier || prev.party;
-          const nextLines = doc.lines && doc.lines.length > 0 ? doc.lines.map((l) => ({
+        setForm((prev) => ({
+          ...prev,
+          party: doc.jobWorker || doc.party || doc.vendor || prev.party,
+          processName: doc.processName || doc.process || prev.processName,
+          lines: doc.lines && doc.lines.length > 0 ? doc.lines.map((l: any) => ({
             itemCode: l.itemCode,
-            itemDesc: l.itemDesc || itemsMap.get(l.itemCode)?.description || l.description || '',
-            qty: String(l.qty || l.billedQty || l.dispatchQty || ''),
-            batchNo: l.batchNo || l.batchNumber || '',
-            heatNo: l.heatNo || l.heatNumber || '',
-            location: l.location || prev.sourceLocation || 'MAIN',
-            remarks: l.remarks || l.lineRemark || '',
-          })) : prev.lines;
+            itemDesc: l.itemDesc || itemsMap.get(l.itemCode)?.description || '',
+            qty: String(l.pendingQty || l.qty || ''),
+            rate: String(l.rate || ''),
+            amount: String(l.amount || ''),
+            hsnCode: l.hsnCode || '',
+            uom: l.uom || 'PCS',
+            batchNo: l.batchNo || '',
+            heatNo: l.heatNo || '',
+            location: prev.sourceLocation || '',
+            taxPercent: '',
+            transferValue: '',
+            remarks: l.remarks || '',
+          })) : prev.lines,
+        }));
+      });
+    }
 
-          return {
-            ...prev,
-            party: nextParty,
-            lines: nextLines,
-          };
-        });
+    if (key === 'salesOrderNo' && value) {
+      lookupDocumentByNumber('sales-order', value).then((doc: any) => {
+        if (!doc) return;
+        setForm((prev) => ({
+          ...prev,
+          party: doc.customer || doc.party || prev.party,
+          billingAddress: doc.billingAddress || prev.billingAddress,
+          shippingAddress: doc.shippingAddress || prev.shippingAddress,
+          gstin: doc.gstin || prev.gstin,
+          lines: doc.lines && doc.lines.length > 0 ? doc.lines.map((l: any) => ({
+            itemCode: l.itemCode,
+            itemDesc: l.itemDesc || itemsMap.get(l.itemCode)?.description || '',
+            qty: String(l.qty || l.orderQty || ''),
+            rate: String(l.rate || ''),
+            amount: String(l.amount || ''),
+            hsnCode: l.hsnCode || '',
+            uom: l.uom || 'PCS',
+            batchNo: l.batchNo || '',
+            heatNo: l.heatNo || '',
+            location: prev.sourceLocation || '',
+            taxPercent: String(l.taxPercent || ''),
+            transferValue: '',
+            remarks: l.remarks || '',
+          })) : prev.lines,
+        }));
+      });
+    }
+
+    if (key === 'transferRequestNo' && value) {
+      lookupDocumentByNumber('stock-issue-request', value).then((doc: any) => {
+        if (!doc) return;
+        setForm((prev) => ({
+          ...prev,
+          sourceLocation: doc.sourceLocation || prev.sourceLocation,
+          destinationLocation: doc.destinationLocation || prev.destinationLocation,
+          lines: doc.lines && doc.lines.length > 0 ? doc.lines.map((l: any) => ({
+            itemCode: l.itemCode,
+            itemDesc: l.itemDesc || itemsMap.get(l.itemCode)?.description || '',
+            qty: String(l.requestedQty || l.qty || ''),
+            rate: '',
+            amount: '',
+            hsnCode: l.hsnCode || '',
+            uom: l.uom || 'PCS',
+            batchNo: l.batchNo || '',
+            heatNo: l.heatNo || '',
+            location: doc.sourceLocation || prev.sourceLocation || '',
+            taxPercent: '',
+            transferValue: String(l.transferValue || ''),
+            remarks: l.remarks || '',
+          })) : prev.lines,
+        }));
       });
     }
   };
@@ -207,7 +314,6 @@ export default function DeliveryChallanForm({
   ) => {
     setForm((previous) => {
       const lines = [...previous.lines];
-
       const line = {
         ...lines[index],
         [key]: value,
@@ -216,13 +322,22 @@ export default function DeliveryChallanForm({
       if (key === 'itemCode') {
         const item = itemsMap.get(value);
         line.itemDesc = item?.description ?? '';
+        line.hsnCode = (item as any)?.hsnCode ?? (item as any)?.hsn ?? '';
+        line.uom = item?.uom ?? 'PCS';
         if (!line.location) {
-          line.location = previous.sourceLocation || 'MAIN';
+          line.location = previous.sourceLocation || locations[0]?.code || '';
+        }
+      }
+
+      if (key === 'qty' || key === 'rate') {
+        const q = parseFloat(key === 'qty' ? value : line.qty) || 0;
+        const r = parseFloat(key === 'rate' ? value : line.rate) || 0;
+        if (q > 0 && r > 0) {
+          line.amount = (q * r).toFixed(2);
         }
       }
 
       lines[index] = line;
-
       return {
         ...previous,
         lines,
@@ -231,10 +346,7 @@ export default function DeliveryChallanForm({
   };
 
   const addLine = () => {
-    if (!editable) {
-      return;
-    }
-
+    if (!editable) return;
     setForm((previous) => ({
       ...previous,
       lines: [...previous.lines, createEmptyLine(previous.sourceLocation)],
@@ -242,19 +354,14 @@ export default function DeliveryChallanForm({
   };
 
   const deleteLine = (index: number) => {
-    if (!editable) {
-      return;
-    }
-
+    if (!editable) return;
     setForm((previous) => {
       const lines = [...previous.lines];
-
       if (lines.length === 1) {
         lines[0] = createEmptyLine(previous.sourceLocation);
       } else {
         lines.splice(index, 1);
       }
-
       return {
         ...previous,
         lines,
@@ -268,22 +375,12 @@ export default function DeliveryChallanForm({
     actionMutation.isPending;
 
   const save = async (submit: boolean) => {
-    if (!editable) {
-      return;
-    }
+    if (!editable) return;
 
     setValidationMode(submit ? 'submit' : 'draft');
+    const errors = validateDeliveryChallanForm(config, form, itemsMap, submit);
 
-    const errors = validateDeliveryChallanForm(
-      config,
-      form,
-      itemsMap,
-      submit
-    );
-
-    if (errors.length > 0) {
-      return;
-    }
+    if (errors.length > 0) return;
 
     try {
       const targetId = documentId ?? currentDocument?.id ?? null;
@@ -297,7 +394,6 @@ export default function DeliveryChallanForm({
       }
 
       const payload = buildPayload(form);
-
       let saved: DeliveryChallanDto;
 
       if (targetId) {
@@ -309,11 +405,11 @@ export default function DeliveryChallanForm({
         saved = await createMutation.mutateAsync(payload);
       }
 
-      if (submit && saved.status !== 'SUBMITTED' && saved.id) {
+      if (submit && saved.status !== 'POSTED' && saved.status !== 'CONFIRMED' && saved.id) {
         saved = await actionMutation.mutateAsync({
           id: saved.id,
-          action: 'submit',
-          note: '',
+          action: 'post',
+          note: 'Save & Confirm DC',
         });
       }
 
@@ -327,7 +423,7 @@ export default function DeliveryChallanForm({
 
       toast(
         `${saved.docNo || config.title} ${
-          submit ? 'submitted' : 'saved as draft'
+          submit ? 'saved and stock movement posted' : 'saved as draft'
         }.`
       );
     } catch (saveError) {
@@ -369,23 +465,6 @@ export default function DeliveryChallanForm({
     }
   };
 
-  const handlePost = async () => {
-    setValidationMode('submit');
-
-    const errors = validateDeliveryChallanForm(
-      config,
-      form,
-      itemsMap,
-      true
-    );
-
-    if (errors.length > 0) {
-      return;
-    }
-
-    await runAction('post', '');
-  };
-
   const openActionModal = (action: 'approve' | 'reject' | 'cancel') => {
     const id = currentDocument?.id ?? documentId;
 
@@ -419,12 +498,29 @@ export default function DeliveryChallanForm({
       setActionModal({
         action,
         title: `Cancel ${docNumber}`,
-        body: 'This creates an auditable reversal.',
+        body: 'Provide mandatory cancellation remark. This automatically reverses stock movement.',
         okLabel: 'Cancel Document',
         danger: true,
       });
     }
   };
+
+  const handlePrint = (download: boolean) => {
+    const id = currentDocument?.id || documentId;
+    if (!id) {
+      toast('Please save the document before printing.', 'error');
+      return;
+    }
+    const printUrl = `/api/inventory/delivery-challan/${config.screenId}/${id}/print?download=${download}`;
+    if (download) {
+      window.open(printUrl, '_blank');
+    } else {
+      setShowPrintPreview(true);
+    }
+  };
+
+  const totalQty = form.lines.reduce((acc, l) => acc + (parseFloat(l.qty) || 0), 0);
+  const totalAmount = form.lines.reduce((acc, l) => acc + (parseFloat(l.amount) || (parseFloat(l.qty) || 0) * (parseFloat(l.rate) || 0)), 0);
 
   if (documentId && documentQuery.isPending) {
     return (
@@ -468,23 +564,6 @@ export default function DeliveryChallanForm({
     );
   }
 
-  if (lookups.isError) {
-    return (
-      <div className="panel">
-        <div className="empty">
-          <span className="material-symbols-rounded">error</span>
-          {lookups.errorMessage}
-          <div style={{ marginTop: '14px' }}>
-            <button className="btn" onClick={() => lookups.refetch()}>
-              <span className="material-symbols-rounded">refresh</span>
-              Retry
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <>
       <div className="pg-head">
@@ -497,8 +576,7 @@ export default function DeliveryChallanForm({
       <div className="note">
         <span className="material-symbols-rounded">info</span>
         <span>
-          Workflow: DRAFT → SUBMITTED → APPROVED → POSTED • Posting reduces
-          stock
+          Workflow: DRAFT → CONFIRMED / POSTED • Stock movement posts automatically on Save
         </span>
       </div>
 
@@ -519,11 +597,12 @@ export default function DeliveryChallanForm({
       </div>
 
       <form onSubmit={(event) => event.preventDefault()}>
+        {/* SECTION A: COMMON HEADER FIELDS */}
         <div className="panel">
           <div className="panel-h">
             <h2>
               <span className="material-symbols-rounded">description</span>
-              Header
+              Header Section (Common Fields)
             </h2>
 
             <StatusBadge status={status} />
@@ -531,13 +610,18 @@ export default function DeliveryChallanForm({
 
           <div className="fgrid">
             <label className="fld">
-              <span>Doc No</span>
+              <span>DC Type</span>
+              <input className="in" value={config.title} readOnly tabIndex={-1} />
+            </label>
+
+            <label className="fld">
+              <span>DC No</span>
               <input className="in" value={docNo} readOnly tabIndex={-1} />
             </label>
 
             <label className="fld">
               <span>
-                Date <em>*</em>
+                DC Date <em>*</em>
               </span>
               <input
                 type="date"
@@ -549,22 +633,13 @@ export default function DeliveryChallanForm({
             </label>
 
             <label className="fld">
-              <span>
-                {config.partyLabel} <em>*</em>
-              </span>
-              <select
+              <span>Financial Year</span>
+              <input
                 className="in"
-                value={form.party}
-                disabled={!editable}
-                onChange={(event) => updateField('party', event.target.value)}
-              >
-                <option value="">— Select —</option>
-                {partyOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+                value={form.date ? `${new Date(form.date).getFullYear()}-${new Date(form.date).getFullYear() + 1}` : '2026-2027'}
+                readOnly
+                tabIndex={-1}
+              />
             </label>
 
             <label className="fld">
@@ -579,50 +654,94 @@ export default function DeliveryChallanForm({
                   updateField('sourceLocation', event.target.value)
                 }
               >
-                <option value="">— Select —</option>
+                <option value="">— Select Location —</option>
                 {locations.map((location) => (
                   <option key={location.code} value={location.code}>
-                    {location.code}
+                    {location.name || location.code}
                   </option>
                 ))}
               </select>
             </label>
 
-            {config.screenId === 'transfer-dc' && (
-              <label className="fld">
-                <span>To Location <em>*</em></span>
+            <label className="fld">
+              <span>
+                {config.partyLabel} <em>*</em>
+              </span>
+              {config.screenId === 'transfer-dc' ? (
                 <select
                   className="in"
-                  value={form.destinationLocation || ''}
+                  value={form.destinationLocation || form.party}
                   disabled={!editable}
-                  onChange={(event) =>
-                    updateField('destinationLocation', event.target.value)
-                  }
+                  onChange={(event) => {
+                    updateField('party', event.target.value);
+                    updateField('destinationLocation', event.target.value);
+                  }}
                 >
-                  <option value="">— Select —</option>
+                  <option value="">— Select To Location / Branch —</option>
                   {locations.map((location) => (
                     <option key={location.code} value={location.code}>
-                      {location.code}
+                      {location.name || location.code}
                     </option>
                   ))}
                 </select>
-              </label>
-            )}
+              ) : (
+                <select
+                  className="in"
+                  value={form.party}
+                  disabled={!editable}
+                  onChange={(event) => updateField('party', event.target.value)}
+                >
+                  <option value="">— Select Party —</option>
+                  {partyOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </label>
+
+            <label className="fld">
+              <span>Reference No</span>
+              <input
+                className="in"
+                placeholder="PO / SO / JO / TR No"
+                value={form.referenceNo || form.linkedDocumentNo}
+                readOnly={!editable}
+                onChange={(event) => {
+                  updateField('referenceNo', event.target.value);
+                  updateField('linkedDocumentNo', event.target.value);
+                }}
+              />
+            </label>
+
+            <label className="fld">
+              <span>Reference Date</span>
+              <input
+                type="date"
+                className="in"
+                value={form.referenceDate}
+                readOnly={!editable}
+                onChange={(event) => updateField('referenceDate', event.target.value)}
+              />
+            </label>
 
             <label className="fld">
               <span>Vehicle No</span>
               <input
                 className="in"
+                placeholder="e.g. KA-05-AB-1234"
+                style={{ textTransform: 'uppercase' }}
                 value={form.vehicleNo}
                 readOnly={!editable}
                 onChange={(event) =>
-                  updateField('vehicleNo', event.target.value)
+                  updateField('vehicleNo', event.target.value.toUpperCase())
                 }
               />
             </label>
 
             <label className="fld">
-              <span>Transporter</span>
+              <span>Transporter Name</span>
               <input
                 className="in"
                 value={form.transporter}
@@ -634,21 +753,36 @@ export default function DeliveryChallanForm({
             </label>
 
             <label className="fld">
-              <span>Linked Document No</span>
+              <span>LR No / Docket No</span>
               <input
                 className="in"
-                value={form.linkedDocumentNo}
+                value={form.lrNo}
                 readOnly={!editable}
-                onChange={(event) =>
-                  updateField('linkedDocumentNo', event.target.value)
-                }
+                onChange={(event) => updateField('lrNo', event.target.value)}
               />
             </label>
 
             <label className="fld">
+              <span>Mode of Transport</span>
+              <select
+                className="in"
+                value={form.modeOfTransport}
+                disabled={!editable}
+                onChange={(event) => updateField('modeOfTransport', event.target.value)}
+              >
+                <option value="Road">Road</option>
+                <option value="Rail">Rail</option>
+                <option value="Air">Air</option>
+                <option value="Sea">Sea</option>
+                <option value="Courier">Courier</option>
+              </select>
+            </label>
+
+            <label className="fld" style={{ gridColumn: 'span 2' }}>
               <span>Remarks</span>
               <input
                 className="in"
+                placeholder="Narration / internal notes"
                 value={form.remarks}
                 readOnly={!editable}
                 onChange={(event) =>
@@ -659,6 +793,269 @@ export default function DeliveryChallanForm({
           </div>
         </div>
 
+        {/* SECTION B: TYPE-SPECIFIC HEADER FIELDS */}
+        {config.screenId === 'jo-dc' && (
+          <div className="panel">
+            <div className="panel-h">
+              <h2>
+                <span className="material-symbols-rounded">build</span>
+                Job Order DC (JO DC) Specific Fields
+              </h2>
+            </div>
+            <div className="fgrid">
+              <label className="fld">
+                <span>Job Order No *</span>
+                <input
+                  className="in"
+                  placeholder="Select or enter Job Order No"
+                  value={form.jobOrderNo}
+                  readOnly={!editable}
+                  onChange={(e) => updateField('jobOrderNo', e.target.value)}
+                />
+              </label>
+
+              <label className="fld" style={{ gridColumn: 'span 2' }}>
+                <span>Challan Purpose *</span>
+                <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginTop: '6px' }}>
+                  <label style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                    <input
+                      type="radio"
+                      name="challanPurpose"
+                      value="Sending for Job Work"
+                      checked={form.challanPurpose === 'Sending for Job Work'}
+                      disabled={!editable}
+                      onChange={(e) => updateField('challanPurpose', e.target.value)}
+                    />
+                    Sending for Job Work
+                  </label>
+                  <label style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                    <input
+                      type="radio"
+                      name="challanPurpose"
+                      value="Receiving after Job Work"
+                      checked={form.challanPurpose === 'Receiving after Job Work'}
+                      disabled={!editable}
+                      onChange={(e) => updateField('challanPurpose', e.target.value)}
+                    />
+                    Receiving after Job Work
+                  </label>
+                </div>
+              </label>
+
+              <label className="fld">
+                <span>Process Name</span>
+                <input
+                  className="in"
+                  placeholder="e.g. Plating, Heat Treatment"
+                  value={form.processName}
+                  readOnly
+                  tabIndex={-1}
+                />
+              </label>
+
+              {form.challanPurpose === 'Sending for Job Work' && (
+                <label className="fld">
+                  <span>Expected Return Date</span>
+                  <input
+                    type="date"
+                    className="in"
+                    value={form.expectedReturnDate}
+                    readOnly={!editable}
+                    onChange={(e) => updateField('expectedReturnDate', e.target.value)}
+                  />
+                </label>
+              )}
+
+              <label className="fld" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '18px' }}>
+                <input
+                  type="checkbox"
+                  checked={form.jobWorkRateApplicable}
+                  disabled={!editable}
+                  onChange={(e) => updateField('jobWorkRateApplicable', e.target.checked)}
+                />
+                <span>Job Work Rate Applicable</span>
+              </label>
+
+              {form.jobWorkRateApplicable && (
+                <label className="fld">
+                  <span>GST on Job Work</span>
+                  <select
+                    className="in"
+                    value={form.gstOnJobWork}
+                    disabled={!editable}
+                    onChange={(e) => updateField('gstOnJobWork', e.target.value)}
+                  >
+                    <option value="Nil">Nil</option>
+                    <option value="Applicable">Applicable</option>
+                  </select>
+                </label>
+              )}
+            </div>
+          </div>
+        )}
+
+        {config.screenId === 'general-dc' && (
+          <div className="panel">
+            <div className="panel-h">
+              <h2>
+                <span className="material-symbols-rounded">store</span>
+                General DC Specific Fields
+              </h2>
+            </div>
+            <div className="fgrid">
+              <label className="fld">
+                <span>DC Against *</span>
+                <select
+                  className="in"
+                  value={form.dcAgainst}
+                  disabled={!editable}
+                  onChange={(e) => updateField('dcAgainst', e.target.value)}
+                >
+                  <option value="Sale">Sale</option>
+                  <option value="Sample">Sample</option>
+                  <option value="Approval">Approval</option>
+                  <option value="Replacement">Replacement</option>
+                  <option value="Others">Others</option>
+                </select>
+              </label>
+
+              <label className="fld">
+                <span>Sales Order No</span>
+                <input
+                  className="in"
+                  placeholder="Sales Order reference"
+                  value={form.salesOrderNo}
+                  readOnly={!editable}
+                  onChange={(e) => updateField('salesOrderNo', e.target.value)}
+                />
+              </label>
+
+              <label className="fld">
+                <span>GSTIN</span>
+                <input
+                  className="in"
+                  value={form.gstin}
+                  readOnly={!editable}
+                  onChange={(e) => updateField('gstin', e.target.value)}
+                />
+              </label>
+
+              <label className="fld">
+                <span>Payment Terms</span>
+                <input
+                  className="in"
+                  placeholder="e.g. 30 Days Net"
+                  value={form.paymentTerms}
+                  readOnly={!editable}
+                  onChange={(e) => updateField('paymentTerms', e.target.value)}
+                />
+              </label>
+
+              <label className="fld" style={{ gridColumn: 'span 2' }}>
+                <span>Billing Address *</span>
+                <textarea
+                  className="in"
+                  rows={2}
+                  style={{ height: 'auto' }}
+                  value={form.billingAddress}
+                  readOnly={!editable}
+                  onChange={(e) => updateField('billingAddress', e.target.value)}
+                />
+              </label>
+
+              <label className="fld" style={{ gridColumn: 'span 2' }}>
+                <span>Shipping Address *</span>
+                <textarea
+                  className="in"
+                  rows={2}
+                  style={{ height: 'auto' }}
+                  value={form.shippingAddress}
+                  readOnly={!editable}
+                  onChange={(e) => updateField('shippingAddress', e.target.value)}
+                />
+              </label>
+
+              <label className="fld" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input
+                  type="checkbox"
+                  checked={form.taxApplicable}
+                  disabled={!editable}
+                  onChange={(e) => updateField('taxApplicable', e.target.checked)}
+                />
+                <span>Tax Applicable</span>
+              </label>
+
+              <label className="fld" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input
+                  type="checkbox"
+                  checked={form.convertToInvoiceLater}
+                  disabled={!editable}
+                  onChange={(e) => updateField('convertToInvoiceLater', e.target.checked)}
+                />
+                <span>Convert to Invoice Later</span>
+              </label>
+            </div>
+          </div>
+        )}
+
+        {config.screenId === 'transfer-dc' && (
+          <div className="panel">
+            <div className="panel-h">
+              <h2>
+                <span className="material-symbols-rounded">sync_alt</span>
+                Transfer DC Specific Fields
+              </h2>
+            </div>
+            <div className="fgrid">
+              <label className="fld">
+                <span>Transfer Type *</span>
+                <select
+                  className="in"
+                  value={form.transferType}
+                  disabled={!editable}
+                  onChange={(e) => updateField('transferType', e.target.value)}
+                >
+                  <option value="Inter-Branch">Inter-Branch</option>
+                  <option value="Inter-Godown">Inter-Godown</option>
+                  <option value="Inter-Plant">Inter-Plant</option>
+                </select>
+              </label>
+
+              <label className="fld">
+                <span>Transfer Request No</span>
+                <input
+                  className="in"
+                  placeholder="Stock Transfer Request reference"
+                  value={form.transferRequestNo}
+                  readOnly={!editable}
+                  onChange={(e) => updateField('transferRequestNo', e.target.value)}
+                />
+              </label>
+
+              <label className="fld" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '18px' }}>
+                <input
+                  type="checkbox"
+                  checked={form.approvalRequired}
+                  disabled={!editable}
+                  onChange={(e) => updateField('approvalRequired', e.target.checked)}
+                />
+                <span>Approval Required</span>
+              </label>
+
+              <label className="fld" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '18px' }}>
+                <input
+                  type="checkbox"
+                  checked={form.inTransitTracking}
+                  disabled={!editable}
+                  onChange={(e) => updateField('inTransitTracking', e.target.checked)}
+                />
+                <span>In-Transit Tracking (Goods-in-Transit)</span>
+              </label>
+            </div>
+          </div>
+        )}
+
+        {/* SECTION C: LINE ITEM GRID */}
         <div className="panel">
           <div className="panel-h">
             <h2>
@@ -681,13 +1078,18 @@ export default function DeliveryChallanForm({
             <table className="tbl lines">
               <thead>
                 <tr>
+                  <th>Sl No</th>
                   <th>Item Code *</th>
-                  <th>Item Name</th>
+                  <th>Description</th>
+                  <th>HSN</th>
+                  <th>Batch / Lot No</th>
+                  <th>UOM</th>
                   <th>Qty *</th>
-                  <th>Batch No</th>
-                  <th>Heat No</th>
-                  <th>Location *</th>
-                  <th>Remarks</th>
+                  {(form.jobWorkRateApplicable || config.screenId === 'general-dc') && <th>Rate</th>}
+                  {form.taxApplicable && <th>Tax %</th>}
+                  {(form.jobWorkRateApplicable || config.screenId === 'general-dc') && <th>Amount</th>}
+                  {config.screenId === 'transfer-dc' && <th>Transfer Value</th>}
+                  <th>Line Remarks</th>
                   <th />
                 </tr>
               </thead>
@@ -695,6 +1097,7 @@ export default function DeliveryChallanForm({
               <tbody>
                 {form.lines.map((line, index) => (
                   <tr key={index}>
+                    <td className="num mut">{index + 1}</td>
                     <td>
                       <select
                         className="in w-i"
@@ -705,7 +1108,7 @@ export default function DeliveryChallanForm({
                         }
                       >
                         <option value="">— Select Item —</option>
-                        {items.map((item) => (
+                        {allowedItems.map((item) => (
                           <option key={item.code} value={item.code}>
                             {item.code} — {item.description}
                           </option>
@@ -724,13 +1127,12 @@ export default function DeliveryChallanForm({
 
                     <td>
                       <input
-                        type="number"
-                        step="any"
                         className="in"
-                        value={line.qty}
+                        style={{ width: '80px' }}
+                        value={line.hsnCode}
                         readOnly={!editable}
                         onChange={(event) =>
-                          updateLine(index, 'qty', event.target.value)
+                          updateLine(index, 'hsnCode', event.target.value)
                         }
                       />
                     </td>
@@ -738,6 +1140,7 @@ export default function DeliveryChallanForm({
                     <td>
                       <input
                         className="in"
+                        placeholder="Batch/Lot"
                         value={line.batchNo}
                         readOnly={!editable}
                         onChange={(event) =>
@@ -749,35 +1152,93 @@ export default function DeliveryChallanForm({
                     <td>
                       <input
                         className="in"
-                        value={line.heatNo}
+                        style={{ width: '60px' }}
+                        value={line.uom}
                         readOnly={!editable}
                         onChange={(event) =>
-                          updateLine(index, 'heatNo', event.target.value)
+                          updateLine(index, 'uom', event.target.value)
                         }
                       />
                     </td>
 
                     <td>
-                      <select
+                      <input
+                        type="number"
+                        step="any"
                         className="in"
-                        value={line.location}
-                        disabled={!editable}
+                        style={{ width: '90px' }}
+                        value={line.qty}
+                        readOnly={!editable}
                         onChange={(event) =>
-                          updateLine(index, 'location', event.target.value)
+                          updateLine(index, 'qty', event.target.value)
                         }
-                      >
-                        <option value="">— Select —</option>
-                        {locations.map((location) => (
-                          <option key={location.code} value={location.code}>
-                            {location.code}
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </td>
+
+                    {(form.jobWorkRateApplicable || config.screenId === 'general-dc') && (
+                      <td>
+                        <input
+                          type="number"
+                          step="any"
+                          className="in"
+                          style={{ width: '90px' }}
+                          value={line.rate}
+                          readOnly={!editable}
+                          onChange={(event) =>
+                            updateLine(index, 'rate', event.target.value)
+                          }
+                        />
+                      </td>
+                    )}
+
+                    {form.taxApplicable && (
+                      <td>
+                        <input
+                          type="number"
+                          step="any"
+                          className="in"
+                          style={{ width: '70px' }}
+                          value={line.taxPercent}
+                          readOnly={!editable}
+                          onChange={(event) =>
+                            updateLine(index, 'taxPercent', event.target.value)
+                          }
+                        />
+                      </td>
+                    )}
+
+                    {(form.jobWorkRateApplicable || config.screenId === 'general-dc') && (
+                      <td>
+                        <input
+                          className="in"
+                          style={{ width: '100px' }}
+                          value={line.amount}
+                          readOnly
+                          tabIndex={-1}
+                        />
+                      </td>
+                    )}
+
+                    {config.screenId === 'transfer-dc' && (
+                      <td>
+                        <input
+                          type="number"
+                          step="any"
+                          className="in"
+                          style={{ width: '90px' }}
+                          value={line.transferValue}
+                          readOnly={!editable}
+                          onChange={(event) =>
+                            updateLine(index, 'transferValue', event.target.value)
+                          }
+                        />
+                      </td>
+                    )}
 
                     <td>
                       <input
                         className="in"
+                        placeholder="Item remark"
                         value={line.remarks}
                         readOnly={!editable}
                         onChange={(event) =>
@@ -801,8 +1262,14 @@ export default function DeliveryChallanForm({
               </tbody>
             </table>
           </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 16px', background: 'var(--surface-2, #f7f7f8)', gap: '24px', fontWeight: 'bold' }}>
+            <span>Total Qty: {totalQty}</span>
+            {totalAmount > 0 && <span>Total Amount: ₹ {totalAmount.toFixed(2)}</span>}
+          </div>
         </div>
 
+        {/* SECTION D: ACTION BUTTONS */}
         <div className="panel">
           <div className="actbar">
             <span className="lft">
@@ -824,7 +1291,7 @@ export default function DeliveryChallanForm({
                   disabled={isBusy}
                 >
                   <span className="material-symbols-rounded">save</span>
-                  Save Draft
+                  Save as Draft
                 </button>
 
                 <button
@@ -833,91 +1300,109 @@ export default function DeliveryChallanForm({
                   onClick={() => save(true)}
                   disabled={isBusy}
                 >
-                  <span className="material-symbols-rounded">send</span>
-                  Submit
+                  <span className="material-symbols-rounded">check_circle</span>
+                  Save & Post Stock
                 </button>
               </>
             )}
 
-            {status === 'REJECTED' && (
-              <button
-                type="button"
-                className="btn"
-                onClick={() => runAction('reopen', '')}
-                disabled={isBusy}
-              >
-                <span className="material-symbols-rounded">restart_alt</span>
-                Reopen
-              </button>
-            )}
-
-            {status === 'SUBMITTED' && (
+            {(currentDocument?.id || documentId) && (
               <>
                 <button
                   type="button"
-                  className="btn btn-g"
-                  onClick={() => openActionModal('approve')}
-                  disabled={isBusy}
+                  className="btn"
+                  onClick={() => handlePrint(false)}
                 >
-                  <span className="material-symbols-rounded">thumb_up</span>
-                  Approve
+                  <span className="material-symbols-rounded">visibility</span>
+                  Print Preview
                 </button>
 
                 <button
                   type="button"
-                  className="btn btn-d"
-                  onClick={() => openActionModal('reject')}
-                  disabled={isBusy}
+                  className="btn"
+                  onClick={() => handlePrint(false)}
                 >
-                  <span className="material-symbols-rounded">thumb_down</span>
-                  Reject
+                  <span className="material-symbols-rounded">print</span>
+                  Print
+                </button>
+
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => handlePrint(true)}
+                >
+                  <span className="material-symbols-rounded">download</span>
+                  Download PDF
                 </button>
               </>
             )}
 
-            {status === 'APPROVED' && (
-              <button
-                type="button"
-                className="btn btn-g"
-                onClick={handlePost}
-                disabled={isBusy}
-              >
-                <span className="material-symbols-rounded">
-                  published_with_changes
-                </span>
-                Post (Update Stock)
-              </button>
-            )}
+            {config.screenId === 'transfer-dc' &&
+              currentDocument?.inTransitTracking &&
+              !currentDocument?.receiptConfirmed &&
+              (status === 'CONFIRMED' || status === 'POSTED') && (
+                <button
+                  type="button"
+                  className="btn btn-p"
+                  onClick={() => runAction('confirm-receipt', 'Destination receipt confirmed')}
+                  disabled={isBusy}
+                >
+                  <span className="material-symbols-rounded">move_to_inbox</span>
+                  Confirm Receipt at Destination
+                </button>
+              )}
 
-            {!['POSTED', 'CANCELLED'].includes(status) && (
+            {(status === 'DRAFT' || status === 'CONFIRMED' || status === 'POSTED') && (currentDocument?.id || documentId) && (
               <button
                 type="button"
                 className="btn btn-d"
                 onClick={() => openActionModal('cancel')}
                 disabled={isBusy}
               >
-                <span className="material-symbols-rounded">block</span>
-                Cancel
+                <span className="material-symbols-rounded">cancel</span>
+                Cancel DC
               </button>
             )}
           </div>
         </div>
       </form>
 
-      <ConfirmActionModal
-        open={Boolean(actionModal)}
-        title={actionModal?.title ?? ''}
-        body={actionModal?.body ?? ''}
-        okLabel={actionModal?.okLabel ?? 'Confirm'}
-        danger={actionModal?.danger}
-        busy={actionMutation.isPending}
-        onClose={() => setActionModal(null)}
-        onConfirm={(note) => {
-          if (actionModal) {
-            runAction(actionModal.action, note);
-          }
-        }}
-      />
+      {/* PRINT PREVIEW MODAL */}
+      {showPrintPreview && (currentDocument?.id || documentId) && (
+        <div className="modal-backdrop" onClick={() => setShowPrintPreview(false)}>
+          <div
+            className="modal-box"
+            style={{ maxWidth: '850px', width: '90%', height: '85vh', display: 'flex', flexDirection: 'column' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 20px', borderBottom: '1px solid #ccc' }}>
+              <h3>Print Preview — {docNo}</h3>
+              <button type="button" className="btn btn-sm" onClick={() => setShowPrintPreview(false)}>
+                <span className="material-symbols-rounded">close</span>
+              </button>
+            </div>
+            <div style={{ flex: 1, padding: 0 }}>
+              <iframe
+                src={`/api/inventory/delivery-challan/${config.screenId}/${currentDocument?.id || documentId}/print?download=false`}
+                style={{ width: '100%', height: '100%', border: 'none' }}
+                title="DC Print Preview"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {actionModal && (
+        <ConfirmActionModal
+          open={!!actionModal}
+          title={actionModal.title}
+          body={actionModal.body}
+          okLabel={actionModal.okLabel}
+          danger={actionModal.danger}
+          onConfirm={(note) => runAction(actionModal.action, note)}
+          onClose={() => setActionModal(null)}
+        />
+      )}
     </>
   );
 }

@@ -235,6 +235,7 @@ export default function ProcessGroupScreen() {
               <table className="tbl">
                 <thead>
                   <tr>
+                    <th className="num">S.No</th>
                     <th>GROUP CODE</th>
                     <th>WORK FLOW NAME</th>
                     <th>PROCESS FLOW</th>
@@ -244,12 +245,13 @@ export default function ProcessGroupScreen() {
                 </thead>
                 <tbody>
                   {loading ? (
-                    <tr><td colSpan={5} className="empty">Loading process groups...</td></tr>
+                    <tr><td colSpan={6} className="empty">Loading process groups...</td></tr>
                   ) : filteredRows.length === 0 ? (
-                    <tr><td colSpan={5} className="empty">No process groups found.</td></tr>
+                    <tr><td colSpan={6} className="empty">No process groups found.</td></tr>
                   ) : (
-                    filteredRows.map(r => (
+                    filteredRows.map((r, idx) => (
                       <tr key={r.id}>
+                        <td className="num mut">{idx + 1}</td>
                         <td style={{ fontWeight: 700, color: '#0f172a' }}>{r.code}</td>
                         <td style={{ fontWeight: 600 }}>{r.name}</td>
                         <td style={{ color: '#1e3a8a', fontWeight: 500 }}>{r.processFlow || '—'}</td>

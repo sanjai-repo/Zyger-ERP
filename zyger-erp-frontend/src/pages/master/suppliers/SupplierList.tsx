@@ -14,9 +14,10 @@ interface Props {
   onAdd: () => void;
   onEdit: (id: number) => void;
   onView?: (id: number) => void;
+  onLedger?: (code: string) => void;
 }
 
-export default function SupplierList({ onAdd, onEdit, onView }: Props) {
+export default function SupplierList({ onAdd, onEdit, onView, onLedger }: Props) {
   const { toast } = useToast();
   const [rows, setRows] = useState<Party[]>([]);
   const [total, setTotal] = useState(0);
@@ -166,6 +167,9 @@ export default function SupplierList({ onAdd, onEdit, onView }: Props) {
                           </button>
                           <button type="button" className="ibtn" title="Edit" onClick={() => onEdit(r.id)}>
                             <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>edit</span>
+                          </button>
+                          <button type="button" className="ibtn" title="Ledger" onClick={() => onLedger?.(r.code)}>
+                            <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>account_balance</span>
                           </button>
                           <button type="button" className="ibtn danger" title="Delete" onClick={() => setDeleteTarget(r)}>
                             <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>delete</span>

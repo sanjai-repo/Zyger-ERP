@@ -374,10 +374,11 @@ export default function EcrScreen() {
           ) : (
             <div className="twrap">
               <table className="tbl">
-                <thead><tr><th>WO Number</th><th>Status</th><th>Order Qty</th><th>Disposition</th></tr></thead>
+                <thead><tr><th className="num">S.No</th><th>WO Number</th><th>Status</th><th>Order Qty</th><th>Disposition</th></tr></thead>
                 <tbody>
                   {existingOrders.map((o, idx) => (
                     <tr key={idx}>
+                      <td className="num mut">{idx + 1}</td>
                       <td>{o.woNumber}</td>
                       <td>{o.status}</td>
                       <td>{o.orderQuantity}</td>
@@ -416,6 +417,7 @@ export default function EcrScreen() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   <th>Change Type</th>
                   <th>Item Code</th>
                   <th>Description</th>
@@ -427,14 +429,15 @@ export default function EcrScreen() {
               </thead>
               <tbody>
                 {rows.length === 0 ? (
-                  <tr><td colSpan={7}><div className="empty"><span className="material-symbols-rounded">description</span> No ECRs found.</div></td></tr>
-                ) : rows.map((r) => {
+                  <tr><td colSpan={8}><div className="empty"><span className="material-symbols-rounded">description</span> No ECRs found.</div></td></tr>
+                ) : rows.map((r, idx) => {
                   const priorityInfo = PRIORITIES.find((p) => p.value === r.priority);
                   const actions = (ACTIONABLE_STATUSES[r.status] ?? []).filter((a) =>
                     a.action === 'approve' ? can('planning', 'Approve') : a.action === 'reject' ? can('planning', 'Reject') : true);
                   const sc = STATUS_COLORS[r.status] ?? { color: '#888', bg: '#e9ecef' };
                   return (
                     <tr key={r.id}>
+                      <td className="num mut">{page * PAGE_SIZE + idx + 1}</td>
                       <td>{CHANGE_TYPES.find((ct) => ct.value === r.changeType)?.label ?? r.changeType}</td>
                       <td>{r.itemCode}</td>
                       <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.descriptionOfChange}</td>

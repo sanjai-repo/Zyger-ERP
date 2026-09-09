@@ -129,10 +129,11 @@ export default function SpareRequestScreen() {
           <div style={{ marginTop: 16 }}>
             <div className="panel-h"><h2>Lines</h2></div>
             <table className="tbl">
-              <thead><tr><th>Item Code *</th><th>Item Name</th><th>Qty *</th><th></th></tr></thead>
+              <thead><tr><th className="num">S.No</th><th>Item Code *</th><th>Item Name</th><th>Qty *</th><th></th></tr></thead>
               <tbody>
                 {lines.map((l, i) => (
                   <tr key={i}>
+                    <td className="num mut">{i + 1}</td>
                     <td><input className="in" value={l.itemCode} onChange={(e) => updateLine(i, 'itemCode', e.target.value)} placeholder="e.g. ITM-AUTO-501" /></td>
                     <td><input className="in" value={l.itemName} onChange={(e) => updateLine(i, 'itemName', e.target.value)} /></td>
                     <td><input className="in" type="number" min={1} value={l.requestedQty} onChange={(e) => updateLine(i, 'requestedQty', Number(e.target.value))} style={{ width: 100 }} /></td>
@@ -163,10 +164,11 @@ export default function SpareRequestScreen() {
           <div className="twrap">
             {loading ? <div className="empty"><span className="material-symbols-rounded">hourglass_empty</span> Loading...</div> : (
               <table className="tbl">
-                <thead><tr><th>Request No</th><th>Source</th><th>Machine</th><th>Lines</th><th>Requested By</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr><th className="num">S.No</th><th>Request No</th><th>Source</th><th>Machine</th><th>Lines</th><th>Requested By</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
-                  {filtered.length === 0 ? <tr><td colSpan={7}><div className="empty"><span className="material-symbols-rounded">description</span> No requests.</div></td></tr> : filtered.map((r) => (
+                  {filtered.length === 0 ? <tr><td colSpan={8}><div className="empty"><span className="material-symbols-rounded">description</span> No requests.</div></td></tr> : filtered.map((r, idx) => (
                     <tr key={r.id}>
+                      <td className="num mut">{idx + 1}</td>
                       <td><b>{r.requestNumber}</b></td>
                       <td>{r.sourceType ? `${r.sourceType}${r.sourceId ? ' #' + r.sourceId : ''}` : '-'}</td>
                       <td>{r.machineCode || '-'}</td>

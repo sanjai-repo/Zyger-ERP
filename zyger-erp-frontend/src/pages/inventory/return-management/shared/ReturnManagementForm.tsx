@@ -13,6 +13,7 @@ import type {
   ReturnManagementTypeConfig,
 } from '../../../../types/inventory/returnManagement.types';
 import { getApiErrorMessage } from '../../../../utils/apiError';
+import { filterPurchaseRelevantItems } from '../../../../utils/itemClassification';
 import { lookupDocumentByNumber } from '../../../../utils/documentLookup';
 import { logSystemActivity } from '../../../../utils/activityLog';
 import StatusBadge from '../../../../components/common/StatusBadge';
@@ -82,13 +83,20 @@ export default function ReturnManagementForm({
   const initializedFor = useRef<string | null>(null);
 
   const items = lookups.items;
-  const locations = lookups.locations;
+  // FRS DOC-INV-FRS-02 Priority#1 [FIXED] — merged union instead of an all-or-nothing
+  // stores-vs-locations fallback; see utils/locationOptions.ts for why.
+  const locations = lookups.stores ?? [];
   const partyOptions = lookups.partyOptions;
 
   const itemsMap = useMemo(
     () => new Map(items.map((item) => [item.code, item])),
     [items]
   );
+
+  // Item Code should only ever offer Purchasable / Customer-Supplied / Manufacturing
+  // items (the three item screens under Master → Inventory → Items) — this picker
+  // previously showed every item in the system unfiltered.
+  const allowedItems = useMemo(() => filterPurchaseRelevantItems(items), [items]);
 
   const status = currentDocument?.status ?? 'DRAFT';
   const editable = !viewOnly && (status === 'DRAFT' || status === 'REJECTED');
@@ -232,7 +240,7 @@ export default function ReturnManagementForm({
             rejectedQty: '0',
             batchNo: l.batchNo || '',
             heatNo: l.heatNo || '',
-            location: l.location || locations[0]?.code || 'MAIN',
+            location: l.location || locations[0]?.code || '',
             remarks: l.remarks || '',
           })) : prev.lines,
         }));
@@ -351,7 +359,7 @@ export default function ReturnManagementForm({
             rejectedQty: '0',
             batchNo: l.batchNo || '',
             heatNo: l.heatNo || '',
-            location: l.location || locations[0]?.code || 'MAIN',
+            location: l.location || locations[0]?.code || '',
             remarks: l.remarks || '',
           })) : prev.lines;
 
@@ -382,7 +390,7 @@ export default function ReturnManagementForm({
         const item = itemsMap.get(value);
         line.itemDesc = item?.description ?? '';
         if (!line.location) {
-          line.location = locations[0]?.code || 'MAIN';
+          line.location = locations[0]?.code || '';
         }
       }
 
@@ -892,6 +900,7 @@ export default function ReturnManagementForm({
             <table className="tbl lines">
               <thead>
                 <tr>
+                  <th>S.No</th>
                   <th>Item Code *</th>
                   <th>Item Name</th>
                   <th>Returned Qty *</th>
@@ -908,6 +917,7 @@ export default function ReturnManagementForm({
               <tbody>
                 {form.lines.map((line, index) => (
                   <tr key={index}>
+                    <td className="num mut">{index + 1}</td>
                     <td>
                       <select
                         className="in w-i"
@@ -918,7 +928,7 @@ export default function ReturnManagementForm({
                         }
                       >
                         <option value="">— Select Item —</option>
-                        {items.map((item) => (
+                        {allowedItems.map((item) => (
                           <option key={item.code} value={item.code}>
                             {item.code} — {item.description}
                           </option>
@@ -1008,7 +1018,7 @@ export default function ReturnManagementForm({
                         <option value="">— Select —</option>
                         {locations.map((location) => (
                           <option key={location.code} value={location.code}>
-                            {location.code}
+                            {location.name || location.code}
                           </option>
                         ))}
                       </select>

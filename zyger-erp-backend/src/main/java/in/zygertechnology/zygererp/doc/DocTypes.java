@@ -37,7 +37,7 @@ public final class DocTypes {
         reg("issue-internal-external","IIE", Effect.OUT,    "ISSUE_INTERNAL_EXTERNAL","issueQty", true);
         reg("issue-against-receipt",  "IAR", Effect.OUT,    "ISSUE_AGAINST_RECEIPT",  "issueQty", true);
         reg("sales-dc",               "SDC", Effect.OUT,    "SALES_DC",               "qty", true);
-        reg("jo-dc",                  "JOD", Effect.OUT,    "JO_DC",                  "qty", true);
+        reg("jo-dc",                  "JODC",Effect.OUT,    "JO_DC",                  "qty", true);
         reg("general-dc",             "GDC", Effect.OUT,    "GENERAL_DC",             "qty", true);
         reg("return-dc",              "RDC", Effect.OUT,    "RETURN_DC",              "qty", true);
         reg("transfer-dc",            "TDC", Effect.OUT,    "TRANSFER_DC",            "qty", true);
@@ -93,6 +93,9 @@ reg("process",                 "PRC", Effect.NONE,  "PROCESS",                nu
         reg("supplier-enquiry",         "SE",  Effect.NONE,  "SUPPLIER_ENQUIRY",       null, true);
         reg("supplier-quotation",       "SQ",  Effect.NONE,  "SUPPLIER_QUOTATION",     null, true);
         reg("purchase-order",           "PO",  Effect.NONE,  "PURCHASE_ORDER",         null, true);
+        // FRS DOC-PUR-FRS-02 §9 (PUR-07): vendor return — stock OUT, unlike every other
+        // "return" type in the system which is IN. See entity/PurchaseReturn.java.
+        reg("purchase-return",          "PRN", Effect.OUT,   "PURCHASE_RETURN",        "returnQty", true);
         reg("job-order",                "JO",  Effect.NONE,  "JOB_ORDER",              null, true);
         reg("purchase-target",          "PT",  Effect.NONE,  "PURCHASE_TARGET",        null, false);
         reg("purchase-price-list",      "PPL", Effect.NONE,  "PURCHASE_PRICE_LIST",    null, false);

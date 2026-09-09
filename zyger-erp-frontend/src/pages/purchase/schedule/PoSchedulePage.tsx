@@ -58,19 +58,19 @@ export default function PoSchedulePage() {
   const [newSchedule, setNewSchedule] = useState({
     refDocNo: '',
     poNo: '',
-    supplier: 'Tata Steel Ltd',
-    supplierCode: 'SUPP-001',
-    itemCode: 'ITEM-001',
-    itemDescription: 'Precision CNC Shaft 25mm',
-    uom: 'PCS',
-    unitPrice: 450,
-    scheduledQty: 100,
-    totalAmount: 45000,
+    supplier: '',
+    supplierCode: '',
+    itemCode: '',
+    itemDescription: '',
+    uom: '',
+    unitPrice: 0,
+    scheduledQty: 0,
+    totalAmount: 0,
     scheduledDate: new Date().toISOString().split('T')[0],
-    location: 'MAIN - Main Warehouse',
+    location: '',
     priority: 'NORMAL',
-    contactPerson: 'Sanjay Kumar',
-    phone: '9876543210',
+    contactPerson: '',
+    phone: '',
     remarks: '',
   });
 
@@ -85,24 +85,24 @@ export default function PoSchedulePage() {
           docs.forEach((po: any) => {
             if (Array.isArray(po.schedules) && po.schedules.length > 0) {
               po.schedules.forEach((s: any) => {
-                const qty = Number(s.scheduledQty || 100);
-                const price = Number(s.unitPrice || 450);
+                const qty = Number(s.scheduledQty || 0);
+                const price = Number(s.unitPrice || 0);
                 list.push({
                   id: s.id,
-                  poNo: po.docNo || 'PO-2026-0001',
+                  poNo: po.docNo || '',
                   refDocNo: s.refDocNo || po.docNo,
-                  supplier: po.supplier || 'Tata Steel Ltd',
-                  supplierCode: po.supplierCode || 'SUPP-001',
-                  itemCode: s.itemCode || 'ITEM-001',
-                  itemDescription: s.itemDescription || 'Precision CNC Shaft 25mm',
-                  uom: s.uom || 'PCS',
+                  supplier: po.supplier || '',
+                  supplierCode: po.supplierCode || '',
+                  itemCode: s.itemCode || '',
+                  itemDescription: s.itemDescription || '',
+                  uom: s.uom || '',
                   unitPrice: price,
                   totalAmount: qty * price,
                   scheduledQty: qty,
-                  scheduledDate: s.scheduledDate || po.date || '2026-02-15',
+                  scheduledDate: s.scheduledDate || po.date || '',
                   receivedQty: Number(s.receivedQty || 0),
-                  pendingQty: Number(s.pendingQty || qty),
-                  location: s.location || 'MAIN - Main Warehouse',
+                  pendingQty: Number(s.pendingQty ?? qty),
+                  location: s.location || '',
                   priority: s.priority || 'NORMAL',
                   status: s.status || po.status || 'PLANNED',
                   remarks: s.remarks,
@@ -111,24 +111,27 @@ export default function PoSchedulePage() {
             } else {
               const lines = Array.isArray(po.lines) ? po.lines : [];
               lines.forEach((l: any, i: number) => {
-                const qty = Number(l.orderQty || l.qty || 100);
-                const price = Number(l.unitPrice || l.rate || 450);
+                const qty = Number(l.orderQty || l.qty || 0);
+                const price = Number(l.unitPrice || l.rate || 0);
                 list.push({
                   id: i + 1,
-                  poNo: po.docNo || 'PO-2026-0001',
+                  poNo: po.docNo || '',
                   refDocNo: po.docNo,
-                  supplier: po.supplier || 'Tata Steel Ltd',
-                  supplierCode: po.supplierCode || 'SUPP-001',
-                  itemCode: l.itemCode || 'ITEM-001',
-                  itemDescription: l.description || l.itemName || l.itemDesc || 'Precision Item',
-                  uom: l.uom || 'PCS',
+                  supplier: po.supplier || '',
+                  supplierCode: po.supplierCode || '',
+                  itemCode: l.itemCode || '',
+                  itemDescription: l.description || l.itemName || l.itemDesc || '',
+                  uom: l.uom || '',
                   unitPrice: price,
                   totalAmount: qty * price,
                   scheduledQty: qty,
-                  scheduledDate: po.expectedDeliveryDate || po.date || '2026-02-20',
+                  scheduledDate: po.expectedDeliveryDate || po.date || '',
+                  // No backend service populates PurchaseOrderSchedule.receivedQty from GRN/PO
+                  // Inward postings yet, so this stays 0 for real data until that reconciliation
+                  // is built — deliberately not fabricated here.
                   receivedQty: 0,
                   pendingQty: qty,
-                  location: 'MAIN - Main Warehouse',
+                  location: '',
                   priority: 'NORMAL',
                   status: po.status || 'PLANNED',
                 });
@@ -208,17 +211,17 @@ export default function PoSchedulePage() {
   const handleReferenceSelect = (refDocNo: string) => {
     const selected = referenceDocs.find((r) => r.docNo === refDocNo);
     if (selected) {
-      const qty = Number(selected.qty || 100);
-      const price = Number(selected.unitPrice || 450);
+      const qty = Number(selected.qty || 0);
+      const price = Number(selected.unitPrice || 0);
       setNewSchedule((prev) => ({
         ...prev,
         refDocNo: selected.docNo,
         poNo: `SCH-${selected.docNo}`,
         supplier: selected.supplier,
-        supplierCode: selected.supplierCode || 'SUPP-001',
+        supplierCode: selected.supplierCode || '',
         itemCode: selected.itemCode,
         itemDescription: selected.itemDescription,
-        uom: selected.uom || 'PCS',
+        uom: selected.uom || '',
         unitPrice: price,
         scheduledQty: qty,
         totalAmount: qty * price,
@@ -241,14 +244,14 @@ export default function PoSchedulePage() {
   const handleItemSelect = (itemCode: string) => {
     const foundItem = items.find((i) => i.code === itemCode);
     setNewSchedule((prev) => {
-      const price = foundItem?.price || prev.unitPrice || 450;
+      const price = foundItem?.price || prev.unitPrice || 0;
       const desc = foundItem ? `${foundItem.name}${foundItem.description ? ` (${foundItem.description})` : ''}` : prev.itemDescription;
-      const qty = prev.scheduledQty || 100;
+      const qty = prev.scheduledQty || 0;
       return {
         ...prev,
         itemCode: itemCode,
         itemDescription: desc,
-        uom: foundItem?.uom || prev.uom || 'PCS',
+        uom: foundItem?.uom || prev.uom || '',
         unitPrice: price,
         totalAmount: qty * price,
       };
@@ -280,17 +283,17 @@ export default function PoSchedulePage() {
       id: Date.now(),
       poNo: poNumber,
       refDocNo: newSchedule.refDocNo || poNumber,
-      supplier: newSchedule.supplier.trim() || 'Tata Steel Ltd',
+      supplier: newSchedule.supplier.trim(),
       supplierCode: newSchedule.supplierCode,
-      itemCode: newSchedule.itemCode.trim() || 'ITEM-001',
+      itemCode: newSchedule.itemCode.trim(),
       itemDescription: newSchedule.itemDescription,
       uom: newSchedule.uom,
       unitPrice: newSchedule.unitPrice,
       totalAmount: newSchedule.scheduledQty * newSchedule.unitPrice,
-      scheduledQty: Number(newSchedule.scheduledQty) || 100,
+      scheduledQty: Number(newSchedule.scheduledQty) || 0,
       scheduledDate: newSchedule.scheduledDate,
       receivedQty: 0,
-      pendingQty: Number(newSchedule.scheduledQty) || 100,
+      pendingQty: Number(newSchedule.scheduledQty) || 0,
       location: newSchedule.location,
       priority: newSchedule.priority as any,
       contactPerson: newSchedule.contactPerson,
@@ -326,19 +329,19 @@ export default function PoSchedulePage() {
     setNewSchedule({
       refDocNo: '',
       poNo: '',
-      supplier: 'Tata Steel Ltd',
-      supplierCode: 'SUPP-001',
-      itemCode: 'ITEM-001',
-      itemDescription: 'Precision CNC Shaft 25mm',
-      uom: 'PCS',
-      unitPrice: 450,
-      scheduledQty: 100,
-      totalAmount: 45000,
+      supplier: '',
+      supplierCode: '',
+      itemCode: '',
+      itemDescription: '',
+      uom: '',
+      unitPrice: 0,
+      scheduledQty: 0,
+      totalAmount: 0,
       scheduledDate: new Date().toISOString().split('T')[0],
-      location: 'MAIN - Main Warehouse',
+      location: '',
       priority: 'NORMAL',
-      contactPerson: 'Sanjay Kumar',
-      phone: '9876543210',
+      contactPerson: '',
+      phone: '',
       remarks: '',
     });
   };
@@ -531,12 +534,12 @@ export default function PoSchedulePage() {
                         <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '2px' }}>{s.itemDescription}</div>
                       )}
                     </td>
-                    <td className="num">₹{s.unitPrice ?? 450}</td>
+                    <td className="num">₹{s.unitPrice ?? 0}</td>
                     <td className="num cell-b">
-                      {s.scheduledQty} <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{s.uom || 'PCS'}</span>
+                      {s.scheduledQty} <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{s.uom}</span>
                     </td>
                     <td className="num cell-b" style={{ color: 'var(--blue)' }}>
-                      ₹{(s.totalAmount ?? (s.scheduledQty * (s.unitPrice ?? 450))).toLocaleString()}
+                      ₹{(s.totalAmount ?? (s.scheduledQty * (s.unitPrice ?? 0))).toLocaleString()}
                     </td>
                     <td>{s.scheduledDate}</td>
                     <td>

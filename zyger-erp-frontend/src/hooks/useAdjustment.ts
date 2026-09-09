@@ -62,6 +62,13 @@ export function useStockAmendmentLookups() {
     retry: 1,
   });
 
+  const storesQuery = useQuery({
+    queryKey: ['master', 'stores'],
+    queryFn: ({ signal }) => masterService.getStores(signal),
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
+  });
+
   const isLoading = itemsQuery.isPending || locationsQuery.isPending;
 
   const isError = itemsQuery.isError || locationsQuery.isError;
@@ -74,11 +81,12 @@ export function useStockAmendmentLookups() {
       : 'Unable to load Stock Amendment master data.';
 
   const refetch = () =>
-    Promise.all([itemsQuery.refetch(), locationsQuery.refetch()]);
+    Promise.all([itemsQuery.refetch(), locationsQuery.refetch(), storesQuery.refetch()]);
 
   return {
     items: itemsQuery.data ?? [],
     locations: locationsQuery.data ?? [],
+    stores: storesQuery.data ?? [],
     isLoading,
     isError,
     errorMessage,
@@ -192,6 +200,13 @@ export function usePhysicalStockAmendmentLookups() {
     retry: 1,
   });
 
+  const storesQuery = useQuery({
+    queryKey: ['master', 'stores'],
+    queryFn: ({ signal }) => masterService.getStores(signal),
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
+  });
+
   const isLoading = itemsQuery.isPending || locationsQuery.isPending;
 
   const isError = itemsQuery.isError || locationsQuery.isError;
@@ -204,11 +219,12 @@ export function usePhysicalStockAmendmentLookups() {
       : 'Unable to load Physical Stock Amendment master data.';
 
   const refetch = () =>
-    Promise.all([itemsQuery.refetch(), locationsQuery.refetch()]);
+    Promise.all([itemsQuery.refetch(), locationsQuery.refetch(), storesQuery.refetch()]);
 
   return {
     items: itemsQuery.data ?? [],
     locations: locationsQuery.data ?? [],
+    stores: storesQuery.data ?? [],
     isLoading,
     isError,
     errorMessage,

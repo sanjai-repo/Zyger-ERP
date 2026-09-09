@@ -113,6 +113,14 @@ public class DocumentRowMapper {
         }
         r.putIfAbsent("itemCode", r.get("firstItemCode"));
         r.putIfAbsent("itemName", r.get("firstItemName"));
+        // Header-only single-item doc types (e.g. stock-amendment) carry itemCode
+        // directly on the header with an empty lines list, so the line-derived
+        // backfill above never fires for them — resolve itemName from the header
+        // itemCode as a final fallback.
+        if (r.get("itemName") == null && r.get("itemCode") != null) {
+            itemCache.findByCode(String.valueOf(r.get("itemCode")))
+                    .ifPresent(i -> r.put("itemName", i.getDescription()));
+        }
         r.putIfAbsent("reference", firstOf(r,
                 "purchaseOrderNo", "jobOrderNo", "labourOrderNo", "issueRequestNo",
                 "allotmentNo", "originalDocumentNo", "linkedDocumentNo", "challanNo",

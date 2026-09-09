@@ -81,9 +81,11 @@ export interface StockIssueListRowDto {
   id: string;
   docNo: string;
   date: string;
+  issueRequestNo?: string;
   sourceLocation?: string;
   qty?: number;
   status: string;
+  lines?: Array<{ returnable?: string }>;
 }
 
 export interface StockIssueListParams {

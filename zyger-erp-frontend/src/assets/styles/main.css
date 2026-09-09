@@ -1859,6 +1859,194 @@ textarea.in {
     box-shadow: var(--sh-sm)
 }
 
+/* INWARD ENTRY — summary cards (scoped: doesn't affect .stat elsewhere) */
+.inward-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 20px
+}
+
+.inward-hero {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    background: var(--dark-nav);
+    border: 1px solid var(--dark-nav);
+    border-radius: var(--r-lg);
+    padding: 18px 22px;
+    cursor: pointer;
+    transition: .15s;
+    outline-offset: 2px
+}
+
+.inward-hero:hover {
+    background: var(--dark-nav-h)
+}
+
+.inward-hero.is-active {
+    box-shadow: 0 0 0 2px var(--blue)
+}
+
+.inward-hero-ic {
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    background: rgba(255, 255, 255, .12);
+    color: #fff
+}
+
+.inward-hero-ic .material-symbols-rounded {
+    font-size: 26px
+}
+
+.inward-hero-body {
+    flex: 1;
+    min-width: 0
+}
+
+.inward-hero-top {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    margin-bottom: 10px
+}
+
+.inward-hero-label {
+    font-size: .72rem;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, .6)
+}
+
+.inward-hero-value {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #fff;
+    margin-right: 4px
+}
+
+.inward-hero-sub {
+    font-size: .74rem;
+    color: rgba(255, 255, 255, .65)
+}
+
+.inward-split {
+    display: flex;
+    height: 6px;
+    border-radius: 99px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, .12)
+}
+
+.inward-split-seg {
+    height: 100%;
+    transition: width .2s
+}
+
+.inward-split-seg.empty {
+    background: transparent
+}
+
+.inward-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+    gap: 14px
+}
+
+.inward-card {
+    position: relative;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 14px 15px;
+    cursor: pointer;
+    transition: .15s;
+}
+
+.inward-card:hover {
+    border-color: var(--blue);
+    box-shadow: var(--sh-sm);
+    transform: translateY(-1px)
+}
+
+.inward-card.is-active {
+    border-color: var(--blue);
+    background: var(--blue-bg);
+    box-shadow: 0 0 0 1px var(--blue)
+}
+
+.inward-card.is-pending.needs-action {
+    border-color: var(--yellow)
+}
+
+.inward-card-flag {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    font-size: .6rem;
+    font-weight: 800;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+    color: #fff;
+    background: var(--yellow);
+    padding: 2px 7px;
+    border-radius: 99px
+}
+
+.inward-card-ic {
+    width: 36px;
+    height: 36px;
+    border-radius: 9px;
+    display: grid;
+    place-items: center;
+    color: #fff;
+    margin-bottom: 10px
+}
+
+.inward-card-ic.pending {
+    background: var(--yellow)
+}
+
+.inward-card-ic .material-symbols-rounded {
+    font-size: 18px
+}
+
+.inward-card-label {
+    font-size: .66rem;
+    font-weight: 800;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 4px
+}
+
+.inward-card-value {
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: var(--text);
+    line-height: 1.15
+}
+
+.inward-card-sub {
+    font-size: .7rem;
+    color: var(--muted);
+    margin-top: 2px
+}
+
+.inward-card-share {
+    font-size: .64rem;
+    color: var(--muted);
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px dashed var(--border)
+}
+
 .g2 {
     display: grid;
     grid-template-columns: 1.35fr 1fr;

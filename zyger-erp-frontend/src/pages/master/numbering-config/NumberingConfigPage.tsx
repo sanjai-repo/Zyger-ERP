@@ -135,6 +135,7 @@ export default function NumberingConfigPage() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   <th>DOC TYPE</th>
                   <th>PREFIX</th>
                   <th>ZERO PAD</th>
@@ -147,15 +148,16 @@ export default function NumberingConfigPage() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={8} className="empty">Loading numbering configs...</td></tr>
+                  <tr><td colSpan={9} className="empty">Loading numbering configs...</td></tr>
                 ) : filtered.length === 0 ? (
-                  <tr><td colSpan={8} className="empty">No numbering configs found.</td></tr>
+                  <tr><td colSpan={9} className="empty">No numbering configs found.</td></tr>
                 ) : (
-                  filtered.map(c => {
+                  filtered.map((c, idx) => {
                     const sep = c.separator ?? '-';
                     const num = `${c.prefix.toUpperCase()}${sep}${c.resetPerYear ? new Date().getFullYear() + sep : ''}${'1'.padStart(c.zeroPad || 6, '0')}`;
                     return (
                       <tr key={c.id}>
+                        <td className="num mut">{idx + 1}</td>
                         <td style={{ fontWeight: 700 }}>{c.docType}</td>
                         <td style={{ fontWeight: 700, color: '#1e3a8a' }}>{c.prefix.toUpperCase()}</td>
                         <td>{c.zeroPad}</td>

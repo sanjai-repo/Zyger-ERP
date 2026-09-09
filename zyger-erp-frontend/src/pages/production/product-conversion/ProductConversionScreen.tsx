@@ -56,7 +56,7 @@ export default function ProductConversionScreen() {
   const [search, setSearch] = useState('');
   const [actionBusyId, setActionBusyId] = useState<number | null>(null);
   const [tab, setTab] = useState<'list' | 'form'>('list');
-  const [items, setItems] = useState<Array<{ code: string; name: string; uom?: string }>>([]);
+  const [items, setItems] = useState<Array<{ code: string; name: string; description?: string; uom?: string }>>([]);
 
   const fetchItems = useCallback(async () => {
     try {
@@ -146,7 +146,7 @@ export default function ProductConversionScreen() {
             <label className="fld"><span>Input Item Code *</span>
               <select className="in" value={String(form.inputItemCode ?? '')} onChange={(e) => { const item = items.find((i) => i.code === e.target.value); set('inputItemCode', e.target.value); if (item?.uom) set('inputUom', item.uom); }}>
                 <option value="">Select item...</option>
-                {items.map((i) => <option key={i.code} value={i.code}>{i.code} - {i.name}</option>)}
+                {items.map((i) => <option key={i.code} value={i.code}>{i.code} - {i.description || i.name}</option>)}
               </select>
             </label>
             <label className="fld"><span>Input Batch No</span><input className="in" value={String(form.inputBatchNumber ?? '')} onChange={(e) => set('inputBatchNumber', e.target.value)} /></label>
@@ -156,7 +156,7 @@ export default function ProductConversionScreen() {
             <label className="fld"><span>Output Item Code *</span>
               <select className="in" value={String(form.outputItemCode ?? '')} onChange={(e) => { const item = items.find((i) => i.code === e.target.value); set('outputItemCode', e.target.value); if (item?.uom) set('outputUom', item.uom); }}>
                 <option value="">Select item...</option>
-                {items.map((i) => <option key={i.code} value={i.code}>{i.code} - {i.name}</option>)}
+                {items.map((i) => <option key={i.code} value={i.code}>{i.code} - {i.description || i.name}</option>)}
               </select>
             </label>
             <label className="fld"><span>Output Batch No</span><input className="in" value={String(form.outputBatchNumber ?? '')} onChange={(e) => set('outputBatchNumber', e.target.value)} /></label>
@@ -200,10 +200,11 @@ export default function ProductConversionScreen() {
           <div className="twrap">
             {loading ? <div className="empty"><span className="material-symbols-rounded">hourglass_empty</span> Loading...</div> : (
               <table className="tbl">
-                <thead><tr><th>Conversion No</th><th>Type</th><th>Input Item</th><th>Input Qty</th><th>Output Item</th><th>Output Qty</th><th>Loss</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr><th className="num">S.No</th><th>Conversion No</th><th>Type</th><th>Input Item</th><th>Input Qty</th><th>Output Item</th><th>Output Qty</th><th>Loss</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
-                  {filtered.length === 0 ? <tr><td colSpan={9}><div className="empty"><span className="material-symbols-rounded">description</span> No conversions.</div></td></tr> : filtered.map((r) => (
+                  {filtered.length === 0 ? <tr><td colSpan={10}><div className="empty"><span className="material-symbols-rounded">description</span> No conversions.</div></td></tr> : filtered.map((r, idx) => (
                     <tr key={r.id}>
+                      <td className="num mut">{idx + 1}</td>
                       <td><b>{r.conversionNumber}</b></td>
                       <td>{r.conversionType}</td>
                       <td>{r.inputItemCode}</td>

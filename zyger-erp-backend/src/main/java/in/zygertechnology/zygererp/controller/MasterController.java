@@ -507,17 +507,19 @@ public class MasterController {
         return parties.save(merged);
     }
 
+    // Soft-delete by default: a customer/supplier can be referenced by documents (POs, invoices,
+    // sales orders) created long after this call returns, with no FK to guard against a hard
+    // delete — deactivating instead keeps the record (and its code/history) recoverable and
+    // never silently erases it. Deactivated parties already drop out of every active-party lookup
+    // (sup()/cus() above) and out of the master list when the frontend passes activeOnly=true;
+    // by default the list still shows them, marked Inactive, so deletions stay visible/auditable.
     @CacheEvict(cacheNames = {"masterRefs", "masterRefsByStore"}, allEntries = true)
     @DeleteMapping("/api/master/parties/{id}") void delParty(@PathVariable Long id) {
-        try {
-            parties.deleteById(id);
-        } catch (Exception e) {
-            parties.findById(id).ifPresent(p -> {
-                p.setActive(false);
-                p.setCustomerStatus("Inactive");
-                parties.save(p);
-            });
-        }
+        parties.findById(id).ifPresent(p -> {
+            p.setActive(false);
+            p.setCustomerStatus("Inactive");
+            parties.save(p);
+        });
     }
 
     // ---- Location CRUD ----

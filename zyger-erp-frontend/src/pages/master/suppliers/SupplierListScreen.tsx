@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import SupplierList from './SupplierList';
 import SupplierForm from './SupplierForm';
+import SupplierLedgerPage from './SupplierLedgerPage';
 
 export default function SupplierListScreen({ initialDocId, viewOnly: viewOnlyProp }: { initialDocId?: string; viewOnly?: boolean } = {}) {
-  const [mode, setMode] = useState<'list' | 'form'>('list');
+  const [mode, setMode] = useState<'list' | 'form' | 'ledger'>('list');
   const [customerId, setCustomerId] = useState<number | null>(null);
+  const [ledgerCode, setLedgerCode] = useState<string | null>(null);
   const [formKey, setFormKey] = useState(0);
   const [viewOnly, setViewOnly] = useState(false);
 
@@ -37,9 +39,15 @@ export default function SupplierListScreen({ initialDocId, viewOnly: viewOnlyPro
     setMode('form');
   };
 
+  const openLedger = (code: string) => {
+    setLedgerCode(code);
+    setMode('ledger');
+  };
+
   const handleBack = () => {
     setMode('list');
     setCustomerId(null);
+    setLedgerCode(null);
   };
 
   const handleSaved = () => {
@@ -58,5 +66,9 @@ export default function SupplierListScreen({ initialDocId, viewOnly: viewOnlyPro
     );
   }
 
-  return <SupplierList onAdd={openAdd} onEdit={openEdit} onView={openView} />;
+  if (mode === 'ledger' && ledgerCode) {
+    return <SupplierLedgerPage partyCode={ledgerCode} onBack={handleBack} />;
+  }
+
+  return <SupplierList onAdd={openAdd} onEdit={openEdit} onView={openView} onLedger={openLedger} />;
 }

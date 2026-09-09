@@ -123,13 +123,14 @@ export default function LocationMasterScreen() {
           ) : (
             <table className="tbl">
               <thead>
-                <tr><th>Code</th><th>Description</th><th>Type</th><th>Active</th><th>Actions</th></tr>
+                <tr><th className="num">S.No</th><th>Code</th><th>Description</th><th>Type</th><th>Active</th><th>Actions</th></tr>
               </thead>
               <tbody>
                 {rows.length === 0 ? (
-                  <tr><td colSpan={5}><div className="empty"><span className="material-symbols-rounded">description</span> No locations.</div></td></tr>
-                ) : rows.map((r) => (
+                  <tr><td colSpan={6}><div className="empty"><span className="material-symbols-rounded">description</span> No locations.</div></td></tr>
+                ) : rows.map((r, idx) => (
                   <tr key={r.id}>
+                    <td className="num mut">{idx + 1}</td>
                     <td>{r.code}</td>
                     <td>{r.description || r.name || ''}</td>
                     <td>{r.type ?? ''}</td>

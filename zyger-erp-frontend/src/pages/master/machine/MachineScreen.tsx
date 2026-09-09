@@ -355,6 +355,7 @@ export default function MachineScreen() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   <th>MACHINE CODE</th>
                   <th>MACHINE NAME</th>
                   <th>BRAND / MAKE</th>
@@ -369,12 +370,13 @@ export default function MachineScreen() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={10} className="empty">Loading machines...</td></tr>
+                  <tr><td colSpan={11} className="empty">Loading machines...</td></tr>
                 ) : filteredRows.length === 0 ? (
-                  <tr><td colSpan={10} className="empty">No machines found.</td></tr>
+                  <tr><td colSpan={11} className="empty">No machines found.</td></tr>
                 ) : (
-                  filteredRows.map(r => (
+                  filteredRows.map((r, idx) => (
                     <tr key={r.id}>
+                      <td className="num mut">{idx + 1}</td>
                       <td style={{ fontWeight: 700, color: '#0f172a' }}>{r.code}</td>
                       <td style={{ fontWeight: 600 }}>{r.name}</td>
                       <td>{r.brand || 'Ace Micromatic'}</td>

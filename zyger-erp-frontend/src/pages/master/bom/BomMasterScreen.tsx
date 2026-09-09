@@ -800,6 +800,7 @@ export default function BomMasterScreen() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   <th>BOM Mapping Code</th>
                   <th>BOM Mapping Name</th>
                   <th style={{ textAlign: 'center' }}>FG</th>
@@ -813,11 +814,12 @@ export default function BomMasterScreen() {
               </thead>
               <tbody>
                 {bmLoading ? (
-                  <tr><td colSpan={9} className="empty">Loading...</td></tr>
+                  <tr><td colSpan={10} className="empty">Loading...</td></tr>
                 ) : bmDocs.length === 0 ? (
-                  <tr><td colSpan={9} className="empty">No BOM Mappings yet.</td></tr>
-                ) : bmDocs.map((m) => (
+                  <tr><td colSpan={10} className="empty">No BOM Mappings yet.</td></tr>
+                ) : bmDocs.map((m, idx) => (
                   <tr key={m.id}>
+                    <td className="num mut">{idx + 1}</td>
                     <td style={{ fontWeight: 700 }}>{m.code}</td>
                     <td>{m.name || '\u2014'}</td>
                     <td style={{ textAlign: 'center' }}><span style={{ fontWeight: 700, color: '#6d28d9' }}>{m.fgCount ?? 0} FG</span></td>
@@ -1150,10 +1152,10 @@ export default function BomMasterScreen() {
               whereUsedRows.length > 0 ? (
                 <div className="twrap">
                   <table className="tbl">
-                    <thead><tr><th>Type</th><th>Reference</th><th>Item Code</th><th>Status</th><th>Quantity</th></tr></thead>
+                    <thead><tr><th className="num">S.No</th><th>Type</th><th>Reference</th><th>Item Code</th><th>Status</th><th>Quantity</th></tr></thead>
                     <tbody>
                       {whereUsedRows.map((r, i) => (
-                        <tr key={i}><td>{r.type}</td><td>{r.reference}</td><td>{r.itemCode}</td><td><StatusBadge status={r.status} /></td><td>{r.quantity}</td></tr>
+                        <tr key={i}><td className="num mut">{i + 1}</td><td>{r.type}</td><td>{r.reference}</td><td>{r.itemCode}</td><td><StatusBadge status={r.status} /></td><td>{r.quantity}</td></tr>
                       ))}
                     </tbody>
                   </table>
@@ -1171,10 +1173,10 @@ export default function BomMasterScreen() {
               versionRows.length > 0 ? (
                 <div className="twrap">
                   <table className="tbl">
-                    <thead><tr><th>Current Version</th><th>Previous Version</th><th>Components</th><th>Changed</th></tr></thead>
+                    <thead><tr><th className="num">S.No</th><th>Current Version</th><th>Previous Version</th><th>Components</th><th>Changed</th></tr></thead>
                     <tbody>
                       {versionRows.map((r, i) => (
-                        <tr key={i}><td>{r.currentVersion}</td><td>{r.previousVersion}</td><td>{r.componentCount}</td><td>{r.changed ? 'Yes' : 'No'}</td></tr>
+                        <tr key={i}><td className="num mut">{i + 1}</td><td>{r.currentVersion}</td><td>{r.previousVersion}</td><td>{r.componentCount}</td><td>{r.changed ? 'Yes' : 'No'}</td></tr>
                       ))}
                     </tbody>
                   </table>

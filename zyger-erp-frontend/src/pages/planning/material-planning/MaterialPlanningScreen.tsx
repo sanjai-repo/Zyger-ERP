@@ -209,6 +209,7 @@ export default function MaterialPlanningScreen() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   <th style={{ width: 40 }}></th>
                   <th>Plan Number</th>
                   <th>Plan Date</th>
@@ -220,10 +221,11 @@ export default function MaterialPlanningScreen() {
               </thead>
               <tbody>
                 {rows.length === 0 ? (
-                  <tr><td colSpan={7}><div className="empty"><span className="material-symbols-rounded">description</span> No material plans.</div></td></tr>
-                ) : rows.map((r) => (
+                  <tr><td colSpan={8}><div className="empty"><span className="material-symbols-rounded">description</span> No material plans.</div></td></tr>
+                ) : rows.map((r, idx) => (
                   <>
                     <tr key={r.id} onClick={() => toggleExpand(r.id)} style={{ cursor: 'pointer' }}>
+                      <td className="num mut">{page * PAGE_SIZE + idx + 1}</td>
                       <td>
                         <span className="material-symbols-rounded">{expandedId === r.id ? 'expand_less' : 'expand_more'}</span>
                       </td>
@@ -252,7 +254,7 @@ export default function MaterialPlanningScreen() {
                     </tr>
                     {expandedId === r.id && (
                       <tr key={`${r.id}-lines`}>
-                        <td colSpan={7}>
+                        <td colSpan={8}>
                           <div style={{ background: '#f9fafb', padding: 12, borderBottom: '1px solid #e5e7eb' }}>
                             <h4 style={{ margin: '0 0 8px', fontSize: 13, color: '#555' }}>Plan Lines</h4>
                             {loadingLines ? (
@@ -263,6 +265,7 @@ export default function MaterialPlanningScreen() {
                               <table className="tbl">
                                 <thead>
                                   <tr>
+                                    <th>S.No</th>
                                     <th>Item Code</th>
                                     <th>Description</th>
                                     <th>Required Qty</th>
@@ -278,8 +281,9 @@ export default function MaterialPlanningScreen() {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {planLines.map((line) => (
+                                  {planLines.map((line, idx) => (
                                     <tr key={line.id}>
+                                      <td className="num mut">{idx + 1}</td>
                                       <td>{line.itemCode}</td>
                                       <td>{line.itemDescription}</td>
                                       <td>{line.requiredQty}</td>

@@ -17,6 +17,7 @@ export interface LineFieldDef {
   readOnly?: boolean;
   required?: boolean;
   width?: string;
+  allowOthers?: boolean;
 }
 
 export interface ColumnDef {
@@ -52,7 +53,10 @@ export const PURCHASE_REQUEST_CONFIG: DocScreenConfig = {
   docType: 'purchase-request',
   title: 'Purchase Request',
   subtitle: 'Internal departmental request for materials, consumables, tools or services',
-  disableApprovalWorkflow: true,
+  // FRS DOC-PUR-FRS-02 §13 [ASSUMPTION]: workflow re-enabled per business decision to make
+  // Submit/Approve/Reject reachable from the UI (was disabled, making PURCHASE_MANAGER's
+  // Approve/Reject permission dead code for this screen).
+  disableApprovalWorkflow: false,
   columns: [
     { label: 'PR Number', field: 'docNo' },
     { label: 'PR Date', field: 'date' },
@@ -100,7 +104,9 @@ export const SUPPLIER_ENQUIRY_CONFIG: DocScreenConfig = {
   docType: 'supplier-enquiry',
   title: 'Supplier Enquiry',
   subtitle: 'Send RFQ to multiple suppliers and compare responses',
-  disableApprovalWorkflow: true,
+  // FRS §13 [ASSUMPTION]: re-enabled. Send Mail remains independent of Approve/Reject —
+  // an enquiry can be approved before or after it's emailed to suppliers.
+  disableApprovalWorkflow: false,
   columns: [
     { label: 'Enquiry No', field: 'docNo' },
     { label: 'PR Reference', field: 'purchaseRequestNumber' },
@@ -150,7 +156,9 @@ export const SUPPLIER_QUOTATION_CONFIG: DocScreenConfig = {
   docType: 'supplier-quotation',
   title: 'Supplier Quotation',
   subtitle: 'Record supplier quotations for comparison and PO selection',
-  disableApprovalWorkflow: true,
+  // FRS §13 [ASSUMPTION]: re-enabled. Approving a quotation now writes purchase price
+  // history through the normal UI action instead of only via a raw API call.
+  disableApprovalWorkflow: false,
   columns: [
     { label: 'Quotation No', field: 'docNo' },
     { label: 'Enquiry Ref', field: 'enquiryNumber' },
@@ -207,7 +215,11 @@ export const PURCHASE_ORDER_CONFIG: DocScreenConfig = {
   docType: 'purchase-order',
   title: 'Purchase Order',
   subtitle: 'Official commercial document issued to supplier with item, quantity, price and delivery terms',
-  disableApprovalWorkflow: true,
+  // FRS §13 [ASSUMPTION]: re-enabled. A PO can now be formally Approved before the
+  // Send Email step, in addition to (or instead of) the existing RELEASED-by-email path;
+  // both remain available. Approve is also blocked without a supplier + valid item lines
+  // (BR-PUR-GUARD-1, backend/service/DocumentFacade.java), which was previously untestable.
+  disableApprovalWorkflow: false,
   hideTopSave: true,
   columns: [
     { label: 'PO Number', field: 'docNo' },
@@ -423,4 +435,66 @@ export const JOB_WORK_PRICE_LIST_CONFIG: DocScreenConfig = {
     { key: 'approvalStatus', label: 'Approval Status', readOnly: true },
     { key: 'remarks', label: 'Remarks', type: 'textarea', span2: true },
   ],
+};
+
+// ─── 9. Purchase Return / Debit Note (PRN) ──────────────────────────
+// FRS DOC-PUR-FRS-02 §9 (PUR-07) — previously entirely absent from the system.
+// Entity: PurchaseReturn → BaseDoc + supplier, supplierCode, originalDocumentType,
+//   originalDocumentNo, reasonCode, qcInspectionRef, debitNoteRequired, debitNoteAmount
+// Lines: PurchaseReturnLine → BaseLine + itemDesc, uom, returnQty, rate, netAmount,
+//   originalReceivedQty, reasonCode
+// Stock effect: OUT (goods physically leave to the vendor) — unlike every other "return"
+// type in the system, which is IN. Posting reduces the store balance via the standard
+// generic engine (doc/DocTypes.java "purchase-return").
+export const PURCHASE_RETURN_CONFIG: DocScreenConfig = {
+  docType: 'purchase-return',
+  title: 'Purchase Return',
+  subtitle: 'Return rejected, excess, warranty or price-dispute material back to a vendor',
+  columns: [
+    { label: 'Return No', field: 'docNo' },
+    { label: 'Date', field: 'date' },
+    { label: 'Supplier', field: 'supplier' },
+    { label: 'Ref PO Inward', field: 'originalDocumentNo' },
+    { label: 'Reason', field: 'reasonCode' },
+    { label: 'Status', field: 'status', badge: true },
+  ],
+  statusField: 'status',
+  statusOptions: [...GENERIC_STATUSES, 'SUBMITTED', 'POSTED', 'CANCELLED'],
+  fields: [
+    { key: 'docNo', label: 'Return Number (Auto)', readOnly: true },
+    { key: 'date', label: 'Return Date *', type: 'date', required: true },
+    {
+      key: 'originalDocumentType', label: 'Reference Type *', type: 'select',
+      options: ['po-inward', 'purchase-order'], required: true,
+    },
+    { key: 'originalDocumentNo', label: 'Original PO Inward *', required: true },
+    { key: 'supplier', label: 'Supplier *', required: true },
+    {
+      // [ASSUMPTION] no fixed reason-code master exists yet — a short, editable list covering
+      // the scenarios named in the FRS gap (QC rejection, warranty, price dispute, excess supply).
+      key: 'reasonCode', label: 'Reason *', type: 'select',
+      options: ['QC_REJECTED', 'WARRANTY', 'PRICE_DISPUTE', 'EXCESS_SUPPLY', 'DAMAGED', 'WRONG_ITEM', 'OTHER'],
+      required: true,
+    },
+    { key: 'qcInspectionRef', label: 'QC Inspection Ref (if applicable)' },
+    { key: 'debitNoteRequired', label: 'Debit Note Required', type: 'checkbox' },
+    { key: 'debitNoteAmount', label: 'Debit Note Amount (₹)', type: 'number' },
+    { key: 'debitNoteReference', label: 'Debit Note Reference' },
+    { key: 'remarks', label: 'Remarks', type: 'textarea', span2: true },
+  ],
+  lines: {
+    title: 'Returned Items',
+    fields: [
+      { colNo: 1, key: 'lineNo', label: 'Line #', readOnly: true, width: '55px' },
+      { colNo: 2, key: 'itemCode', label: 'Item Code *', type: 'lookup', required: true, width: '150px' },
+      { colNo: 3, key: 'itemDesc', label: 'Description', width: '170px' },
+      { colNo: 4, key: 'uom', label: 'UOM', width: '80px' },
+      { colNo: 5, key: 'originalReceivedQty', label: 'Received Qty', type: 'number', readOnly: true, width: '100px' },
+      { colNo: 6, key: 'returnQty', label: 'Return Qty *', type: 'number', required: true, width: '100px' },
+      { colNo: 7, key: 'rate', label: 'Rate (₹)', type: 'number', width: '95px' },
+      { colNo: 8, key: 'netAmount', label: 'Amount (₹)', type: 'number', readOnly: true, width: '100px' },
+      { colNo: 9, key: 'reasonCode', label: 'Line Reason', width: '110px' },
+      { colNo: 10, key: 'remarks', label: 'Remarks', width: '110px' },
+    ],
+  },
 };

@@ -171,10 +171,11 @@ export default function ToolServiceRectificationScreen() {
           <div className="twrap">
             {loading ? <div className="empty"><span className="material-symbols-rounded">hourglass_empty</span> Loading...</div> : (
               <table className="tbl">
-                <thead><tr><th>TSR No</th><th>Service No</th><th>Tool ID</th><th>Technician</th><th>Cost</th><th>Status</th><th>Result</th><th>Actions</th></tr></thead>
+                <thead><tr><th className="num">S.No</th><th>TSR No</th><th>Service No</th><th>Tool ID</th><th>Technician</th><th>Cost</th><th>Status</th><th>Result</th><th>Actions</th></tr></thead>
                 <tbody>
-                  {filtered.length === 0 ? <tr><td colSpan={8}><div className="empty"><span className="material-symbols-rounded">description</span> No rectifications.</div></td></tr> : filtered.map((r) => (
+                  {filtered.length === 0 ? <tr><td colSpan={9}><div className="empty"><span className="material-symbols-rounded">description</span> No rectifications.</div></td></tr> : filtered.map((r, idx) => (
                     <tr key={r.id}>
+                      <td className="num mut">{idx + 1}</td>
                       <td><b>{r.rectificationNumber}</b></td>
                       <td>{r.serviceNumber}</td>
                       <td>{r.toolId}</td>

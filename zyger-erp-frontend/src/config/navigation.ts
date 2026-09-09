@@ -310,6 +310,13 @@ export const NAV_ITEMS: NavTopItem[] = [
         screenId: 'purchase-order',
       },
       {
+        type: 'item',
+        id: 'purchase-return',
+        label: 'Purchase Return',
+        icon: 'assignment_return',
+        screenId: 'purchase-return',
+      },
+      {
         type: 'group',
         id: 'purchase-schedule',
         label: 'Purchase Schedule',
@@ -404,26 +411,10 @@ export const NAV_ITEMS: NavTopItem[] = [
           },
           {
             type: 'item',
-            id: 'jo-dc-issue',
-            label: 'JO DC',
-            screenId: 'jo-dc-issue',
-            tabIcon: 'outbox',
-          },
-          {
-            type: 'item',
             id: 'issue-internal-external',
             label: 'Issue Internal / External',
             icon: 'outbox',
             screenId: 'issue-internal-external',
-            tabIcon: 'outbox',
-          },
-
-
-          {
-            type: 'item',
-            id: 'issue-against-receipt',
-            label: 'Issue Against Receipt',
-            screenId: 'issue-against-receipt',
             tabIcon: 'outbox',
           },
         ],
@@ -443,13 +434,6 @@ export const NAV_ITEMS: NavTopItem[] = [
           },
           {
             type: 'item',
-            id: 'inventory-sales-dc',
-            label: 'Sales DC',
-            screenId: 'sales-dc',
-            tabIcon: 'local_shipping',
-          },
-          {
-            type: 'item',
             id: 'inventory-jo-dc',
             label: 'JO DC',
             screenId: 'jo-dc',
@@ -460,13 +444,6 @@ export const NAV_ITEMS: NavTopItem[] = [
             id: 'general-dc',
             label: 'General DC',
             screenId: 'general-dc',
-            tabIcon: 'local_shipping',
-          },
-          {
-            type: 'item',
-            id: 'return-dc',
-            label: 'Return DC',
-            screenId: 'return-dc',
             tabIcon: 'local_shipping',
           },
           {
@@ -493,13 +470,6 @@ export const NAV_ITEMS: NavTopItem[] = [
           },
           {
             type: 'item',
-            id: 'inward-return',
-            label: 'Inward Return',
-            screenId: 'inward-return',
-            tabIcon: 'assignment_return',
-          },
-          {
-            type: 'item',
             id: 'inventory-dc-return',
             label: 'DC Return',
             screenId: 'dc-return',
@@ -517,20 +487,6 @@ export const NAV_ITEMS: NavTopItem[] = [
             id: 'internal-return',
             label: 'Internal Return',
             screenId: 'internal-return',
-            tabIcon: 'assignment_return',
-          },
-          {
-            type: 'item',
-            id: 'received-against-issue',
-            label: 'Received Against Issue',
-            screenId: 'received-against-issue',
-            tabIcon: 'assignment_return',
-          },
-          {
-            type: 'item',
-            id: 'receipt-return',
-            label: 'Receipt Return',
-            screenId: 'receipt-return',
             tabIcon: 'assignment_return',
           },
         ],
@@ -592,15 +548,6 @@ export const NAV_ITEMS: NavTopItem[] = [
             tabIcon: 'edit_note',
           },
         ],
-      },
-
-      {
-        type: 'item',
-        id: 'inventory-store-receipt',
-        label: 'Store Receipt (GRN)',
-        icon: 'warehouse',
-        screenId: 'grn',
-        tabIcon: 'warehouse',
       },
 
       {

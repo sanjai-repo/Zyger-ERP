@@ -36,6 +36,8 @@ public interface DocEntity {
     default void setReopenedBy(String s) {}
     default Instant getReopenedAt() { return null; }
     default void setReopenedAt(Instant i) {}
+    default Instant getPostedAt() { return null; }
+    default void setPostedAt(Instant i) {}
     default Long getPlantId() { return 1L; }
     default void setPlantId(Long id) {}
 

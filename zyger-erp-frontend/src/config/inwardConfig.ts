@@ -156,7 +156,7 @@ export const INWARD_TYPE_LIST: InwardTypeConfig[] = [
   INWARD_TYPES.GENERAL_INWARD,
 ];
 
-export function buildLineFields(qtyField: string, inwardType?: InwardType): InwardFieldConfig[] {
+export function buildLineFields(qtyField: string, _inwardType?: InwardType): InwardFieldConfig[] {
   const fields: InwardFieldConfig[] = [
     { key: 'itemCode', label: 'Item Code', type: 'item', required: true },
     { key: 'itemDesc', label: 'Item Name', type: 'auto' },
@@ -172,12 +172,14 @@ export function buildLineFields(qtyField: string, inwardType?: InwardType): Inwa
     { key: 'rejectedQty', label: 'Rejected', type: 'number' },
   ];
 
-  if (inwardType !== 'PO_INWARD') {
-    fields.push(
-      { key: 'batchNo', label: 'Batch No', type: 'text' },
-      { key: 'heatNo', label: 'Heat No', type: 'text' }
-    );
-  }
+  // Batch/Heat No render for every inward type, PO_INWARD included: the backend validates
+  // requiresBatch/requiresHeat unconditionally for all four (DocumentFacade.validateBatchHeat),
+  // so excluding them here for PO_INWARD only made saving impossible for any item flagged as
+  // requiring one — there was no field on this screen to enter it.
+  fields.push(
+    { key: 'batchNo', label: 'Batch No', type: 'text' },
+    { key: 'heatNo', label: 'Heat No', type: 'text' }
+  );
 
   fields.push(
     { key: 'location', label: 'Store Location', type: 'select', required: true, options: 'stores' },

@@ -15,6 +15,7 @@ import type {
   RmiDto,
 } from '../../../../types/inventory/rmIssue.types';
 import { getApiErrorMessage } from '../../../../utils/apiError';
+import { filterPurchaseRelevantItems } from '../../../../utils/itemClassification';
 
 import StatusBadge from '../../../../components/common/StatusBadge';
 import ConfirmActionModal from '../../../../components/common/ConfirmActionModal';
@@ -30,7 +31,10 @@ import {
   type RmIssueLineFormState,
 } from './rmIssueForm';
 
-const RETURNABLE_OPTIONS = ['Yes', 'No'];
+const RETURNABLE_OPTIONS = [
+  { value: 'Yes', label: 'Returnable' },
+  { value: 'No', label: 'Non-Returnable' },
+];
 
 interface ActionModalState {
   action: RmiDocumentAction;
@@ -73,18 +77,26 @@ export default function RmIssueForm({
   const [availabilityMap, setAvailabilityMap] = useState<Record<string, string>>(
     {}
   );
+  const [requestedByName, setRequestedByName] = useState('');
 
   const validationBoxRef = useRef<HTMLDivElement | null>(null);
   const initializedFor = useRef<string | null>(null);
 
   const items = lookups.items;
-  const locations = lookups.locations;
+  // FRS DOC-INV-FRS-02 Priority#1 [FIXED] — merged union instead of an all-or-nothing
+  // stores-vs-locations fallback; see utils/locationOptions.ts for why.
+  const locations = lookups.stores ?? [];
   const jobOrders = lookups.jobOrders;
 
   const itemsMap = useMemo(
     () => new Map(items.map((item) => [item.code, item])),
     [items]
   );
+
+  // Item Code should only ever offer Purchasable / Customer-Supplied / Manufacturing
+  // items (the three item screens under Master → Inventory → Items) — this picker
+  // previously showed every item in the system unfiltered.
+  const allowedItems = useMemo(() => filterPurchaseRelevantItems(items), [items]);
 
   const status = currentDocument?.status ?? 'DRAFT';
   const editable = !viewOnly && (status === 'DRAFT' || status === 'REJECTED');
@@ -123,6 +135,7 @@ export default function RmIssueForm({
       initializedFor.current = null;
       setCurrentDocument(null);
       setForm(createEmptyForm());
+      setRequestedByName('');
       return;
     }
 
@@ -130,6 +143,7 @@ export default function RmIssueForm({
       initializedFor.current = documentId;
       setCurrentDocument(documentQuery.data);
       setForm(formFromDto(documentQuery.data, items));
+      setRequestedByName('');
     }
   }, [documentId, documentQuery.data, items]);
 
@@ -234,8 +248,16 @@ export default function RmIssueForm({
       };
 
       if (key === 'sourceLocation') {
+        // Priority#1 [FIXED] — was `line.location ? line : {...}`: once a line acquired ANY
+        // location (even just inherited from the header on the very first render), changing
+        // Source Location again silently stopped updating it, so the availability check kept
+        // querying the old store forever. Now a line still follows the header unless its
+        // location has actually diverged from the header's *previous* value (a real per-line
+        // override), matching what a user switching stores on this doc actually expects.
         next.lines = previous.lines.map((line) =>
-          line.location ? line : { ...line, location: value }
+          (!line.location || line.location === previous.sourceLocation)
+            ? { ...line, location: value }
+            : line
         );
       }
 
@@ -245,6 +267,7 @@ export default function RmIssueForm({
 
   const updateIssueRequest = (value: string) => {
     setForm((previous) => ({ ...previous, issueRequestNo: value }));
+    setRequestedByName('');
 
     if (!value) {
       return;
@@ -262,6 +285,7 @@ export default function RmIssueForm({
     void stockIssueRequestService
       .getById(request.id)
       .then((sir) => {
+        setRequestedByName(sir.requestedBy ?? '');
         setForm((previous) => ({
           ...previous,
           jobOrderNo: sir.jobOrderNo ?? previous.jobOrderNo,
@@ -439,6 +463,82 @@ export default function RmIssueForm({
     }
   };
 
+  const handleStockIssue = async () => {
+    if (!editable) {
+      return;
+    }
+
+    setValidationMode('submit');
+
+    const errors = validateRmIssueForm(
+      form,
+      itemsMap,
+      true,
+      availabilityMap
+    );
+
+    if (errors.length > 0) {
+      return;
+    }
+
+    try {
+      const targetId = documentId ?? currentDocument?.id ?? null;
+
+      if (targetId && status === 'REJECTED') {
+        await actionMutation.mutateAsync({
+          id: targetId,
+          action: 'reopen',
+          note: '',
+        });
+      }
+
+      const payload = buildPayload(form);
+
+      let saved: RmiDto = targetId
+        ? await updateMutation.mutateAsync({ id: targetId, payload })
+        : await createMutation.mutateAsync(payload);
+
+      if (saved.status === 'DRAFT' && saved.id) {
+        saved = await actionMutation.mutateAsync({
+          id: saved.id,
+          action: 'submit',
+          note: '',
+        });
+      }
+
+      if (saved.status === 'SUBMITTED' && saved.id) {
+        saved = await actionMutation.mutateAsync({
+          id: saved.id,
+          action: 'approve',
+          note: '',
+        });
+      }
+
+      if (saved.status === 'APPROVED' && saved.id) {
+        saved = await actionMutation.mutateAsync({
+          id: saved.id,
+          action: 'post',
+          note: '',
+        });
+      }
+
+      setCurrentDocument(saved);
+      setForm(formFromDto(saved, items));
+
+      if (saved.id) {
+        initializedFor.current = saved.id;
+        onSaved?.(saved.id);
+      }
+
+      toast(`${saved.docNo || 'RM Issue'} — Stock issued successfully.`);
+    } catch (issueError) {
+      toast(
+        getApiErrorMessage(issueError, 'Stock issue failed.'),
+        'error'
+      );
+    }
+  };
+
   const runAction = async (action: RmiDocumentAction, note: string) => {
     const id = currentDocument?.id ?? documentId;
 
@@ -590,8 +690,7 @@ export default function RmIssueForm({
       <div className="note">
         <span className="material-symbols-rounded">info</span>
         <span>
-          Workflow: DRAFT → SUBMITTED → APPROVED → POSTED • Posting reduces
-          stock
+          Click Stock Issue to post in one step — stock reduces immediately
         </span>
       </div>
 
@@ -696,10 +795,21 @@ export default function RmIssueForm({
                 <option value="">— Select —</option>
                 {locations.map((location) => (
                   <option key={location.code} value={location.code}>
-                    {location.code}
+                    {location.name || location.code}
                   </option>
                 ))}
               </select>
+            </label>
+
+            <label className="fld">
+              <span>Requested By</span>
+              <input
+                className="in"
+                value={requestedByName}
+                readOnly
+                tabIndex={-1}
+                placeholder="Auto-filled from Issue Request"
+              />
             </label>
 
             <label className="fld span2">
@@ -738,6 +848,7 @@ export default function RmIssueForm({
             <table className="tbl lines">
               <thead>
                 <tr>
+                  <th>S.No</th>
                   <th>Item Code *</th>
                   <th>Item Name</th>
                   <th>Available</th>
@@ -745,7 +856,6 @@ export default function RmIssueForm({
                   <th>Batch No</th>
                   <th>Heat No</th>
                   <th>Returnable</th>
-                  <th>Location *</th>
                   <th>Remarks</th>
                   <th />
                 </tr>
@@ -754,6 +864,7 @@ export default function RmIssueForm({
               <tbody>
                 {form.lines.map((line, index) => (
                   <tr key={index}>
+                    <td className="num mut">{index + 1}</td>
                     <td>
                       <select
                         className="in w-i"
@@ -764,7 +875,7 @@ export default function RmIssueForm({
                         }
                       >
                         <option value="">— Select Item —</option>
-                        {items.map((item) => (
+                        {allowedItems.map((item) => (
                           <option key={item.code} value={item.code}>
                             {item.code} — {item.description}
                           </option>
@@ -836,26 +947,8 @@ export default function RmIssueForm({
                       >
                         <option value="">— Select —</option>
                         {RETURNABLE_OPTIONS.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-
-                    <td>
-                      <select
-                        className="in"
-                        value={line.location}
-                        disabled={!editable}
-                        onChange={(event) =>
-                          updateLine(index, 'location', event.target.value)
-                        }
-                      >
-                        <option value="">— Select —</option>
-                        {locations.map((location) => (
-                          <option key={location.code} value={location.code}>
-                            {location.code}
+                          <option key={option.value} value={option.value}>
+                            {option.label}
                           </option>
                         ))}
                       </select>
@@ -915,12 +1008,14 @@ export default function RmIssueForm({
 
                 <button
                   type="button"
-                  className="btn btn-p"
-                  onClick={() => save(true)}
+                  className="btn btn-g"
+                  onClick={handleStockIssue}
                   disabled={isBusy}
                 >
-                  <span className="material-symbols-rounded">send</span>
-                  Submit
+                  <span className="material-symbols-rounded">
+                    published_with_changes
+                  </span>
+                  Stock Issue
                 </button>
               </>
             )}

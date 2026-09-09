@@ -31,9 +31,10 @@ const STATUS_OPTIONS = [
 
 interface DrilldownPageProps {
   drilldownType: string;
+  initialFilters?: { location?: string };
 }
 
-export default function DrilldownPage({ drilldownType }: DrilldownPageProps) {
+export default function DrilldownPage({ drilldownType, initialFilters }: DrilldownPageProps) {
   const config = DRILLDOWN_CONFIGS[drilldownType];
   const { setActiveTab } = useTabs();
   const { toast } = useToast();
@@ -61,6 +62,19 @@ export default function DrilldownPage({ drilldownType }: DrilldownPageProps) {
         viewOnly,
         screenId,
       },
+    });
+  };
+
+  /** FR-INV-STORE-3 — a store row drills into Current Stock, filtered to that store. */
+  const openStoreDetail = (row: Record<string, unknown>) => {
+    const storeCode = String(row.storeCode ?? '');
+    if (!storeCode) return;
+    openTab({
+      id: `current-stock-store-${storeCode}`,
+      label: `Stock — ${storeCode}`,
+      icon: 'inventory',
+      component: getScreenComponent('current-stock'),
+      props: { initialFilters: { location: storeCode } },
     });
   };
 
@@ -92,7 +106,7 @@ export default function DrilldownPage({ drilldownType }: DrilldownPageProps) {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [itemCode, setItemCode] = useState('');
-  const [location, setLocation] = useState('');
+  const [location, setLocation] = useState(initialFilters?.location ?? '');
   const [category, setCategory] = useState('');
   const [status, setStatus] = useState('');
   const [txType, setTxType] = useState('');
@@ -377,6 +391,7 @@ export default function DrilldownPage({ drilldownType }: DrilldownPageProps) {
               <table className="tbl">
                 <thead>
                   <tr>
+                    <th className="num">S.No</th>
                     {config.columns.map((column) => (
                       <th
                         key={column.key}
@@ -391,8 +406,21 @@ export default function DrilldownPage({ drilldownType }: DrilldownPageProps) {
 
                 <tbody>
                   {rows.length > 0 ? (
-                    rows.map((row) => (
-                      <tr key={row.id}>
+                    rows.map((row, idx) => (
+                      <tr
+                        key={row.id}
+                        onClick={
+                          drilldownType === 'store-stock-summary'
+                            ? () => openStoreDetail(row)
+                            : undefined
+                        }
+                        style={
+                          drilldownType === 'store-stock-summary'
+                            ? { cursor: 'pointer' }
+                            : undefined
+                        }
+                      >
+                        <td className="num mut">{page * PAGE_SIZE + idx + 1}</td>
                         {config.columns.map((column) => (
                           <td
                             key={column.key}
@@ -432,7 +460,7 @@ export default function DrilldownPage({ drilldownType }: DrilldownPageProps) {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={config.columns.length + (hasActions ? 1 : 0)}>
+                      <td colSpan={config.columns.length + 1 + (hasActions ? 1 : 0)}>
                         <div className="empty">
                           <span className="material-symbols-rounded">
                             folder_open

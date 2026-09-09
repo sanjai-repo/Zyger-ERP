@@ -8,6 +8,7 @@ export interface ReportsOverviewKpis {
   pendingApprovals: number;
   ledgerEntries: number;
   accuracyPct: number;
+  activeStoreCount: number;
 }
 
 export interface MonthlyStatusPoint {

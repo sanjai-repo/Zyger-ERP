@@ -13,6 +13,8 @@ export interface ItemMasterDto {
   customerOwned?: boolean;
   itemGroupType?: string;
   groupItemType?: string;
+  defaultReceivingStore?: string;
+  inspectionRequired?: boolean;
 }
 
 export interface SupplierDto {

@@ -81,6 +81,7 @@ export default function RejectionReasonModal({ open, onClose, targetRejectedQty,
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'left' }}>
+                <th style={{ padding: 8 }}>S.No</th>
                 <th style={{ padding: 8 }}>Rejection Reason</th>
                 <th style={{ padding: 8 }}>Description</th>
                 <th style={{ padding: 8 }}>Qty</th>
@@ -89,9 +90,10 @@ export default function RejectionReasonModal({ open, onClose, targetRejectedQty,
             </thead>
             <tbody>
               {list.length === 0 ? (
-                <tr><td colSpan={4} style={{ textAlign: 'center', padding: 16, color: '#94a3b8' }}>No rejection reasons added. Click + Add Reason.</td></tr>
+                <tr><td colSpan={5} style={{ textAlign: 'center', padding: 16, color: '#94a3b8' }}>No rejection reasons added. Click + Add Reason.</td></tr>
               ) : list.map((r, i) => (
                 <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: 8, color: '#94a3b8' }}>{i + 1}</td>
                   <td style={{ padding: 8 }}>
                     <select className="in" value={r.reasonCode} onChange={(e) => handleChange(i, 'reasonCode', e.target.value)}>
                       {COMMON_REASONS.map((cr) => (

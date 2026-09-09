@@ -63,6 +63,13 @@ export function useRmIssueLookups() {
     retry: 1,
   });
 
+  const storesQuery = useQuery({
+    queryKey: ['master', 'stores'],
+    queryFn: ({ signal }) => masterService.getStores(signal),
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
+  });
+
   const isLoading =
     itemsQuery.isPending ||
     locationsQuery.isPending ||
@@ -86,11 +93,13 @@ export function useRmIssueLookups() {
       itemsQuery.refetch(),
       locationsQuery.refetch(),
       jobOrdersQuery.refetch(),
+      storesQuery.refetch(),
     ]);
 
   return {
     items: itemsQuery.data ?? [],
     locations: locationsQuery.data ?? [],
+    stores: storesQuery.data ?? [],
     jobOrders: jobOrdersQuery.data ?? [],
     isLoading,
     isError,

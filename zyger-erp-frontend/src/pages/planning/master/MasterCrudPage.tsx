@@ -122,12 +122,13 @@ export default function MasterCrudPage({ title, subtitle, apiMethod, fields }: M
             <div className="empty"><span className="material-symbols-rounded">hourglass_empty</span> Loading...</div>
           ) : (
             <table className="tbl">
-              <thead><tr><th>Code</th><th>Name</th><th>Actions</th></tr></thead>
+              <thead><tr><th className="num">S.No</th><th>Code</th><th>Name</th><th>Actions</th></tr></thead>
               <tbody>
                 {rows.filter(r => !search || r.code?.toLowerCase().includes(search.toLowerCase()) || r.name?.toLowerCase().includes(search.toLowerCase())).length === 0 ? (
-                  <tr><td colSpan={3}><div className="empty"><span className="material-symbols-rounded">description</span> No records.</div></td></tr>
-                ) : rows.filter(r => !search || r.code?.toLowerCase().includes(search.toLowerCase()) || r.name?.toLowerCase().includes(search.toLowerCase())).map((r) => (
+                  <tr><td colSpan={4}><div className="empty"><span className="material-symbols-rounded">description</span> No records.</div></td></tr>
+                ) : rows.filter(r => !search || r.code?.toLowerCase().includes(search.toLowerCase()) || r.name?.toLowerCase().includes(search.toLowerCase())).map((r, idx) => (
                   <tr key={r.id}>
+                    <td className="num mut">{idx + 1}</td>
                     <td>{r.code}</td>
                     <td>{r.name}</td>
                     <td>

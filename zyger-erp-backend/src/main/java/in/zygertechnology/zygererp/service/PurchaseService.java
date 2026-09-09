@@ -25,10 +25,17 @@ public class PurchaseService {
     static final Set<String> PURCHASE_KEYS = Set.of(
             "purchase-request", "supplier-enquiry", "supplier-quotation",
             "purchase-order", "job-order", "purchase-target",
-            "purchase-price-list", "job-work-price-list"
+            "purchase-price-list", "job-work-price-list",
+            "purchase-return"
     );
 
     private static final Set<String> FINANCE_DOC_STATUSES = Set.of("APPROVED", "POSTED", "RELEASED", "SENT");
+    // PO can realistically sit in any of these while still "open" for procurement purposes —
+    // disableApprovalWorkflow means most real POs go DRAFT -> RELEASED (via email) and never touch
+    // APPROVED/POSTED, so counting APPROVED alone undercounts almost everything in practice.
+    private static final Set<String> OPEN_PO_STATUSES = Set.of(
+            "APPROVED", "SUBMITTED", "RELEASED", "PARTIALLY_RECEIVED", "ON_HOLD", "POSTED"
+    );
     private static final Set<String> ACTIVITY_ENTITY_TYPES = Set.of(
             "SupplierEnquiry", "SupplierQuotation", "PurchaseOrder", "PurchaseRequest",
             "JobOrder", "PurchaseTarget", "PurchasePriceList", "JobWorkPriceList",
@@ -416,7 +423,7 @@ public class PurchaseService {
         d.put("openPR", countByStatus("purchase-request", "SUBMITTED"));
         d.put("openEnquiries", countByStatus("supplier-enquiry", "SUBMITTED"));
         d.put("pendingQuotations", countByStatus("supplier-quotation", "SUBMITTED"));
-        d.put("openPO", countByStatus("purchase-order", "APPROVED"));
+        d.put("openPO", countByStatuses("purchase-order", OPEN_PO_STATUSES));
         d.put("pendingPOApproval", countByStatus("purchase-order", "SUBMITTED"));
         d.put("partiallyReceived", computePartiallyReceivedPOs());
         d.put("delayedPO", computeDelayedPOs());
@@ -444,7 +451,7 @@ public class PurchaseService {
         for (DocEntity d : docs.findAll("purchase-order")) {
             if (!(d instanceof PurchaseOrder po)) continue;
             String st = po.getStatus();
-            boolean open = FINANCE_DOC_STATUSES.contains(st) || "DRAFT".equals(st);
+            boolean open = OPEN_PO_STATUSES.contains(st);
             if (po.getLines() == null) continue;
             for (PurchaseOrderItem li : (List<PurchaseOrderItem>) po.getLines()) {
                 BigDecimal amt = li.getNetAmount() != null ? li.getNetAmount() : BigDecimal.ZERO;
@@ -463,7 +470,7 @@ public class PurchaseService {
                     monthlySpend.merge(month, amt, BigDecimal::add);
                 }
             }
-            if ("APPROVED".equals(st) || "POSTED".equals(st) || "RELEASED".equals(st)) {
+            if (OPEN_PO_STATUSES.contains(st)) {
                 BigDecimal poTotal = po.getLines().stream()
                         .map(li -> li.getNetAmount() != null ? li.getNetAmount() : BigDecimal.ZERO)
                         .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -567,9 +574,13 @@ public class PurchaseService {
         return 0;
     }
 
+    private long countByStatuses(String key, Set<String> statuses) {
+        return docs.findAll(key).stream().filter(d -> statuses.contains(d.getStatus())).count();
+    }
+
     private long computePartiallyReceivedPOs() {
         List<DocEntity> postedPOs = docs.findAll("purchase-order").stream()
-            .filter(d -> "POSTED".equals(d.getStatus()))
+            .filter(d -> OPEN_PO_STATUSES.contains(d.getStatus()))
             .toList();
         long count = 0;
         for (DocEntity po : postedPOs) {
@@ -603,7 +614,7 @@ public class PurchaseService {
     private long computeDelayedPOs() {
         LocalDate today = LocalDate.now();
         return docs.findAll("purchase-order").stream()
-            .filter(d -> "POSTED".equals(d.getStatus()) || "APPROVED".equals(d.getStatus()))
+            .filter(d -> OPEN_PO_STATUSES.contains(d.getStatus()))
             .filter(d -> {
                 if (d instanceof PurchaseOrder po) {
                     return po.getExpectedDeliveryDate() != null && po.getExpectedDeliveryDate().isBefore(today);
@@ -625,6 +636,17 @@ public class PurchaseService {
     private void autoCreateIqcFromInward(PoInward pi, String user) {
         if ("NO".equalsIgnoreCase(pi.getQcRequired())) return;
         if (pi.getLines() == null || pi.getLines().isEmpty()) return;
+        // DocumentFacade.createQualityInspectionIfRequired() already auto-creates one inspection per
+        // line at PO Inward creation time when qcRequired=Yes. This approve-time path only exists for
+        // callers that skip straight to approve; if inspections for this source already exist, don't
+        // create a second set (approving a doc whose inspections were already created must be a no-op).
+        try {
+            Long already = em.createQuery(
+                    "select count(q) from QualityInspection q where q.sourceNumber = :sn", Long.class)
+                    .setParameter("sn", pi.getDocNo())
+                    .getSingleResult();
+            if (already != null && already > 0) return;
+        } catch (Exception ignored) {}
         try {
             for (PoInwardLine line : pi.getLines()) {
                 if (line.getItemCode() == null || line.getItemCode().isBlank()) continue;

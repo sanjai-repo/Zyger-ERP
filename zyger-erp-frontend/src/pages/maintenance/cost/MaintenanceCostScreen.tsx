@@ -139,12 +139,13 @@ export default function MaintenanceCostScreen() {
           <div className="twrap">
             {loading ? <div className="empty"><span className="material-symbols-rounded">hourglass_empty</span> Loading...</div> : (
               <table className="tbl">
-                <thead><tr><th>Reference</th><th>Machine</th><th>Category</th><th>Description</th><th>Date</th><th className="r">Amount</th><th>Actions</th></tr></thead>
+                <thead><tr><th className="num">S.No</th><th>Reference</th><th>Machine</th><th>Category</th><th>Description</th><th>Date</th><th className="r">Amount</th><th>Actions</th></tr></thead>
                 <tbody>
-                  {rows.length === 0 ? <tr><td colSpan={7}><div className="empty"><span className="material-symbols-rounded">description</span> No cost transactions.</div></td></tr> : rows.map((r) => {
+                  {rows.length === 0 ? <tr><td colSpan={8}><div className="empty"><span className="material-symbols-rounded">description</span> No cost transactions.</div></td></tr> : rows.map((r, idx) => {
                     const c = CATEGORY_COLORS[r.costCategory] ?? CATEGORY_COLORS.OTHER;
                     return (
                       <tr key={r.id} style={{ background: r.reversalId ? '#f9fafb' : undefined, opacity: r.reversalId ? 0.6 : 1 }}>
+                        <td className="num mut">{idx + 1}</td>
                         <td><b>{r.costReference}</b>{r.immutable && <span title="Immutable" className="material-symbols-rounded" style={{ fontSize: 14, color: '#94a3b8', marginLeft: 6 }}>lock</span>}</td>
                         <td>{r.machineCode || '-'}</td>
                         <td><span style={{ background: c.bg, color: c.color, padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600 }}>{r.costCategory}</span></td>

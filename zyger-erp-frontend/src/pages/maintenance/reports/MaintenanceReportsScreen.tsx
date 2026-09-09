@@ -174,10 +174,10 @@ export default function MaintenanceReportsScreen() {
               <h4 style={{ margin: '0 0 8px', fontSize: 13 }}>Breakdown History</h4>
               <div className="twrap">
                 <table className="tbl">
-                  <thead><tr><th>Number</th><th>Date</th><th>Category</th><th>Priority</th><th>Status</th><th>Problem</th></tr></thead>
+                  <thead><tr><th className="num">S.No</th><th>Number</th><th>Date</th><th>Category</th><th>Priority</th><th>Status</th><th>Problem</th></tr></thead>
                   <tbody>
                     {((machineHistory.breakdownHistory ?? []) as Array<Record<string, unknown>>).map((r, i) => (
-                      <tr key={i}><td><b>{String(r.number ?? '')}</b></td><td>{String(r.date ?? '')}</td><td>{String(r.category ?? '').replace(/_/g, ' ')}</td><td>{String(r.priority ?? '')}</td><td>{String(r.status ?? '')}</td><td style={{ maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{String(r.problem ?? '')}</td></tr>
+                      <tr key={i}><td className="num mut">{i + 1}</td><td><b>{String(r.number ?? '')}</b></td><td>{String(r.date ?? '')}</td><td>{String(r.category ?? '').replace(/_/g, ' ')}</td><td>{String(r.priority ?? '')}</td><td>{String(r.status ?? '')}</td><td style={{ maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{String(r.problem ?? '')}</td></tr>
                     ))}
                   </tbody>
                 </table>
@@ -185,10 +185,10 @@ export default function MaintenanceReportsScreen() {
               <h4 style={{ margin: '12px 0 8px', fontSize: 13 }}>PM History</h4>
               <div className="twrap">
                 <table className="tbl">
-                  <thead><tr><th>Number</th><th>Result</th><th>Status</th><th>Technician</th></tr></thead>
+                  <thead><tr><th className="num">S.No</th><th>Number</th><th>Result</th><th>Status</th><th>Technician</th></tr></thead>
                   <tbody>
                     {((machineHistory.pmHistory ?? []) as Array<Record<string, unknown>>).map((r, i) => (
-                      <tr key={i}><td><b>{String(r.number ?? '')}</b></td><td>{String(r.result ?? '')}</td><td>{String(r.status ?? '')}</td><td>{String(r.technician ?? '')}</td></tr>
+                      <tr key={i}><td className="num mut">{i + 1}</td><td><b>{String(r.number ?? '')}</b></td><td>{String(r.result ?? '')}</td><td>{String(r.status ?? '')}</td><td>{String(r.technician ?? '')}</td></tr>
                     ))}
                   </tbody>
                 </table>
@@ -219,12 +219,12 @@ export default function MaintenanceReportsScreen() {
               <h4 style={{ margin: '0 0 8px', fontSize: 13 }}>Parts Usage</h4>
               <div className="twrap">
                 <table className="tbl">
-                  <thead><tr><th>Spare Part</th><th>Times Used</th></tr></thead>
+                  <thead><tr><th className="num">S.No</th><th>Spare Part</th><th>Times Used</th></tr></thead>
                   <tbody>
-                    {Object.entries((spareData.partsUsage ?? {}) as Record<string, number>).map(([k, v]) => (
-                      <tr key={k}><td>{k}</td><td><b>{v}</b></td></tr>
+                    {Object.entries((spareData.partsUsage ?? {}) as Record<string, number>).map(([k, v], i) => (
+                      <tr key={k}><td className="num mut">{i + 1}</td><td>{k}</td><td><b>{v}</b></td></tr>
                     ))}
-                    {Object.keys((spareData.partsUsage ?? {})).length === 0 && <tr><td colSpan={2}><div className="empty">No spare parts data yet.</div></td></tr>}
+                    {Object.keys((spareData.partsUsage ?? {})).length === 0 && <tr><td colSpan={3}><div className="empty">No spare parts data yet.</div></td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -255,12 +255,12 @@ export default function MaintenanceReportsScreen() {
               <h4 style={{ margin: '0 0 8px', fontSize: 13 }}>Cost by Machine</h4>
               <div className="twrap">
                 <table className="tbl">
-                  <thead><tr><th>Machine</th><th>Cost (₹)</th></tr></thead>
+                  <thead><tr><th className="num">S.No</th><th>Machine</th><th>Cost (₹)</th></tr></thead>
                   <tbody>
-                    {Object.entries((costData.costByMachine ?? {}) as Record<string, number>).map(([k, v]) => (
-                      <tr key={k}><td><b>{k}</b></td><td>₹{Number(v).toLocaleString()}</td></tr>
+                    {Object.entries((costData.costByMachine ?? {}) as Record<string, number>).map(([k, v], i) => (
+                      <tr key={k}><td className="num mut">{i + 1}</td><td><b>{k}</b></td><td>₹{Number(v).toLocaleString()}</td></tr>
                     ))}
-                    {Object.keys((costData.costByMachine ?? {})).length === 0 && <tr><td colSpan={2}><div className="empty">No cost data yet.</div></td></tr>}
+                    {Object.keys((costData.costByMachine ?? {})).length === 0 && <tr><td colSpan={3}><div className="empty">No cost data yet.</div></td></tr>}
                   </tbody>
                 </table>
               </div>

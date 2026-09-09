@@ -179,13 +179,14 @@ export default function PartyMasterScreen() {
           ) : (
             <table className="tbl">
               <thead>
-                <tr><th>Kind</th><th>Code</th><th>Name</th><th>Contact</th><th>Phone</th><th>Email</th><th>Active</th><th>Actions</th></tr>
+                <tr><th className="num">S.No</th><th>Kind</th><th>Code</th><th>Name</th><th>Contact</th><th>Phone</th><th>Email</th><th>Active</th><th>Actions</th></tr>
               </thead>
               <tbody>
                 {rows.length === 0 ? (
-                  <tr><td colSpan={8}><div className="empty"><span className="material-symbols-rounded">description</span> No records.</div></td></tr>
-                ) : rows.map((r) => (
+                  <tr><td colSpan={9}><div className="empty"><span className="material-symbols-rounded">description</span> No records.</div></td></tr>
+                ) : rows.map((r, idx) => (
                   <tr key={r.id}>
+                    <td className="num mut">{page * PAGE_SIZE + idx + 1}</td>
                     <td><span className={`badge ${r.kind === 'SUPPLIER' ? 'badge-blue' : 'badge-green'}`}>{r.kind}</span></td>
                     <td>{r.code}</td>
                     <td>{r.name}</td>

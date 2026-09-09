@@ -404,6 +404,7 @@ export default function UserScreen() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   <th>Username</th>
                   <th>Full Name</th>
                   <th>Email</th>
@@ -413,11 +414,12 @@ export default function UserScreen() {
                 </tr>
               </thead>
               <tbody>
-                {paged.map((u) => {
+                {paged.map((u, idx) => {
                   const st = displayStatus(u);
                   const isPending = (u.status || '').toUpperCase() === 'PENDING';
                   return (
                     <tr key={u.id} style={{ opacity: u.active ? 1 : 0.6 }}>
+                      <td className="num mut">{page * PAGE_SIZE + idx + 1}</td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <div className="avatar" style={{ width: 28, height: 28, fontSize: 12, borderRadius: 6 }}>

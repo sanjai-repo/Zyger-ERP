@@ -105,6 +105,7 @@ export default function SubcontractorList({ onAdd, onEdit }: Props) {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   <th>CODE</th>
                   <th>SUBCONTRACTOR NAME</th>
                   <th>SHORT NAME</th>
@@ -119,10 +120,11 @@ export default function SubcontractorList({ onAdd, onEdit }: Props) {
               </thead>
               <tbody>
                 {filteredRows.length === 0 ? (
-                  <tr><td colSpan={10} className="empty">No subcontractors found.</td></tr>
+                  <tr><td colSpan={11} className="empty">No subcontractors found.</td></tr>
                 ) : (
-                  filteredRows.map((r) => (
+                  filteredRows.map((r, idx) => (
                     <tr key={r.id}>
+                      <td className="num mut">{idx + 1}</td>
                       <td style={{ fontWeight: 700, color: '#0f172a' }}>{r.code}</td>
                       <td style={{ fontWeight: 600 }}>{r.name}</td>
                       <td>{(r as any).shortName || '—'}</td>

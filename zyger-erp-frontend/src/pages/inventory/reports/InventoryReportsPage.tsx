@@ -183,6 +183,26 @@ export default function InventoryReportsPage() {
               <span className="material-symbols-rounded">inventory</span>
               Current Stock
             </button>
+
+            <button
+              className="btn"
+              onClick={() =>
+                openScreenTab('store-stock-summary', 'Store-wise Stock', 'warehouse')
+              }
+            >
+              <span className="material-symbols-rounded">warehouse</span>
+              Store-wise Stock
+            </button>
+
+            <button
+              className="btn"
+              onClick={() =>
+                openScreenTab('traceability-viewer', 'Traceability Viewer', 'timeline')
+              }
+            >
+              <span className="material-symbols-rounded">timeline</span>
+              Traceability
+            </button>
           </div>
         </div>
       </div>
@@ -255,6 +275,7 @@ export default function InventoryReportsPage() {
                 <table className="tbl">
                   <thead>
                     <tr>
+                      <th className="num">S.No</th>
                       <th>Item Group</th>
                       <th className="num">Items</th>
                       <th className="num">Qty in Store</th>
@@ -264,8 +285,9 @@ export default function InventoryReportsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(stockSummary?.groups ?? []).map((group) => (
+                    {(stockSummary?.groups ?? []).map((group, idx) => (
                       <tr key={group.group}>
+                        <td className="num mut">{idx + 1}</td>
                         <td>{group.group}</td>
                         <td className="num">{formatNumber(group.itemCount)}</td>
                         <td className="num">{formatNumber(group.qtyOnHand)}</td>
@@ -296,6 +318,7 @@ export default function InventoryReportsPage() {
                   <table className="tbl">
                     <thead>
                       <tr>
+                        <th className="num">S.No</th>
                         <th>Item</th>
                         <th>Name</th>
                         <th>Group</th>
@@ -304,8 +327,9 @@ export default function InventoryReportsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(stockSummary?.notAvailableItems ?? []).slice(0, 8).map((item) => (
+                      {(stockSummary?.notAvailableItems ?? []).slice(0, 8).map((item, idx) => (
                         <tr key={item.itemCode}>
+                          <td className="num mut">{idx + 1}</td>
                           <td>{item.itemCode}</td>
                           <td>{item.itemName}</td>
                           <td>{item.itemGroup}</td>
@@ -454,6 +478,7 @@ export default function InventoryReportsPage() {
                 <table className="tbl">
                   <thead>
                     <tr>
+                      <th className="num">S.No</th>
                       <th>Item Group</th>
                       <th className="num">Items</th>
                       <th className="num">Qty in Store</th>
@@ -463,8 +488,9 @@ export default function InventoryReportsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(stockSummary?.groups ?? []).map((group) => (
+                    {(stockSummary?.groups ?? []).map((group, idx) => (
                       <tr key={group.group}>
+                        <td className="num mut">{idx + 1}</td>
                         <td>{group.group}</td>
                         <td className="num">{formatNumber(group.itemCount)}</td>
                         <td className="num">{formatNumber(group.qtyOnHand)}</td>

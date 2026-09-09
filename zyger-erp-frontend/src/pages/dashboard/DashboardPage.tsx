@@ -845,6 +845,7 @@ export default function DashboardPage() {
           <table className="tbl" style={{ width: '100%', minWidth: '850px' }}>
             <thead>
               <tr>
+                <th className="num">S.No</th>
                 <th style={{ width: '15%' }}>Date & Time</th>
                 <th style={{ width: '10%' }}>Module</th>
                 <th style={{ width: '25%' }}>Activity / Action</th>
@@ -857,7 +858,7 @@ export default function DashboardPage() {
 
             <tbody>
               {paginatedActivityLogs && paginatedActivityLogs.length > 0 ? (
-                paginatedActivityLogs.map((log) => {
+                paginatedActivityLogs.map((log, idx) => {
                   const moduleColors: Record<string, { bg: string; text: string }> = {
                     Sales: { bg: 'rgba(115, 103, 240, 0.12)', text: '#7367f0' },
                     Purchase: { bg: 'rgba(0, 123, 214, 0.12)', text: '#007bd6' },
@@ -869,6 +870,7 @@ export default function DashboardPage() {
 
                   return (
                     <tr key={log.id}>
+                      <td className="num mut">{(currentActivityPage - 1) * pageSize + idx + 1}</td>
                       <td style={{ fontSize: '12px', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{log.dateTime}</td>
                       <td>
                         <span
@@ -897,7 +899,7 @@ export default function DashboardPage() {
                 })
               ) : (
                 <tr>
-                  <td colSpan={7}>
+                  <td colSpan={8}>
                     <div className="empty" style={{ padding: '24px 0' }}>No activity logs found matching the filter criteria.</div>
                   </td>
                 </tr>

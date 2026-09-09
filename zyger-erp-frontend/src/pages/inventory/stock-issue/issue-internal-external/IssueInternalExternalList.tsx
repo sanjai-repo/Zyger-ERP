@@ -4,6 +4,10 @@ import {
   useIssueInternalExternalMutations,
 } from '../../../../hooks/useIssueInternalExternal';
 import {
+  useIssueRequestLookup,
+  useStoreNameLookup,
+} from '../../../../hooks/useIssueDocListLookups';
+import {
   issueInternalExternalService,
   type IssueInternalExternalExportFormat,
 } from '../../../../services/issueInternalExternalService';
@@ -56,22 +60,7 @@ function partyLabel(row: IssueInternalExternalListRowDto): string {
   return row.toDepartment || row.issuedTo || '—';
 }
 
-interface ColumnConfig {
-  label: string;
-  field: string;
-  numeric?: boolean;
-}
-
-const COLUMNS: ColumnConfig[] = [
-  { label: 'Doc No', field: 'docNo' },
-  { label: 'Date', field: 'date' },
-  { label: 'Type', field: 'issueType' },
-  { label: 'To / Issued To', field: 'party' },
-  { label: 'Returnable', field: 'returnable' },
-  { label: 'From', field: 'sourceLocation' },
-  { label: 'Qty', field: 'qty', numeric: true },
-  { label: 'Status', field: 'status' },
-];
+const LIST_COLUMN_COUNT = 12;
 
 interface IssueInternalExternalListProps {
   onAdd: () => void;
@@ -98,6 +87,27 @@ export default function IssueInternalExternalList({
     useState<IssueInternalExternalListRowDto | null>(null);
 
   const { removeMutation } = useIssueInternalExternalMutations();
+  const requestLookupQuery = useIssueRequestLookup();
+  const storeNameQuery = useStoreNameLookup();
+
+  const requestedDateFor = (row: IssueInternalExternalListRowDto): string => {
+    const entry = row.issueRequestNo
+      ? requestLookupQuery.data?.[row.issueRequestNo]
+      : undefined;
+    return entry?.date ? formatDate(entry.date) : '—';
+  };
+
+  const requestedByFor = (row: IssueInternalExternalListRowDto): string => {
+    const entry = row.issueRequestNo
+      ? requestLookupQuery.data?.[row.issueRequestNo]
+      : undefined;
+    return entry?.requestedBy || '—';
+  };
+
+  const storeNameFor = (row: IssueInternalExternalListRowDto): string =>
+    (row.sourceLocation && storeNameQuery.data?.[row.sourceLocation]) ||
+    row.sourceLocation ||
+    '—';
 
   useEffect(() => {
     const timer = setTimeout(() => setSearch(searchInput.trim()), 300);
@@ -316,32 +326,77 @@ export default function IssueInternalExternalList({
           <table className="tbl">
             <thead>
               <tr>
-                {COLUMNS.map((column) => (
-                  <th
-                    key={column.field}
-                    data-sort="1"
-                    className={column.numeric ? 'num' : ''}
-                    onClick={() => handleSort(column.field)}
-                  >
-                    {column.label} ⇅
-                  </th>
-                ))}
+                <th className="num">S.No</th>
+                <th
+                  data-sort="1"
+                  onClick={() => handleSort('docNo')}
+                >
+                  Doc No ⇅
+                </th>
+                <th>Requested Date</th>
+                <th
+                  data-sort="1"
+                  onClick={() => handleSort('date')}
+                >
+                  Issued Date ⇅
+                </th>
+                <th
+                  data-sort="1"
+                  onClick={() => handleSort('issueType')}
+                >
+                  Type ⇅
+                </th>
+                <th
+                  data-sort="1"
+                  onClick={() => handleSort('party')}
+                >
+                  To / Issued To ⇅
+                </th>
+                <th
+                  data-sort="1"
+                  onClick={() => handleSort('returnable')}
+                >
+                  Returnable ⇅
+                </th>
+                <th
+                  data-sort="1"
+                  onClick={() => handleSort('sourceLocation')}
+                >
+                  From ⇅
+                </th>
+                <th>Requested By</th>
+                <th
+                  data-sort="1"
+                  className="num"
+                  onClick={() => handleSort('qty')}
+                >
+                  Qty ⇅
+                </th>
+                <th
+                  data-sort="1"
+                  onClick={() => handleSort('status')}
+                >
+                  Status ⇅
+                </th>
                 <th>Actions</th>
               </tr>
             </thead>
 
             <tbody>
               {rows.length > 0 ? (
-                rows.map((row) => (
+                rows.map((row, idx) => (
                   <tr key={row.id}>
+                    <td className="num mut">{page * PAGE_SIZE + idx + 1}</td>
                     <td>
                       <span className="cell-b">{row.docNo}</span>
                     </td>
+                    <td>{requestedDateFor(row)}</td>
                     <td>{formatDate(row.date)}</td>
                     <td>{typeLabel(row.issueType)}</td>
                     <td>{partyLabel(row)}</td>
                     <td>{returnableLabel(row.returnable)}</td>
-                    <td>{row.sourceLocation || '—'}</td>
+                    <td>{storeNameFor(row)}</td>
+                    <td>{requestedByFor(row)}</td>
                     <td className="num">{formatNumber(row.qty ?? 0)}</td>
                     <td>
                       <StatusBadge status={row.status} />
@@ -395,7 +450,7 @@ export default function IssueInternalExternalList({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={COLUMNS.length + 1}>
+                  <td colSpan={LIST_COLUMN_COUNT}>
                     <div className="empty">
                       <span className="material-symbols-rounded">
                         folder_open

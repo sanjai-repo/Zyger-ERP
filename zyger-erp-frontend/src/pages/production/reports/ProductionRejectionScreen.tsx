@@ -125,11 +125,12 @@ export default function ProductionRejectionScreen() {
           <div className="twrap">
             <table className="tbl">
               <thead>
-                <tr>{Object.keys(reasons[0]).map((k) => <th key={k}>{k.replace(/([A-Z])/g, ' $1')}</th>)}</tr>
+                <tr><th className="num">S.No</th>{Object.keys(reasons[0]).map((k) => <th key={k}>{k.replace(/([A-Z])/g, ' $1')}</th>)}</tr>
               </thead>
               <tbody>
                 {reasons.map((row, i) => (
                   <tr key={i}>
+                    <td className="num mut">{i + 1}</td>
                     {Object.keys(reasons[0]).map((k) => {
                       const val = row[k];
                       return <td key={k} className="num">{typeof val === 'number' ? formatNumber(val) : String(val ?? '-')}</td>;
@@ -161,6 +162,7 @@ export default function ProductionRejectionScreen() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   <th>Entry No</th>
                   <th>Order</th>
                   <th>Job Card</th>
@@ -176,8 +178,9 @@ export default function ProductionRejectionScreen() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => (
+                {filtered.map((r, idx) => (
                   <tr key={r.entryNumber ?? `${r.jobCardNumber}-${r.operationCode}`}>
+                    <td className="num mut">{idx + 1}</td>
                     <td style={{ fontWeight: 600 }}>{r.entryNumber ?? '-'}</td>
                     <td>{r.workOrderNumber ?? '-'}</td>
                     <td>{r.jobCardNumber ?? '-'}</td>

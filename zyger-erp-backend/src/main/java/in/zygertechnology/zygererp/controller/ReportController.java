@@ -4,6 +4,7 @@ import in.zygertechnology.zygererp.doc.DocTypes;
 import in.zygertechnology.zygererp.entity.*;
 import in.zygertechnology.zygererp.repo.ItemRepository;
 import in.zygertechnology.zygererp.repo.LedgerRepository;
+import in.zygertechnology.zygererp.repo.StoreMasterRepository;
 import in.zygertechnology.zygererp.service.DocumentFacade;
 import in.zygertechnology.zygererp.service.ExportService;
 import in.zygertechnology.zygererp.service.StockService;
@@ -28,6 +29,7 @@ public class ReportController {
     private final ItemRepository items;
     private final LedgerRepository ledger;
     private final ExportService export;
+    private final StoreMasterRepository stores;
 
     private static final String[] INWARD_KEYS = {"po-inward", "lo-inward", "jo-inward", "general-inward"};
     private static final String[] INWARD_LABELS = {"PO_INWARD", "LO_INWARD", "JO_INWARD", "GENERAL_INWARD"};
@@ -54,6 +56,7 @@ public class ReportController {
         m.put("pendingInwardCount", pendingInward);
         m.put("pendingApprovalCount", pendingApproval);
         m.put("ledgerEntryCount", ledger.count());
+        m.put("activeStoreCount", stores.findByActiveTrue().size());
         return m;
     }
 
@@ -390,6 +393,7 @@ public class ReportController {
     private List<Map<String, Object>> drilldownRows(String type, Map<String, String> q) {
         return switch (type) {
             case "current-stock" -> currentStockRows(q);
+            case "store-stock-summary" -> storeStockSummaryRows();
             case "low-stock" -> lowStockRows();
             case "not-available" -> notAvailableRows();
             case "reservations" -> reservationRows();
@@ -444,8 +448,13 @@ public class ReportController {
         List<Map<String, Object>> rows = new ArrayList<>();
         boolean includeZero = "true".equals(q.get("includeZero"));
         Set<String> seenItems = new LinkedHashSet<>();
+        Map<String, StockService.Balance> allBalances = stock.balances();
+        Map<String, Set<String>> locationsByItem = new HashMap<>();
+        for (StockService.Balance b : allBalances.values()) {
+            if (b.onHand() > 0) locationsByItem.computeIfAbsent(b.item(), x -> new LinkedHashSet<>()).add(b.loc());
+        }
         long n = 0;
-        for (Map.Entry<String, StockService.Balance> en : stock.balances().entrySet()) {
+        for (Map.Entry<String, StockService.Balance> en : allBalances.entrySet()) {
             StockService.Balance b = en.getValue();
             if (b.onHand() <= 0 && b.reserved() <= 0) continue;
             if (!isEmpty(q.get("location")) && !q.get("location").equals(b.loc())) continue;
@@ -475,6 +484,7 @@ public class ReportController {
             r.put("reorderPoint", it == null ? 0 : (it.getReorderPoint() == null ? 0 : round(it.getReorderPoint().doubleValue())));
             r.put("lowStock", low);
             r.put("status", availabilityStatus(b.onHand(), b.available(), low));
+            r.put("multiStore", locationsByItem.getOrDefault(b.item(), Set.of()).size() > 1);
             rows.add(r);
             seenItems.add(b.item());
         }
@@ -519,6 +529,47 @@ public class ReportController {
                 r.put("status", "NOT_AVAILABLE");
                 rows.add(r);
             }
+        }
+        return rows;
+    }
+
+    /** DOCUMENT 02 v2.0 §02.2 — one row per active store, aggregated from stock.balances(). */
+    private List<Map<String, Object>> storeStockSummaryRows() {
+        Map<String, double[]> byLoc = new LinkedHashMap<>(); // [onHand, reserved, qcHold, value]
+        Map<String, Set<String>> itemsByLoc = new LinkedHashMap<>();
+        for (StockService.Balance b : stock.balances().values()) {
+            double[] a = byLoc.computeIfAbsent(b.loc(), x -> new double[4]);
+            a[0] += b.onHand();
+            a[1] += b.reserved();
+            a[2] += b.qcHold();
+            ItemMaster it = items.findByCode(b.item()).orElse(null);
+            double rate = it == null || it.getDefaultRate() == null ? 0 : it.getDefaultRate().doubleValue();
+            a[3] += b.onHand() * rate;
+            if (b.onHand() > 0 || b.reserved() > 0 || b.qcHold() > 0) {
+                itemsByLoc.computeIfAbsent(b.loc(), x -> new LinkedHashSet<>()).add(b.item());
+            }
+        }
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (StoreMaster s : stores.findByActiveTrue()) {
+            double[] a = byLoc.getOrDefault(s.getCode(), new double[4]);
+            double onHand = a[0], reserved = a[1], qcHold = a[2], value = a[3];
+            double available = onHand - reserved - qcHold;
+            LocalDate lastTx = ledger.maxTxDateByLocation(s.getCode());
+            Map<String, Object> r = new LinkedHashMap<>();
+            r.put("id", s.getCode());
+            r.put("storeCode", s.getCode());
+            r.put("storeName", s.getName());
+            r.put("storeType", s.getStoreType());
+            r.put("itemCount", itemsByLoc.getOrDefault(s.getCode(), Set.of()).size());
+            r.put("totalOnHand", round(onHand));
+            r.put("totalReserved", round(reserved));
+            r.put("totalQcHold", round(qcHold));
+            r.put("totalAvailable", round(available));
+            r.put("totalValue", round(value));
+            r.put("lastTransactionDate", lastTx == null ? "" : lastTx.toString());
+            r.put("emptyStore", onHand <= 0);
+            r.put("dormant", lastTx == null || lastTx.isBefore(LocalDate.now().minusDays(90)));
+            rows.add(r);
         }
         return rows;
     }
@@ -612,6 +663,7 @@ public class ReportController {
         k.put("pendingApprovals", docs.countAll());
         k.put("ledgerEntries", ledger.count());
         k.put("accuracyPct", 100);
+        k.put("activeStoreCount", stores.findByActiveTrue().size());
         return k;
     }
 

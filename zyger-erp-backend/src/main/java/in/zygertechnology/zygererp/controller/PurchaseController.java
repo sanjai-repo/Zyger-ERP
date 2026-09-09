@@ -38,7 +38,8 @@ public class PurchaseController {
     private static final Set<String> ALLOWED = Set.of(
             "purchase-request", "supplier-enquiry", "supplier-quotation",
             "purchase-order", "job-order", "purchase-target",
-            "purchase-price-list", "job-work-price-list"
+            "purchase-price-list", "job-work-price-list",
+            "purchase-return"
     );
 
     private final DocumentFacade svc;
@@ -46,6 +47,7 @@ public class PurchaseController {
     private final ExportService export;
     private final PrintService printer;
     private final JobOrderReconciliationService joReconciliation;
+    private final in.zygertechnology.zygererp.repo.PoAmendmentHistoryRepository poAmendments;
 
     private static String key(String type) {
         if (!ALLOWED.contains(type)) {
@@ -86,6 +88,12 @@ public class PurchaseController {
     Map<String, Object> jobOrderReconciliation(
             @Parameter(description = "Job Order ID") @PathVariable Long id) {
         return joReconciliation.reconciliation(id);
+    }
+
+    @Operation(summary = "Get a Purchase Order's amendment/revision history")
+    @GetMapping("/purchase-order/{id}/amendments")
+    List<in.zygertechnology.zygererp.entity.PoAmendmentHistory> poAmendmentHistory(@PathVariable Long id) {
+        return poAmendments.findByPoIdOrderByRevisionNumberDesc(id);
     }
 
     @Operation(summary = "Update a purchase document (DRAFT/REJECTED only)")
@@ -153,11 +161,16 @@ public class PurchaseController {
         Map<String, Object> row = svc.getRow(key(type), id);
         String docNo = String.valueOf(row.getOrDefault("docNo", type)).replaceAll("[^A-Za-z0-9_-]", "_");
         String disposition = download ? "attachment" : "inline";
+        String supplierName = String.valueOf(row.getOrDefault("supplier", "")).replaceAll("[^A-Za-z0-9_-]+", "_");
+        String filename = "purchase-order".equals(key(type)) && !supplierName.isBlank()
+                ? "PO_" + docNo + "_" + supplierName + ".pdf"
+                : docNo + ".pdf";
+        byte[] pdf = "purchase-order".equals(key(type)) ? printer.purchaseOrder(row) : printer.salesDoc(row, type);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
-                        disposition + "; filename=\"" + docNo + ".pdf\"")
+                        disposition + "; filename=\"" + filename + "\"")
                 .contentType(MediaType.APPLICATION_PDF)
-                .body(printer.salesDoc(row, type));
+                .body(pdf);
     }
 
     // ---- Dashboard ----

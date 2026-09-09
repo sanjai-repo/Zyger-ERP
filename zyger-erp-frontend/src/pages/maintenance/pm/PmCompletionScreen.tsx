@@ -169,10 +169,11 @@ export default function PmCompletionScreen() {
           <div className="twrap">
             {loading ? <div className="empty"><span className="material-symbols-rounded">hourglass_empty</span> Loading...</div> : (
               <table className="tbl">
-                <thead><tr><th>PMC No</th><th>Schedule No</th><th>Machine</th><th>Technician</th><th>Result</th><th>Status</th><th>Verified</th><th>Actions</th></tr></thead>
+                <thead><tr><th className="num">S.No</th><th>PMC No</th><th>Schedule No</th><th>Machine</th><th>Technician</th><th>Result</th><th>Status</th><th>Verified</th><th>Actions</th></tr></thead>
                 <tbody>
-                  {filtered.length === 0 ? <tr><td colSpan={8}><div className="empty"><span className="material-symbols-rounded">description</span> No completions.</div></td></tr> : filtered.map((r) => (
+                  {filtered.length === 0 ? <tr><td colSpan={9}><div className="empty"><span className="material-symbols-rounded">description</span> No completions.</div></td></tr> : filtered.map((r, idx) => (
                     <tr key={r.id}>
+                      <td className="num mut">{idx + 1}</td>
                       <td><b>{r.completionNumber}</b></td>
                       <td>{r.scheduleNumber ?? '-'}</td>
                       <td>{r.machineCode}</td>

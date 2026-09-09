@@ -161,10 +161,11 @@ export default function CalibrationEntryScreen() {
           <div className="twrap">
             {loading ? <div className="empty"><span className="material-symbols-rounded">hourglass_empty</span> Loading...</div> : (
               <table className="tbl">
-                <thead><tr><th>CLE No</th><th>Instrument</th><th>Date</th><th>Agency</th><th>Certificate</th><th>Result</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr><th className="num">S.No</th><th>CLE No</th><th>Instrument</th><th>Date</th><th>Agency</th><th>Certificate</th><th>Result</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
-                  {filtered.length === 0 ? <tr><td colSpan={8}><div className="empty"><span className="material-symbols-rounded">description</span> No calibration entries.</div></td></tr> : filtered.map((r) => (
+                  {filtered.length === 0 ? <tr><td colSpan={9}><div className="empty"><span className="material-symbols-rounded">description</span> No calibration entries.</div></td></tr> : filtered.map((r, idx) => (
                     <tr key={r.id}>
+                      <td className="num mut">{idx + 1}</td>
                       <td><b>{r.calibrationNumber}</b></td>
                       <td>{r.instrumentName}</td>
                       <td>{r.calibrationDate ?? '-'}</td>

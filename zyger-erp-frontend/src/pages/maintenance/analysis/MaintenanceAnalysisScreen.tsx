@@ -216,10 +216,10 @@ export default function MaintenanceAnalysisScreen() {
             <div className="twrap">
               {loading ? <div className="empty">Loading...</div> : (
                 <table className="tbl">
-                  <thead><tr><th>Machine</th><th>Failures</th><th>Downtime (min)</th><th>MTTR (min)</th><th>MTBF (min)</th><th>MTBF (hrs)</th></tr></thead>
+                  <thead><tr><th className="num">S.No</th><th>Machine</th><th>Failures</th><th>Downtime (min)</th><th>MTTR (min)</th><th>MTBF (min)</th><th>MTBF (hrs)</th></tr></thead>
                   <tbody>
-                    {mtbf.length === 0 ? <tr><td colSpan={6}><div className="empty"><span className="material-symbols-rounded">timer</span> No MTBF data yet.</div></td></tr> :
-                      mtbf.map((r) => <tr key={r.machineCode}><td><b>{r.machineCode}</b></td><td>{r.totalFailures}</td><td>{r.totalDowntimeMinutes}</td><td style={{ color: r.mttrMinutes > 60 ? '#ef4444' : '#22c55e', fontWeight: 600 }}>{r.mttrMinutes}</td><td style={{ color: r.mtbfMinutes < 100 ? '#ef4444' : '#22c55e', fontWeight: 600 }}>{r.mtbfMinutes}</td><td>{r.mtbfHours}</td></tr>)}
+                    {mtbf.length === 0 ? <tr><td colSpan={7}><div className="empty"><span className="material-symbols-rounded">timer</span> No MTBF data yet.</div></td></tr> :
+                      mtbf.map((r, idx) => <tr key={r.machineCode}><td className="num mut">{idx + 1}</td><td><b>{r.machineCode}</b></td><td>{r.totalFailures}</td><td>{r.totalDowntimeMinutes}</td><td style={{ color: r.mttrMinutes > 60 ? '#ef4444' : '#22c55e', fontWeight: 600 }}>{r.mttrMinutes}</td><td style={{ color: r.mtbfMinutes < 100 ? '#ef4444' : '#22c55e', fontWeight: 600 }}>{r.mtbfMinutes}</td><td>{r.mtbfHours}</td></tr>)}
                   </tbody>
                 </table>
               )}
@@ -256,10 +256,10 @@ export default function MaintenanceAnalysisScreen() {
           </div>
           <div className="twrap">
             <table className="tbl">
-              <thead><tr><th>Machine</th><th>Breakdown Cost</th><th>Tool Service Cost</th><th>Total Cost</th></tr></thead>
+              <thead><tr><th className="num">S.No</th><th>Machine</th><th>Breakdown Cost</th><th>Tool Service Cost</th><th>Total Cost</th></tr></thead>
               <tbody>
-                {cost.map((r) => <tr key={r.machineCode}><td><b>{r.machineCode}</b></td><td>₹{r.breakdownCost.toLocaleString()}</td><td>₹{r.toolServiceCost.toLocaleString()}</td><td style={{ fontWeight: 700, color: '#8b5cf6' }}>₹{r.totalCost.toLocaleString()}</td></tr>)}
-                {cost.length === 0 && <tr><td colSpan={4}><div className="empty"><span className="material-symbols-rounded">payments</span> No cost data yet.</div></td></tr>}
+                {cost.map((r, idx) => <tr key={r.machineCode}><td className="num mut">{idx + 1}</td><td><b>{r.machineCode}</b></td><td>₹{r.breakdownCost.toLocaleString()}</td><td>₹{r.toolServiceCost.toLocaleString()}</td><td style={{ fontWeight: 700, color: '#8b5cf6' }}>₹{r.totalCost.toLocaleString()}</td></tr>)}
+                {cost.length === 0 && <tr><td colSpan={5}><div className="empty"><span className="material-symbols-rounded">payments</span> No cost data yet.</div></td></tr>}
               </tbody>
             </table>
           </div>

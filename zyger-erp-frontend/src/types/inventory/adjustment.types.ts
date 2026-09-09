@@ -46,6 +46,7 @@ export interface StockAmendmentListRowDto {
   docNo: string;
   date: string;
   itemCode?: string;
+  itemName?: string;
   differenceQty?: number;
   reasonCode?: string;
   status: string;

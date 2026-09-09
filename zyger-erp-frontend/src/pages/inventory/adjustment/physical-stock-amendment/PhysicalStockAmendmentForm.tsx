@@ -13,6 +13,7 @@ import type {
   PhysicalStockAmendmentDto,
 } from '../../../../types/inventory/adjustment.types';
 import { getApiErrorMessage } from '../../../../utils/apiError';
+import { filterPurchaseRelevantItems } from '../../../../utils/itemClassification';
 
 import StatusBadge from '../../../../components/common/StatusBadge';
 import ConfirmActionModal from '../../../../components/common/ConfirmActionModal';
@@ -80,12 +81,19 @@ export default function PhysicalStockAmendmentForm({
   const initializedFor = useRef<string | null>(null);
 
   const items = lookups.items;
-  const locations = lookups.locations;
+  // FRS DOC-INV-FRS-02 Priority#1 [FIXED] — merged union instead of an all-or-nothing
+  // stores-vs-locations fallback; see utils/locationOptions.ts for why.
+  const locations = lookups.stores ?? [];
 
   const itemsMap = useMemo(
     () => new Map(items.map((item) => [item.code, item])),
     [items]
   );
+
+  // Item Code should only ever offer Purchasable / Customer-Supplied / Manufacturing
+  // items (the three item screens under Master → Inventory → Items) — this picker
+  // previously showed every item in the system unfiltered.
+  const allowedItems = useMemo(() => filterPurchaseRelevantItems(items), [items]);
 
   const status = currentDocument?.status ?? 'DRAFT';
   const editable = !viewOnly && (status === 'DRAFT' || status === 'REJECTED');
@@ -597,7 +605,7 @@ export default function PhysicalStockAmendmentForm({
                 <option value="">— Select —</option>
                 {locations.map((location) => (
                   <option key={location.code} value={location.code}>
-                    {location.code}
+                    {location.name || location.code}
                   </option>
                 ))}
               </select>
@@ -662,6 +670,7 @@ export default function PhysicalStockAmendmentForm({
             <table className="tbl lines">
               <thead>
                 <tr>
+                  <th>S.No</th>
                   <th>Item Code *</th>
                   <th>Item Name</th>
                   <th>Batch No</th>
@@ -677,6 +686,7 @@ export default function PhysicalStockAmendmentForm({
               <tbody>
                 {form.lines.map((line, index) => (
                   <tr key={index}>
+                    <td className="num mut">{index + 1}</td>
                     <td>
                       <select
                         className="in w-i"
@@ -687,7 +697,7 @@ export default function PhysicalStockAmendmentForm({
                         }
                       >
                         <option value="">— Select Item —</option>
-                        {items.map((item) => (
+                        {allowedItems.map((item) => (
                           <option key={item.code} value={item.code}>
                             {item.code} — {item.description}
                           </option>

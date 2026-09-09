@@ -73,6 +73,14 @@ export const KPI_CARDS: KpiCardConfig[] = [
     format: 'number',
     screenId: 'inventory-log',
   },
+  {
+    key: 'activeStoreCount',
+    label: 'Active Stores',
+    icon: 'warehouse',
+    color: 'var(--blue)',
+    format: 'number',
+    screenId: 'store-stock-summary',
+  },
 ];
 
 export type DrilldownFilterKey =
@@ -130,6 +138,26 @@ export const DRILLDOWN_CONFIGS: Record<string, DrilldownConfig> = {
     filters: ['search', 'item', 'location', 'category', 'lowStockOnly', 'includeZero'],
   },
 
+  'store-stock-summary': {
+    type: 'store-stock-summary',
+    title: 'Store-wise Stock',
+    subtitle: 'On hand / reserved / available, aggregated per store',
+    icon: 'warehouse',
+    columns: [
+      { key: 'storeCode', label: 'Store' },
+      { key: 'storeName', label: 'Name' },
+      { key: 'storeType', label: 'Type' },
+      { key: 'itemCount', label: 'Items', numeric: true },
+      { key: 'totalOnHand', label: 'On Hand', numeric: true },
+      { key: 'totalReserved', label: 'Reserved', numeric: true },
+      { key: 'totalQcHold', label: 'QC Hold', numeric: true },
+      { key: 'totalAvailable', label: 'Available', numeric: true },
+      { key: 'totalValue', label: 'Value', money: true },
+      { key: 'lastTransactionDate', label: 'Last Txn', date: true },
+    ],
+    filters: ['search'],
+  },
+
   'not-available': {
     type: 'not-available',
     title: 'Not Available',
@@ -174,6 +202,7 @@ export const DRILLDOWN_CONFIGS: Record<string, DrilldownConfig> = {
       { key: 'docNo', label: 'Allotment' },
       { key: 'date', label: 'Date', date: true },
       { key: 'itemCode', label: 'Item' },
+      { key: 'itemName', label: 'Name' },
       { key: 'location', label: 'Location' },
       { key: 'batchNo', label: 'Batch' },
       { key: 'reservedQty', label: 'Reserved', numeric: true },
@@ -225,6 +254,7 @@ export const DRILLDOWN_CONFIGS: Record<string, DrilldownConfig> = {
       { key: 'docNo', label: 'Document' },
       { key: 'txType', label: 'Txn' },
       { key: 'itemCode', label: 'Item' },
+      { key: 'itemName', label: 'Name' },
       { key: 'location', label: 'Location' },
       { key: 'batchNo', label: 'Batch' },
       { key: 'inQty', label: 'In', numeric: true },

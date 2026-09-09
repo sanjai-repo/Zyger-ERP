@@ -235,6 +235,7 @@ export default function GapAnalysisScreen() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   <th style={{ width: 40 }}></th>
                   <th>Date</th>
                   <th>Scope</th>
@@ -246,10 +247,11 @@ export default function GapAnalysisScreen() {
               </thead>
               <tbody>
                 {rows.length === 0 ? (
-                  <tr><td colSpan={7}><div className="empty"><span className="material-symbols-rounded">search_off</span> No analyses found.</div></td></tr>
-                ) : rows.map((r) => (
+                  <tr><td colSpan={8}><div className="empty"><span className="material-symbols-rounded">search_off</span> No analyses found.</div></td></tr>
+                ) : rows.map((r, idx) => (
                   <>
                     <tr key={r.id} onClick={() => toggleResults(r.id)} style={{ cursor: 'pointer' }}>
+                      <td className="num mut">{page * PAGE_SIZE + idx + 1}</td>
                       <td>
                         <span className="material-symbols-rounded">{expandedId === r.id ? 'expand_less' : 'expand_more'}</span>
                       </td>
@@ -276,7 +278,7 @@ export default function GapAnalysisScreen() {
                     </tr>
                     {expandedId === r.id && (
                       <tr key={`${r.id}-results`}>
-                        <td colSpan={7}>
+                        <td colSpan={8}>
                           <div style={{ background: '#f9fafb', padding: 12, borderBottom: '1px solid #e5e7eb' }}>
                             <h4 style={{ margin: '0 0 8px', fontSize: 13, color: '#555' }}>Analysis Results</h4>
                             {resultsLoading ? (
@@ -287,6 +289,7 @@ export default function GapAnalysisScreen() {
                               <table className="tbl">
                                 <thead>
                                   <tr>
+                                    <th>S.No</th>
                                     <th>Severity</th>
                                     <th>Gap Type</th>
                                     <th>Component</th>
@@ -301,10 +304,11 @@ export default function GapAnalysisScreen() {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {results.filter((res) => !gapTypeFilter || res.gapType === gapTypeFilter).map((res) => {
+                                  {results.filter((res) => !gapTypeFilter || res.gapType === gapTypeFilter).map((res, idx) => {
                                     const sev = SEVERITY_COLORS[res.severity] ?? { color: '#888', bg: '#e9ecef' };
                                     return (
                                       <tr key={res.id}>
+                                        <td className="num mut">{idx + 1}</td>
                                         <td>
                                           <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 12, fontSize: 12, fontWeight: 600, color: sev.color, background: sev.bg }}>
                                             {res.severity}

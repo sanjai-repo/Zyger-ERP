@@ -1,5 +1,7 @@
 package in.zygertechnology.zygererp.controller;
 
+import in.zygertechnology.zygererp.entity.DcPrintLog;
+import in.zygertechnology.zygererp.repo.DcPrintLogRepository;
 import in.zygertechnology.zygererp.service.DocumentFacade;
 import in.zygertechnology.zygererp.service.ExportService;
 import in.zygertechnology.zygererp.service.PrintService;
@@ -20,6 +22,8 @@ public class DocumentController {
     private final DocumentFacade svc;
     private final ExportService export;
     private final PrintService printer;
+    private final DcPrintLogRepository dcPrintLogs;
+    private final in.zygertechnology.zygererp.service.DeliveryChallanReportService dcReports;
 
     private static String principalName(Principal p) { return p != null ? p.getName() : "system"; }
 
@@ -162,15 +166,49 @@ public class DocumentController {
     /** Printable PDF of a single delivery challan (inline for print, attachment when download=true). */
     @GetMapping("/delivery-challan/{type}/{id}/print")
     ResponseEntity<byte[]> printDc(@PathVariable String type, @PathVariable Long id,
-                                   @RequestParam(defaultValue = "false") boolean download) {
+                                   @RequestParam(defaultValue = "false") boolean download,
+                                   Principal p) {
         Map<String, Object> row = svc.toRow(svc.get(type, id));
-        String docNo = String.valueOf(row.getOrDefault("docNo", type)).replaceAll("[^A-Za-z0-9_-]", "_");
+        String docNo = String.valueOf(row.getOrDefault("docNo", type));
+        String safeDocNo = docNo.replaceAll("[^A-Za-z0-9_-]", "_");
         String disposition = download ? "attachment" : "inline";
+
+        // FR-INV-DC-PRINT-1: every print event is logged; re-prints are numbered as copies.
+        int copyNumber = (int) dcPrintLogs.countByDocNo(docNo) + 1;
+        dcPrintLogs.save(DcPrintLog.builder()
+                .docNo(docNo).docType(type).printedBy(principalName(p)).copyNumber(copyNumber)
+                .build());
+
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
-                        disposition + "; filename=\"" + docNo + ".pdf\"")
+                        disposition + "; filename=\"" + safeDocNo + ".pdf\"")
                 .contentType(MediaType.APPLICATION_PDF)
-                .body(printer.deliveryChallan(row, type));
+                .body(printer.deliveryChallan(row, type, copyNumber));
+    }
+
+    @GetMapping("/delivery-challan/reports/register")
+    List<Map<String, Object>> getDcRegister(
+            @RequestParam(required = false) String dcType,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(required = false) String party,
+            @RequestParam(required = false) String status) {
+        return dcReports.getDcRegister(dcType, startDate, endDate, party, status);
+    }
+
+    @GetMapping("/delivery-challan/reports/job-work-ageing")
+    List<Map<String, Object>> getJobWorkAgeing() {
+        return dcReports.getJobWorkAgeingReport();
+    }
+
+    @GetMapping("/delivery-challan/reports/pending-invoice")
+    List<Map<String, Object>> getDcPendingForInvoice() {
+        return dcReports.getDcPendingForInvoiceReport();
+    }
+
+    @GetMapping("/delivery-challan/reports/stock-in-transit")
+    List<Map<String, Object>> getStockInTransit() {
+        return dcReports.getStockInTransitReport();
     }
 
     /** Printable PDF of a GRN / Store Receipt (inline for print, attachment when download=true). */

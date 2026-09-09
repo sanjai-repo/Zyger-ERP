@@ -51,6 +51,7 @@ export default function PlantMasterPage() {
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ borderBottom: '2px solid #313244', textAlign: 'left' }}>
+            <th className="num" style={{ padding: 8 }}>S.No</th>
             <th style={{ padding: 8 }}>Code</th>
             <th style={{ padding: 8 }}>Name</th>
             <th style={{ padding: 8 }}>Address</th>
@@ -59,8 +60,9 @@ export default function PlantMasterPage() {
           </tr>
         </thead>
         <tbody>
-          {plants.map(p => (
+          {plants.map((p, idx) => (
             <tr key={p.id} style={{ borderBottom: '1px solid #313244' }}>
+              <td className="num mut" style={{ padding: 8 }}>{idx + 1}</td>
               <td style={{ padding: 8 }}>{p.code}</td>
               <td style={{ padding: 8 }}>{p.name}</td>
               <td style={{ padding: 8 }}>{p.address || '-'}</td>
@@ -68,7 +70,7 @@ export default function PlantMasterPage() {
               <td style={{ padding: 8 }}>{p.active ? 'Yes' : 'No'}</td>
             </tr>
           ))}
-          {plants.length === 0 && <tr><td colSpan={5} style={{ padding: 16, textAlign: 'center', color: '#6c7086' }}>{loading ? 'Loading...' : 'No plants found'}</td></tr>}
+          {plants.length === 0 && <tr><td colSpan={6} style={{ padding: 16, textAlign: 'center', color: '#6c7086' }}>{loading ? 'Loading...' : 'No plants found'}</td></tr>}
         </tbody>
       </table>
     </div>

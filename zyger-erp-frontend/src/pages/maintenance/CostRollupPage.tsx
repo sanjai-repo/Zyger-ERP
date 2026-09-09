@@ -93,17 +93,18 @@ export default function CostRollupPage() {
             <table className="tbl">
               <thead>
                 <tr>
-                  <th>Machine</th><th>Month</th><th>Breakdowns</th><th>Breakdown Cost</th>
+                  <th className="num">S.No</th><th>Machine</th><th>Month</th><th>Breakdowns</th><th>Breakdown Cost</th>
                   <th>Spare Parts</th><th>PM Cost</th><th>Total Cost</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={7} className="empty">Loading...</td></tr>
+                  <tr><td colSpan={8} className="empty">Loading...</td></tr>
                 ) : costs.length === 0 ? (
-                  <tr><td colSpan={7} className="empty">No cost data</td></tr>
+                  <tr><td colSpan={8} className="empty">No cost data</td></tr>
                 ) : costs.map((r, i) => (
                   <tr key={i}>
+                    <td className="num mut">{i + 1}</td>
                     <td><b>{r.machineCode}</b></td>
                     <td>{String(r.monthBucket).substring(0, 7)}</td>
                     <td>{r.breakdownCount}</td>

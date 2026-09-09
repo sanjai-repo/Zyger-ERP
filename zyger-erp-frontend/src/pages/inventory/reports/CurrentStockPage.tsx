@@ -1,5 +1,9 @@
 import DrilldownPage from './DrilldownPage';
 
-export default function CurrentStockPage() {
-  return <DrilldownPage drilldownType="current-stock" />;
+interface CurrentStockPageProps {
+  initialFilters?: { location?: string };
+}
+
+export default function CurrentStockPage(props: CurrentStockPageProps) {
+  return <DrilldownPage drilldownType="current-stock" {...props} />;
 }

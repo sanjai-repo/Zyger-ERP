@@ -152,6 +152,7 @@ export default function ProductionOutputScreen() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   <th>Entry No</th>
                   <th>Order</th>
                   <th>Job Card</th>
@@ -170,8 +171,9 @@ export default function ProductionOutputScreen() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => (
+                {filtered.map((r, idx) => (
                   <tr key={r.entryNumber ?? `${r.jobCardNumber}-${r.operationCode}`}>
+                    <td className="num mut">{idx + 1}</td>
                     <td style={{ fontWeight: 600 }}>{r.entryNumber ?? '-'}</td>
                     <td>{r.workOrderNumber ?? '-'}</td>
                     <td>{r.jobCardNumber ?? '-'}</td>

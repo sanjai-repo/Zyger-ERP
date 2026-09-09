@@ -11,6 +11,7 @@ export interface PurchasableItemForm {
   code: string;
   itemGroup: string;
   description: string; // Item Name
+  specification: string;
   printName: string;
   itemCatalog: string;
   formula: string;
@@ -168,6 +169,7 @@ const defaultFormState: PurchasableItemForm = {
   code: '',
   itemGroup: '',
   description: '',
+  specification: '',
   printName: '',
   itemCatalog: '',
   formula: '',
@@ -575,6 +577,10 @@ export default function PurchasableItemScreen() {
                   <input className="in" type="text" required placeholder="Enter item name" value={form.description} onChange={e => setFld('description', e.target.value)} />
                 </label>
                 <label className="fld">
+                  <span>Specification</span>
+                  <input className="in" type="text" placeholder="Enter specification" value={form.specification} onChange={e => setFld('specification', e.target.value)} />
+                </label>
+                <label className="fld">
                   <span>Print Name</span>
                   <input className="in" type="text" value={form.printName} onChange={e => setFld('printName', e.target.value)} />
                 </label>
@@ -642,7 +648,7 @@ export default function PurchasableItemScreen() {
                   <input className="in" type="text" value={form.hsnCode} onChange={e => setFld('hsnCode', e.target.value)} />
                 </label>
                 <label className="fld span2">
-                  <span>Description</span>
+                  <span>Remarks</span>
                   <textarea className="in" value={form.remarks} onChange={e => setFld('remarks', e.target.value)} />
                 </label>
               </div>

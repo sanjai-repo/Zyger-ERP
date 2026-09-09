@@ -167,6 +167,7 @@ export default function ProductionReportsScreen() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   {Object.keys(reportData[0]).map((key) => (
                     <th key={key}>{key.replace(/([A-Z])/g, ' $1')}</th>
                   ))}
@@ -175,6 +176,7 @@ export default function ProductionReportsScreen() {
               <tbody>
                 {reportData.map((row, i) => (
                   <tr key={i}>
+                    <td className="num mut">{i + 1}</td>
                     {Object.keys(reportData[0]).map((key) => {
                       const val = row[key];
                       return <td key={key} className="num">{typeof val === 'number' ? formatNumber(val) : String(val ?? '-')}</td>;

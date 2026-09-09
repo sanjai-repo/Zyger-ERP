@@ -58,7 +58,7 @@ export default function ProductionReturnScreen() {
   const [search, setSearch] = useState('');
   const [actionBusyId, setActionBusyId] = useState<number | null>(null);
   const [tab, setTab] = useState<'list' | 'form'>('list');
-  const [items, setItems] = useState<Array<{ code: string; name: string; uom?: string }>>([]);
+  const [items, setItems] = useState<Array<{ code: string; name: string; description?: string; uom?: string }>>([]);
   const [entryOptions, setEntryOptions] = useState<Array<{ id: number; entryNumber: string; workOrderNumber: string; jobCardNumber: string; partCode: string; partDescription: string }>>([]);
   const [entryLookup, setEntryLookup] = useState('');
 
@@ -176,9 +176,9 @@ export default function ProductionReturnScreen() {
             <label className="fld"><span>Work Order No</span><input className="in" value={String(form.workOrderNumber ?? '')} onChange={(e) => set('workOrderNumber', e.target.value)} /></label>
             <label className="fld"><span>Job Card No</span><input className="in" value={String(form.jobCardNumber ?? '')} onChange={(e) => set('jobCardNumber', e.target.value)} /></label>
             <label className="fld"><span>Item Code *</span>
-              <select className="in" value={String(form.itemCode ?? '')} onChange={(e) => { const item = items.find((i) => i.code === e.target.value); set('itemCode', e.target.value); if (item) { set('itemDescription', item.name); set('uom', item.uom || ''); } }}>
+              <select className="in" value={String(form.itemCode ?? '')} onChange={(e) => { const item = items.find((i) => i.code === e.target.value); set('itemCode', e.target.value); if (item) { set('itemDescription', item.description || item.name); set('uom', item.uom || ''); } }}>
                 <option value="">Select item...</option>
-                {items.map((i) => <option key={i.code} value={i.code}>{i.code} - {i.name}</option>)}
+                {items.map((i) => <option key={i.code} value={i.code}>{i.code} - {i.description || i.name}</option>)}
               </select>
             </label>
             <label className="fld"><span>Item Description</span><input className="in" value={String(form.itemDescription ?? '')} onChange={(e) => set('itemDescription', e.target.value)} /></label>
@@ -225,10 +225,11 @@ export default function ProductionReturnScreen() {
           <div className="twrap">
             {loading ? <div className="empty"><span className="material-symbols-rounded">hourglass_empty</span> Loading...</div> : (
               <table className="tbl">
-                <thead><tr><th>Return No</th><th>Work Order</th><th>Item Code</th><th>Qty</th><th>Reason</th><th>Condition</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr><th className="num">S.No</th><th>Return No</th><th>Work Order</th><th>Item Code</th><th>Qty</th><th>Reason</th><th>Condition</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
-                  {filtered.length === 0 ? <tr><td colSpan={8}><div className="empty"><span className="material-symbols-rounded">description</span> No returns.</div></td></tr> : filtered.map((r) => (
+                  {filtered.length === 0 ? <tr><td colSpan={9}><div className="empty"><span className="material-symbols-rounded">description</span> No returns.</div></td></tr> : filtered.map((r, idx) => (
                     <tr key={r.id}>
+                      <td className="num mut">{idx + 1}</td>
                       <td><b>{r.returnNumber}</b></td>
                       <td>{r.workOrderNumber ?? '-'}</td>
                       <td>{r.itemCode}</td>

@@ -439,6 +439,7 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
               <table className="tbl">
                 <thead>
                   <tr>
+                    <th className="num">S.No</th>
                     <th style={{ width: 40 }}></th>
                     <th>Job Card No</th>
                     <th>Work Order</th>
@@ -454,10 +455,11 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
                 </thead>
                 <tbody>
                   {filtered.length === 0 ? (
-                    <tr><td colSpan={11}><div className="empty"><span className="material-symbols-rounded">description</span> No job cards.</div></td></tr>
-                  ) : filtered.map((r) => (
+                    <tr><td colSpan={12}><div className="empty"><span className="material-symbols-rounded">description</span> No job cards.</div></td></tr>
+                  ) : filtered.map((r, rIdx) => (
                     <React.Fragment key={r.id}>
                       <tr onClick={() => loadSubjobs(r.id)} style={{ cursor: 'pointer' }}>
+                        <td className="num mut">{rIdx + 1}</td>
                         <td><span className="material-symbols-rounded">{expandedId === r.id ? 'expand_less' : 'expand_more'}</span></td>
                         <td><b>{r.jobCardNumber}</b></td>
                         <td>{r.workOrderNumber ?? '-'}</td>
@@ -496,7 +498,7 @@ export default function JobCardScreen({ initialSearch }: { initialSearch?: strin
                       </tr>
                       {expandedId === r.id && (
                         <tr key={`${r.id}-subs`}>
-                          <td colSpan={11}>
+                          <td colSpan={12}>
                             <div style={{ background: 'var(--card-bg, #f9fafb)', padding: 12, borderBottom: '1px solid var(--border)' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
                                 <h4 style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}>Subjobs / Operations ({subjobs.length})</h4>

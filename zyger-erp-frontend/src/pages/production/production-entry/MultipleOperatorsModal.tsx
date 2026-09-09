@@ -59,6 +59,7 @@ export default function MultipleOperatorsModal({ open, onClose, operators, onSav
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'left' }}>
+                <th style={{ padding: 8 }}>S.No</th>
                 <th style={{ padding: 8 }}>Operator</th>
                 <th style={{ padding: 8 }}>Primary</th>
                 <th style={{ padding: 8 }}>Hours</th>
@@ -67,9 +68,10 @@ export default function MultipleOperatorsModal({ open, onClose, operators, onSav
             </thead>
             <tbody>
               {list.length === 0 ? (
-                <tr><td colSpan={4} style={{ textAlign: 'center', padding: 16, color: '#94a3b8' }}>No operators added. Click + Add Operator.</td></tr>
+                <tr><td colSpan={5} style={{ textAlign: 'center', padding: 16, color: '#94a3b8' }}>No operators added. Click + Add Operator.</td></tr>
               ) : list.map((op, i) => (
                 <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: 8, color: '#94a3b8' }}>{i + 1}</td>
                   <td style={{ padding: 8 }}>
                     {masterOperators.length > 0 ? (
                       <select

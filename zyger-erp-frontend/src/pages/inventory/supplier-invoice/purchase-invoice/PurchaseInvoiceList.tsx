@@ -226,6 +226,7 @@ export default function PurchaseInvoiceList({
           <table className="tbl">
             <thead>
               <tr>
+                <th className="num">S.No</th>
                 {COLUMNS.map((column) => (
                   <th
                     key={column.field}
@@ -242,8 +243,9 @@ export default function PurchaseInvoiceList({
 
             <tbody>
               {rows.length > 0 ? (
-                rows.map((row) => (
+                rows.map((row, idx) => (
                   <tr key={row.id}>
+                    <td className="num mut">{page * PAGE_SIZE + idx + 1}</td>
                     <td>
                       <span className="cell-b">{row.docNo}</span>
                     </td>
@@ -302,7 +304,7 @@ export default function PurchaseInvoiceList({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={COLUMNS.length + 1}>
+                  <td colSpan={COLUMNS.length + 2}>
                     <div className="empty">
                       <span className="material-symbols-rounded">
                         folder_open

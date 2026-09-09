@@ -79,6 +79,13 @@ export function useDcLookups(config: DeliveryChallanTypeConfig) {
     retry: 1,
   });
 
+  const storesQuery = useQuery({
+    queryKey: ['master', 'stores'],
+    queryFn: ({ signal }) => masterService.getStores(signal),
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
+  });
+
   const partyOptions =
     config.partySource === 'customers'
       ? (customersQuery.data ?? []).map((party) => ({
@@ -119,12 +126,20 @@ export function useDcLookups(config: DeliveryChallanTypeConfig) {
       locationsQuery.refetch(),
       customersQuery.refetch(),
       suppliersQuery.refetch(),
+      storesQuery.refetch(),
     ]);
+
+  const parties =
+    config.partySource === 'customers'
+      ? customersQuery.data ?? []
+      : suppliersQuery.data ?? [];
 
   return {
     items: itemsQuery.data ?? [],
     locations: locationsQuery.data ?? [],
+    stores: storesQuery.data ?? [],
     partyOptions,
+    parties,
     isLoading,
     isError,
     errorMessage,

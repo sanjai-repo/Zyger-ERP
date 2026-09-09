@@ -20,13 +20,13 @@ export default function SamplingPlanPage() {
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ borderBottom: '2px solid #313244', textAlign: 'left' }}>
-            <th style={{ padding: 8 }}>Standard</th><th style={{ padding: 8 }}>Level</th><th style={{ padding: 8 }}>Lot Min</th><th style={{ padding: 8 }}>Lot Max</th><th style={{ padding: 8 }}>AQL</th><th style={{ padding: 8 }}>Sample Size</th><th style={{ padding: 8 }}>Accept</th><th style={{ padding: 8 }}>Reject</th>
+            <th className="num" style={{ padding: 8 }}>S.No</th><th style={{ padding: 8 }}>Standard</th><th style={{ padding: 8 }}>Level</th><th style={{ padding: 8 }}>Lot Min</th><th style={{ padding: 8 }}>Lot Max</th><th style={{ padding: 8 }}>AQL</th><th style={{ padding: 8 }}>Sample Size</th><th style={{ padding: 8 }}>Accept</th><th style={{ padding: 8 }}>Reject</th>
           </tr>
         </thead>
         <tbody>
-          {plans.map(p => (
+          {plans.map((p, idx) => (
             <tr key={p.id} style={{ borderBottom: '1px solid #313244' }}>
-              <td style={{ padding: 8 }}>{p.standard}</td><td style={{ padding: 8 }}>{p.inspectionLevel}</td><td style={{ padding: 8 }}>{p.lotSizeMin}</td><td style={{ padding: 8 }}>{p.lotSizeMax}</td><td style={{ padding: 8 }}>{p.aql}</td><td style={{ padding: 8 }}>{p.sampleSize}</td><td style={{ padding: 8 }}>{p.acceptNumber}</td><td style={{ padding: 8 }}>{p.rejectNumber}</td>
+              <td className="num mut" style={{ padding: 8 }}>{idx + 1}</td><td style={{ padding: 8 }}>{p.standard}</td><td style={{ padding: 8 }}>{p.inspectionLevel}</td><td style={{ padding: 8 }}>{p.lotSizeMin}</td><td style={{ padding: 8 }}>{p.lotSizeMax}</td><td style={{ padding: 8 }}>{p.aql}</td><td style={{ padding: 8 }}>{p.sampleSize}</td><td style={{ padding: 8 }}>{p.acceptNumber}</td><td style={{ padding: 8 }}>{p.rejectNumber}</td>
             </tr>
           ))}
         </tbody>

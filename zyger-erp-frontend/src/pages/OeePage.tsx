@@ -157,10 +157,11 @@ export default function OeePage() {
         <div className="twrap">
           {loading ? <div className="empty"><span className="material-symbols-rounded">hourglass_empty</span> Loading...</div> : (
             <table className="tbl">
-              <thead><tr><th>Machine</th><th>Date</th><th>Planned</th><th>Run</th><th>Down</th><th>Good</th><th>Total</th><th>Availability</th><th>Performance</th><th>Quality</th><th>OEE</th></tr></thead>
+              <thead><tr><th className="num">S.No</th><th>Machine</th><th>Date</th><th>Planned</th><th>Run</th><th>Down</th><th>Good</th><th>Total</th><th>Availability</th><th>Performance</th><th>Quality</th><th>OEE</th></tr></thead>
               <tbody>
-                {data.length === 0 ? <tr><td colSpan={11}><div className="empty"><span className="material-symbols-rounded">precision_manufacturing</span> No OEE data for selected period.</div></td></tr> : data.map((o) => (
+                {data.length === 0 ? <tr><td colSpan={12}><div className="empty"><span className="material-symbols-rounded">precision_manufacturing</span> No OEE data for selected period.</div></td></tr> : data.map((o, idx) => (
                   <tr key={o.id}>
+                    <td className="num mut">{idx + 1}</td>
                     <td><b>{o.machineCode}</b></td>
                     <td>{o.oeeDate}</td>
                     <td>{o.plannedTimeMin}m</td>

@@ -10,6 +10,7 @@ export interface CustomerSuppliedItemForm {
   code: string;
   itemGroup: string;
   description: string;
+  specification: string;
   printName: string;
   classification: string;
   productItemType: string;
@@ -173,6 +174,7 @@ const defaultFormState: CustomerSuppliedItemForm = {
   code: '',
   itemGroup: '',
   description: '',
+  specification: '',
   printName: '',
   classification: '',
   productItemType: '',
@@ -375,7 +377,7 @@ export default function CustomerSuppliedItemScreen() {
       const { data } = await apiClient.get('/master/items/next-code?itemType=CUSTOMER_SUPPLIED');
       setForm(c => ({ ...c, code: data.code }));
     } catch {
-      setForm(c => ({ ...c, code: 'CSI-0002' }));
+      setForm(c => ({ ...c, code: 'CSM-0001' }));
     }
   };
 
@@ -583,6 +585,10 @@ export default function CustomerSuppliedItemScreen() {
                   <input className="in" type="text" required placeholder="Enter item name" value={form.description} onChange={e => setFld('description', e.target.value)} />
                 </label>
                 <label className="fld">
+                  <span>Specification</span>
+                  <input className="in" type="text" placeholder="Enter specification" value={form.specification} onChange={e => setFld('specification', e.target.value)} />
+                </label>
+                <label className="fld">
                   <span>Print Name</span>
                   <input className="in" type="text" value={form.printName} onChange={e => setFld('printName', e.target.value)} />
                 </label>
@@ -672,7 +678,7 @@ export default function CustomerSuppliedItemScreen() {
                 </label>
 
                 <label className="fld span3">
-                  <span>Description</span>
+                  <span>Remarks</span>
                   <textarea className="in" value={form.remarks} onChange={e => setFld('remarks', e.target.value)} />
                 </label>
               </div>

@@ -226,6 +226,7 @@ export default function MachineLoadScreen() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   <th style={{ width: 40 }}></th>
                   <th>Plan Number</th>
                   <th>Start Date</th>
@@ -237,10 +238,11 @@ export default function MachineLoadScreen() {
               </thead>
               <tbody>
                 {rows.length === 0 ? (
-                  <tr><td colSpan={7}><div className="empty"><span className="material-symbols-rounded">description</span> No machine load plans.</div></td></tr>
-                ) : rows.map((r) => (
+                  <tr><td colSpan={8}><div className="empty"><span className="material-symbols-rounded">description</span> No machine load plans.</div></td></tr>
+                ) : rows.map((r, idx) => (
                   <>
                     <tr key={r.id} onClick={() => toggleExpand(r.id)} style={{ cursor: 'pointer' }}>
+                      <td className="num mut">{page * PAGE_SIZE + idx + 1}</td>
                       <td>
                         <span className="material-symbols-rounded">{expandedId === r.id ? 'expand_less' : 'expand_more'}</span>
                       </td>
@@ -267,7 +269,7 @@ export default function MachineLoadScreen() {
                     </tr>
                     {expandedId === r.id && (
                       <tr key={`${r.id}-lines`}>
-                        <td colSpan={7}>
+                        <td colSpan={8}>
                           <div style={{ background: '#f9fafb', padding: 12, borderBottom: '1px solid #e5e7eb' }}>
                             <h4 style={{ margin: '0 0 8px', fontSize: 13, color: '#555' }}>Machine Load Lines</h4>
                             {loadingLines ? (
@@ -278,6 +280,7 @@ export default function MachineLoadScreen() {
                               <table className="tbl">
                                 <thead>
                                   <tr>
+                                    <th>S.No</th>
                                     <th>Machine</th>
                                     <th>Description</th>
                                     <th>Work Center</th>
@@ -296,8 +299,9 @@ export default function MachineLoadScreen() {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {loadLines.map((line) => (
+                                  {loadLines.map((line, idx) => (
                                     <tr key={line.id}>
+                                      <td className="num mut">{idx + 1}</td>
                                       <td>{line.machineCode}</td>
                                       <td>{line.machineDescription}</td>
                                       <td>{line.workCenter}</td>

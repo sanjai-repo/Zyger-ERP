@@ -219,10 +219,11 @@ export default function IdleTimeScreen() {
           <div className="twrap">
             {loading ? <div className="empty"><span className="material-symbols-rounded">hourglass_empty</span> Loading...</div> : (
               <table className="tbl">
-                <thead><tr><th>Entry No</th><th>Machine</th><th>Operator</th><th>Reason</th><th>Duration (min)</th><th>Work Order</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr><th className="num">S.No</th><th>Entry No</th><th>Machine</th><th>Operator</th><th>Reason</th><th>Duration (min)</th><th>Work Order</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
-                  {filtered.length === 0 ? <tr><td colSpan={8}><div className="empty"><span className="material-symbols-rounded">description</span> No idle entries.</div></td></tr> : filtered.map((r) => (
+                  {filtered.length === 0 ? <tr><td colSpan={9}><div className="empty"><span className="material-symbols-rounded">description</span> No idle entries.</div></td></tr> : filtered.map((r, idx) => (
                     <tr key={r.id}>
+                      <td className="num mut">{idx + 1}</td>
                       <td><b>{r.entryNumber}</b></td>
                       <td>{r.machineCode}</td>
                       <td>{r.operatorCode ?? '-'}</td>

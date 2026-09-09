@@ -630,12 +630,13 @@ export default function ProductionEntryScreen() {
                 <table className="tbl">
                   <thead>
                     <tr>
-                      <th>Type</th><th>Item Code *</th><th>Quantity *</th><th>Location *</th><th>Weight</th><th>UoM</th><th>Dest. Stage</th><th>Remarks</th><th></th>
+                      <th>S.No</th><th>Type</th><th>Item Code *</th><th>Quantity *</th><th>Location *</th><th>Weight</th><th>UoM</th><th>Dest. Stage</th><th>Remarks</th><th></th>
                     </tr>
                   </thead>
                   <tbody>
                     {additionalOutputs.map((line, idx) => (
                       <tr key={idx}>
+                        <td>{idx + 1}</td>
                         <td>
                           <select className="in" value={line.outputType} onChange={(e) => updateAdditionalOutput(idx, 'outputType', e.target.value)}>
                             <option value="CO_PRODUCT">CO_PRODUCT</option>
@@ -762,12 +763,13 @@ export default function ProductionEntryScreen() {
               <table className="tbl">
                 <thead>
                   <tr>
-                    <th>Entry No</th><th>Type</th><th>Work Order</th><th>Part Code</th><th>Machine</th><th>Operator</th><th>Process Qty</th><th>Accepted</th><th>Scrap</th><th>Status</th><th>Actions</th>
+                    <th className="num">S.No</th><th>Entry No</th><th>Type</th><th>Work Order</th><th>Part Code</th><th>Machine</th><th>Operator</th><th>Process Qty</th><th>Accepted</th><th>Scrap</th><th>Status</th><th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.length === 0 ? <tr><td colSpan={11}><div className="empty"><span className="material-symbols-rounded">description</span> No matching production entries.</div></td></tr> : filtered.map((r) => (
+                  {filtered.length === 0 ? <tr><td colSpan={12}><div className="empty"><span className="material-symbols-rounded">description</span> No matching production entries.</div></td></tr> : filtered.map((r, idx) => (
                     <tr key={r.id}>
+                      <td className="num mut">{idx + 1}</td>
                       <td><b>{r.entryNumber}</b></td>
                       <td><span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: r.productionType === 'REWORK' ? '#fef3c7' : '#f1f5f9', color: r.productionType === 'REWORK' ? '#92400e' : '#475569' }}>{r.productionType || 'GENERAL'}</span></td>
                       <td>{r.workOrderNumber}</td>

@@ -105,6 +105,7 @@ export default function ProductionPendingScreen() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   <th>Job Card</th>
                   <th>Work Order</th>
                   <th>Part Code</th>
@@ -120,9 +121,10 @@ export default function ProductionPendingScreen() {
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={11}><div className="empty"><span className="material-symbols-rounded">check_circle</span> No pending production jobs.</div></td></tr>
-                ) : filtered.sort((a, b) => (b.overdue ? 1 : 0) - (a.overdue ? 1 : 0) || (b.pendingQuantity ?? 0) - (a.pendingQuantity ?? 0)).map((r) => (
+                  <tr><td colSpan={12}><div className="empty"><span className="material-symbols-rounded">check_circle</span> No pending production jobs.</div></td></tr>
+                ) : filtered.sort((a, b) => (b.overdue ? 1 : 0) - (a.overdue ? 1 : 0) || (b.pendingQuantity ?? 0) - (a.pendingQuantity ?? 0)).map((r, idx) => (
                   <tr key={r.jobCardNumber} style={r.overdue ? { background: 'rgba(239,68,68,0.05)' } : undefined}>
+                    <td className="num mut">{idx + 1}</td>
                     <td>
                       <a
                         href="#"

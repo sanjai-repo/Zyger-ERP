@@ -13,6 +13,7 @@ import ConfirmActionModal from '../../../../components/common/ConfirmActionModal
 import type { PoInwardDto, DocumentAction } from '../../../../types/inventory/poInward.types';
 import type { ItemMasterDto } from '../../../../types/master.types';
 import { lookupDocumentByNumber } from '../../../../utils/documentLookup';
+import { filterPurchaseRelevantItems } from '../../../../utils/itemClassification';
 import {
   buildPayload,
   createEmptyForm,
@@ -98,7 +99,9 @@ export default function PoInwardForm({
   const items = lookups.items;
   const suppliers = lookups.suppliers;
   const purchaseOrders = lookups.purchaseOrders;
-  const locations = lookups.locations;
+  // Priority#1 [FIXED] — was `lookups.locations` alone, never considering store_master at
+  // all for this default; merged so a store_master-only site still gets a sane default.
+  const locations = lookups.stores ?? [];
 
   const itemsMap = useMemo(
     () => new Map(items.map((item: ItemMasterDto) => [item.code, item])),
@@ -198,7 +201,7 @@ export default function PoInwardForm({
         }
 
         if (doc.lines && doc.lines.length > 0) {
-          const defaultLoc = locations[0]?.code ?? 'MAIN';
+          const defaultLoc = locations[0]?.code ?? '';
           setForm((prev) => ({
             ...prev,
             lines: doc.lines.map((l: any) => {
@@ -251,6 +254,11 @@ export default function PoInwardForm({
           line.itemDesc = item?.description ?? '';
           line.description = '';
           line.uom = item?.uom || (lookups.uoms[0]?.code ?? 'PCS');
+          // DOCUMENT 02 v2.0 §12 — storeLocation auto-defaulted from Item Master's
+          // defaultReceivingStore, editable (only fills if the line has none yet).
+          if (!line.location && item?.defaultReceivingStore) {
+            line.location = item.defaultReceivingStore;
+          }
         }
       }
 
@@ -281,8 +289,17 @@ export default function PoInwardForm({
 
       lines[index] = line;
 
+      // DOCUMENT 02 v2.0 §12 — qcRequired auto-defaulted from the first line's Item
+      // Master inspectionRequired flag, editable.
+      let qcRequired = previous.qcRequired;
+      if (key === 'itemCode' && index === 0 && value !== 'OTHERS') {
+        const item = itemsMap.get(value);
+        if (item) qcRequired = item.inspectionRequired ? 'Yes' : 'No';
+      }
+
       return {
         ...previous,
+        qcRequired,
         lines,
       };
     });
@@ -856,6 +873,7 @@ export default function PoInwardForm({
             <table className="tbl lines">
               <thead>
                 <tr>
+                  <th>S.No</th>
                   <th style={{ minWidth: '130px' }}>Item Code *</th>
                   <th style={{ minWidth: '130px' }}>Item Name</th>
                   <th style={{ minWidth: '130px' }}>Description</th>
@@ -876,53 +894,19 @@ export default function PoInwardForm({
 
               <tbody>
                 {form.lines.map((line, index) => {
-                  const allowedItems = items.filter((item: any) => {
-                    const rawType = String(
-                      item.itemType ||
-                      item.groupType ||
-                      item.itemCategory ||
-                      item.category ||
-                      item.itemGroupType ||
-                      item.groupItemType ||
-                      ''
-                    ).toUpperCase().replace(/[\s_]+/g, '_');
-                    const code = String(item.code || '').toUpperCase();
-                    if (!rawType && !code) return true;
-
-                    const isPurchasable =
-                      rawType.includes('PURCHASABLE') ||
-                      rawType.includes('RAW_MATERIAL') ||
-                      rawType.includes('BUY_ITEM') ||
-                      rawType === 'RM' ||
-                      code.startsWith('PIT-') ||
-                      rawType.includes('PURCHAS');
-
-                    const isCustomerSupplied =
-                      rawType.includes('CUSTOMER') ||
-                      rawType.includes('SUPPLIED') ||
-                      item.customerOwned === true ||
-                      code.startsWith('CSM-');
-
-                    const isManufacturing =
-                      rawType.includes('MANUFACTUR') ||
-                      rawType.includes('FG') ||
-                      rawType.includes('SEMI_FG') ||
-                      rawType.includes('SFG') ||
-                      code.startsWith('MFG-');
-
-                    return isPurchasable || isCustomerSupplied || isManufacturing || true;
-                  });
+                  const allowedItems = filterPurchaseRelevantItems(items);
 
                   const uomMasterList = lookups.uoms && lookups.uoms.length > 0
                     ? lookups.uoms
                     : [{ code: line.uom || 'PCS', name: line.uom || 'PCS' }];
 
-                  const storeList = (lookups.stores && lookups.stores.length > 0)
-                    ? lookups.stores
-                    : locations;
+                  // `locations` is already the merged store_master+location_master union
+                  // (Priority#1 fix above) — no need to prefer stores separately here.
+                  const storeList = locations;
 
                   return (
                     <tr key={index}>
+                      <td className="num mut">{index + 1}</td>
                       <td className="w-i">
                         <input
                           className="in"
@@ -941,7 +925,6 @@ export default function PoInwardForm({
                               {item.code} — {item.description}
                             </option>
                           ))}
-                          <option value="OTHERS">OTHERS (Custom Item)</option>
                         </datalist>
                       </td>
 

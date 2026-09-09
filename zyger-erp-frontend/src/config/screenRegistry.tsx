@@ -31,26 +31,18 @@ const ProductionDashboard = lazy(() => import('../pages/production/dashboard/Pro
 const ProductionBomFreshScreen = lazy(() => import('../pages/production/bom/ProductionBomScreen'));
 const InwardEntryPage = lazy(() => import('../pages/inventory/inward/InwardEntryPage'));
 const PoInwardPage = lazy(() => import('../pages/inventory/inward/po-inward/PoInwardPage'));
-const GrnPage = lazy(() => import('../pages/inventory/store-receipt/grn/GrnPage'));
 const StockIssueRequestPage = lazy(() => import('../pages/inventory/stock-issue/stock-issue-request/StockIssueRequestPage'));
 const RmIssuePage = lazy(() => import('../pages/inventory/stock-issue/rm-issue/RmIssuePage'));
 const GeneralIssuePage = lazy(() => import('../pages/inventory/stock-issue/general-issue/GeneralIssuePage'));
-const JoDcIssuePage = lazy(() => import('../pages/inventory/stock-issue/jo-dc-issue/JoDcIssuePage'));
 const IssueInternalExternalPage = lazy(() => import('../pages/inventory/stock-issue/issue-internal-external/IssueInternalExternalPage'));
-const IssueAgainstReceiptPage = lazy(() => import('../pages/inventory/stock-issue/issue-against-receipt/IssueAgainstReceiptPage'));
-const SalesDcPage = lazy(() => import('../pages/inventory/delivery-challan/sales-dc/SalesDcPage'));
 const JoDcPage = lazy(() => import('../pages/inventory/delivery-challan/jo-dc/JoDcPage'));
 const GeneralDcPage = lazy(() => import('../pages/inventory/delivery-challan/general-dc/GeneralDcPage'));
-const ReturnDcPage = lazy(() => import('../pages/inventory/delivery-challan/return-dc/ReturnDcPage'));
 const TransferDcPage = lazy(() => import('../pages/inventory/delivery-challan/transfer-dc/TransferDcPage'));
 const PurchaseInvoicePage = lazy(() => import('../pages/inventory/supplier-invoice/purchase-invoice/PurchaseInvoicePage'));
 const SubcontractInvoicePage = lazy(() => import('../pages/inventory/supplier-invoice/subcontract-invoice/SubcontractInvoicePage'));
-const InwardReturnPage = lazy(() => import('../pages/inventory/return-management/inward-return/InwardReturnPage'));
 const DcReturnPage = lazy(() => import('../pages/inventory/return-management/dc-return/DcReturnPage'));
 const InvoiceReturnPage = lazy(() => import('../pages/inventory/return-management/invoice-return/InvoiceReturnPage'));
 const InternalReturnPage = lazy(() => import('../pages/inventory/return-management/internal-return/InternalReturnPage'));
-const ReceivedAgainstIssuePage = lazy(() => import('../pages/inventory/return-management/received-against-issue/ReceivedAgainstIssuePage'));
-const ReceiptReturnPage = lazy(() => import('../pages/inventory/return-management/receipt-return/ReceiptReturnPage'));
 const StockAllotmentPage = lazy(() => import('../pages/inventory/allotment/stock-allotment/StockAllotmentPage'));
 const StockReleasePage = lazy(() => import('../pages/inventory/allotment/stock-release/StockReleasePage'));
 const StockAmendmentPage = lazy(() => import('../pages/inventory/adjustment/stock-amendment/StockAmendmentPage'));
@@ -58,6 +50,8 @@ const PhysicalStockAmendmentPage = lazy(() => import('../pages/inventory/adjustm
 const InventoryReportsPage = lazy(() => import('../pages/inventory/reports/InventoryReportsPage'));
 const InventoryLogPage = lazy(() => import('../pages/inventory/reports/InventoryLogPage'));
 const CurrentStockPage = lazy(() => import('../pages/inventory/reports/CurrentStockPage'));
+const StoreStockSummaryPage = lazy(() => import('../pages/inventory/reports/StoreStockSummaryPage'));
+const TraceabilityViewerPage = lazy(() => import('../pages/inventory/reports/TraceabilityViewerPage'));
 const QualityDashboard = lazy(() => import('../pages/quality/dashboard/QualityDashboard'));
 const QualityPage = lazy(() => import('../pages/quality/inspection/QualityPage'));
 const IqcInspectionPage = lazy(() => import('../pages/quality/inspection/IqcInspectionPage'));
@@ -77,6 +71,7 @@ const SupplierEnquiryPage = lazy(() => import('../pages/purchase/enquiry/Supplie
 const SupplierQuotationPage = lazy(() => import('../pages/purchase/quotation/SupplierQuotationPage'));
 const QuotationComparisonPage = lazy(() => import('../pages/purchase/quotation/QuotationComparisonPage'));
 const PurchaseOrderPage = lazy(() => import('../pages/purchase/order/PurchaseOrderPage'));
+const PurchaseReturnPage = lazy(() => import('../pages/purchase/return/PurchaseReturnPage'));
 const PoSchedulePage = lazy(() => import('../pages/purchase/schedule/PoSchedulePage'));
 const JoSchedulePage = lazy(() => import('../pages/purchase/schedule/JoSchedulePage'));
 const JobOrderPage = lazy(() => import('../pages/purchase/job-order/JobOrderPage'));
@@ -203,26 +198,18 @@ export const SCREEN_REGISTRY: Record<string, ScreenDefinition> = Object.fromEntr
     'production-bom-fresh': ProductionBomFreshScreen,
     'inward-entry': InwardEntryPage,
     'po-inward': PoInwardPage,
-    grn: GrnPage,
     'stock-issue-request': StockIssueRequestPage,
     'rm-issue': RmIssuePage,
     'general-issue': GeneralIssuePage,
-    'jo-dc-issue': JoDcIssuePage,
     'issue-internal-external': IssueInternalExternalPage,
-    'issue-against-receipt': IssueAgainstReceiptPage,
-    'sales-dc': SalesDcPage,
     'jo-dc': JoDcPage,
     'general-dc': GeneralDcPage,
-    'return-dc': ReturnDcPage,
     'transfer-dc': TransferDcPage,
     'purchase-invoice': PurchaseInvoicePage,
     'subcontract-invoice': SubcontractInvoicePage,
-    'inward-return': InwardReturnPage,
     'dc-return': DcReturnPage,
     'invoice-return': InvoiceReturnPage,
     'internal-return': InternalReturnPage,
-    'received-against-issue': ReceivedAgainstIssuePage,
-    'receipt-return': ReceiptReturnPage,
     'stock-allotment': StockAllotmentPage,
     'stock-release': StockReleasePage,
     'stock-amendment': StockAmendmentPage,
@@ -230,6 +217,8 @@ export const SCREEN_REGISTRY: Record<string, ScreenDefinition> = Object.fromEntr
     reports: InventoryReportsPage,
     'inventory-log': InventoryLogPage,
     'current-stock': CurrentStockPage,
+    'store-stock-summary': StoreStockSummaryPage,
+    'traceability-viewer': TraceabilityViewerPage,
     'quality-dashboard': QualityDashboard,
     'quality-inspection': QualityPage,
     'quality-ncr': NcrPage,
@@ -258,6 +247,7 @@ export const SCREEN_REGISTRY: Record<string, ScreenDefinition> = Object.fromEntr
     'supplier-quotation': SupplierQuotationPage,
     'quotation-comparison': QuotationComparisonPage,
     'purchase-order': PurchaseOrderPage,
+    'purchase-return': PurchaseReturnPage,
     'po-schedule': PoSchedulePage,
     'jo-schedule': JoSchedulePage,
     'job-order': JobOrderPage,

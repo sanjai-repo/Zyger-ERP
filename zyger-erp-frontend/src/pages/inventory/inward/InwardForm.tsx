@@ -18,6 +18,7 @@ import { getApiErrorMessage } from '../../../utils/apiError';
 import { toNumber, todayISO } from '../../../utils/format';
 import { lookupDocumentByNumber } from '../../../utils/documentLookup';
 import { logSystemActivity } from '../../../utils/activityLog';
+import { filterPurchaseRelevantItems } from '../../../utils/itemClassification';
 import StatusBadge from '../../../components/common/StatusBadge';
 import ConfirmActionModal from '../../../components/common/ConfirmActionModal';
 
@@ -222,9 +223,7 @@ export default function InwardForm({
         }));
       case 'locations':
       case 'stores': {
-        const storeList = (options.stores && options.stores.length > 0)
-          ? options.stores
-          : options.locations;
+        const storeList = options.stores ?? [];
         return storeList.map((l: any) => ({
           value: l.code,
           label: l.name || l.code,
@@ -303,7 +302,7 @@ export default function InwardForm({
               [config.qtyField]: String(l.qty ?? l.quantity ?? 1),
               rate: String(l.unitPrice ?? l.rate ?? item?.defaultRate ?? 0),
               amount: String(l.amount ?? l.lineTotal ?? 0),
-              location: (options.stores && options.stores[0]?.code) || options.locations[0]?.code || 'MAIN',
+              location: (options.stores && options.stores[0]?.code) || options.locations[0]?.code || '',
             };
           });
           setLines(newLines);
@@ -315,7 +314,7 @@ export default function InwardForm({
   const updateLine = (index: number, key: string, value: string) => {
     setLines((prev) => {
       const next = [...prev];
-      const defaultLoc = (options.stores && options.stores[0]?.code) || options.locations[0]?.code || 'MAIN';
+      const defaultLoc = (options.stores && options.stores[0]?.code) || options.locations[0]?.code || '';
       const line = { ...next[index], [key]: value };
 
       if (key === 'itemCode') {
@@ -331,9 +330,18 @@ export default function InwardForm({
           if (!line.rate && item?.defaultRate) {
             line.rate = String(item.defaultRate);
           }
+          // DOCUMENT 02 v2.0 §12 — qcRequired auto-defaulted from the first line's
+          // Item Master inspectionRequired flag, editable.
+          if (index === 0) {
+            const qcRequired = item?.inspectionRequired ? 'Yes' : 'No';
+            setHeader((prev) => ({ ...prev, qcRequired }));
+          }
         }
+        // DOCUMENT 02 v2.0 §12 — storeLocation auto-defaulted from Item Master's
+        // defaultReceivingStore when present, editable.
         if (!line.location) {
-          line.location = defaultLoc;
+          const item = value === 'OTHERS' ? undefined : options.items.find((i) => i.code === value);
+          line.location = item?.defaultReceivingStore || defaultLoc;
         }
       }
 
@@ -870,42 +878,7 @@ textAlign: 'left',
     }
 
     if (field.type === 'item') {
-      const allowedItems = options.items.filter((item: any) => {
-        const rawType = String(
-          item.itemType ||
-          item.groupType ||
-          item.itemCategory ||
-          item.category ||
-          item.itemGroupType ||
-          item.groupItemType ||
-          ''
-        ).toUpperCase().replace(/[\s_]+/g, '_');
-        const code = String(item.code || '').toUpperCase();
-        if (!rawType && !code) return true;
-
-        const isPurchasable =
-          rawType.includes('PURCHASABLE') ||
-          rawType.includes('RAW_MATERIAL') ||
-          rawType.includes('BUY_ITEM') ||
-          rawType === 'RM' ||
-          code.startsWith('PIT-') ||
-          rawType.includes('PURCHAS');
-
-        const isCustomerSupplied =
-          rawType.includes('CUSTOMER') ||
-          rawType.includes('SUPPLIED') ||
-          item.customerOwned === true ||
-          code.startsWith('CSM-');
-
-        const isManufacturing =
-          rawType.includes('MANUFACTUR') ||
-          rawType.includes('FG') ||
-          rawType.includes('SEMI_FG') ||
-          rawType.includes('SFG') ||
-          code.startsWith('MFG-');
-
-        return isPurchasable || isCustomerSupplied || isManufacturing || true;
-      });
+      const allowedItems = filterPurchaseRelevantItems(options.items);
 
       return (
         <>
@@ -924,7 +897,6 @@ textAlign: 'left',
                 {item.code} — {item.description}
               </option>
             ))}
-            <option value="OTHERS">OTHERS (Custom Item)</option>
           </datalist>
         </>
       );
@@ -1054,6 +1026,7 @@ textAlign: 'left',
           <table className="tbl lines">
             <thead>
               <tr>
+                <th>S.No</th>
                 {lineFields.map((field) => (
                   <th key={field.key}>
                     {field.label} {field.required ? '*' : ''}
@@ -1066,6 +1039,7 @@ textAlign: 'left',
             <tbody>
               {lines.map((_, index) => (
                 <tr key={index}>
+                  <td className="num mut">{index + 1}</td>
                   {lineFields.map((field) => (
                     <td key={field.key}>{renderLineField(field, index)}</td>
                   ))}

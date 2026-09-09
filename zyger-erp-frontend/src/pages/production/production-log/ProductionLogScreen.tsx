@@ -238,11 +238,12 @@ export default function ProductionLogScreen() {
           <div className="twrap">
             {loading ? <div className="empty"><span className="material-symbols-rounded">hourglass_empty</span> Loading...</div> : (
               <table className="tbl">
-                <thead><tr><th style={{ width: 40 }}></th><th>Log No</th><th>Work Order</th><th>Machine</th><th>Operator</th><th>Shift</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr><th className="num">S.No</th><th style={{ width: 40 }}></th><th>Log No</th><th>Work Order</th><th>Machine</th><th>Operator</th><th>Shift</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
-                  {filtered.length === 0 ? <tr><td colSpan={8}><div className="empty"><span className="material-symbols-rounded">description</span> No log sheets.</div></td></tr> : filtered.map((r) => (
+                  {filtered.length === 0 ? <tr><td colSpan={9}><div className="empty"><span className="material-symbols-rounded">description</span> No log sheets.</div></td></tr> : filtered.map((r, rIdx) => (
                     <React.Fragment key={r.id}>
                       <tr onClick={() => loadActivities(r.id)} style={{ cursor: 'pointer' }}>
+                        <td className="num mut">{rIdx + 1}</td>
                         <td><span className="material-symbols-rounded">{expandedId === r.id ? 'expand_less' : 'expand_more'}</span></td>
                         <td><b>{r.logNumber}</b></td>
                         <td>{r.workOrderNumber ?? '-'}</td>
@@ -262,7 +263,7 @@ export default function ProductionLogScreen() {
                       </tr>
                       {expandedId === r.id && (
                         <tr key={`${r.id}-acts`}>
-                          <td colSpan={8}>
+                          <td colSpan={9}>
                             <div style={{ background: 'var(--card-bg, #f9fafb)', padding: 12, borderBottom: '1px solid var(--border)' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                                 <h4 style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}>Activities</h4>
@@ -270,10 +271,11 @@ export default function ProductionLogScreen() {
                               </div>
                               {loadingActs ? <div className="empty">Loading...</div> : activities.length === 0 ? <div className="empty">No activities.</div> : (
                                 <table className="tbl">
-                                  <thead><tr><th>Type</th><th>Start</th><th>End</th><th>Duration (min)</th><th>Qty</th><th>Remarks</th><th>Actions</th></tr></thead>
+                                  <thead><tr><th>S.No</th><th>Type</th><th>Start</th><th>End</th><th>Duration (min)</th><th>Qty</th><th>Remarks</th><th>Actions</th></tr></thead>
                                   <tbody>
-                                    {activities.map((a) => (
+                                    {activities.map((a, aIdx) => (
                                       <tr key={a.id}>
+                                        <td>{aIdx + 1}</td>
                                         <td>{a.activityType}</td>
                                         <td>{a.startTime ? new Date(a.startTime).toLocaleTimeString() : '-'}</td>
                                         <td>{a.endTime ? new Date(a.endTime).toLocaleTimeString() : '-'}</td>

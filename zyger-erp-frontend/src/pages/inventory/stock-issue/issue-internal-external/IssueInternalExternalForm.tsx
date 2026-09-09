@@ -16,6 +16,7 @@ import type {
   IssueInternalExternalType,
 } from '../../../../types/inventory/issueInternalExternal.types';
 import { getApiErrorMessage } from '../../../../utils/apiError';
+import { filterPurchaseRelevantItems } from '../../../../utils/itemClassification';
 
 import StatusBadge from '../../../../components/common/StatusBadge';
 import ConfirmActionModal from '../../../../components/common/ConfirmActionModal';
@@ -85,13 +86,20 @@ export default function IssueInternalExternalForm({
   const initializedFor = useRef<string | null>(null);
 
   const items = lookups.items;
-  const locations = lookups.locations;
+  // FRS DOC-INV-FRS-02 Priority#1 [FIXED] — merged union instead of an all-or-nothing
+  // stores-vs-locations fallback; see utils/locationOptions.ts for why.
+  const locations = lookups.stores ?? [];
   const departments = lookups.departments;
 
   const itemsMap = useMemo(
     () => new Map(items.map((item) => [item.code, item])),
     [items]
   );
+
+  // Item Code should only ever offer Purchasable / Customer-Supplied / Manufacturing
+  // items (the three item screens under Master → Inventory → Items) — this picker
+  // previously showed every item in the system unfiltered.
+  const allowedItems = useMemo(() => filterPurchaseRelevantItems(items), [items]);
 
   const nextNumberQuery = useIssueInternalExternalNextNumber(
     (form.issueType as IssueInternalExternalType) || null
@@ -246,8 +254,16 @@ export default function IssueInternalExternalForm({
       };
 
       if (key === 'sourceLocation') {
+        // Priority#1 [FIXED] — was `line.location ? line : {...}`: once a line acquired ANY
+        // location (even just inherited from the header on the very first render), changing
+        // Source Location again silently stopped updating it, so the availability check kept
+        // querying the old store forever. Now a line still follows the header unless its
+        // location has actually diverged from the header's *previous* value (a real per-line
+        // override), matching what a user switching stores on this doc actually expects.
         next.lines = previous.lines.map((line) =>
-          line.location ? line : { ...line, location: value }
+          (!line.location || line.location === previous.sourceLocation)
+            ? { ...line, location: value }
+            : line
         );
       }
 
@@ -457,6 +473,82 @@ export default function IssueInternalExternalForm({
     }
   };
 
+  const handleStockIssue = async () => {
+    if (!editable) {
+      return;
+    }
+
+    setValidationMode('submit');
+
+    const errors = validateIssueInternalExternalForm(
+      form,
+      itemsMap,
+      true,
+      availabilityMap
+    );
+
+    if (errors.length > 0) {
+      return;
+    }
+
+    try {
+      const targetId = documentId ?? currentDocument?.id ?? null;
+
+      if (targetId && status === 'REJECTED') {
+        await actionMutation.mutateAsync({
+          id: targetId,
+          action: 'reopen',
+          note: '',
+        });
+      }
+
+      const payload = buildPayload(form);
+
+      let saved: IssueInternalExternalDto = targetId
+        ? await updateMutation.mutateAsync({ id: targetId, payload })
+        : await createMutation.mutateAsync(payload);
+
+      if (saved.status === 'DRAFT' && saved.id) {
+        saved = await actionMutation.mutateAsync({
+          id: saved.id,
+          action: 'submit',
+          note: '',
+        });
+      }
+
+      if (saved.status === 'SUBMITTED' && saved.id) {
+        saved = await actionMutation.mutateAsync({
+          id: saved.id,
+          action: 'approve',
+          note: '',
+        });
+      }
+
+      if (saved.status === 'APPROVED' && saved.id) {
+        saved = await actionMutation.mutateAsync({
+          id: saved.id,
+          action: 'post',
+          note: '',
+        });
+      }
+
+      setCurrentDocument(saved);
+      setForm(formFromDto(saved, items));
+
+      if (saved.id) {
+        initializedFor.current = saved.id;
+        onSaved?.(saved.id);
+      }
+
+      toast(`${saved.docNo || 'Issue'} — Stock issued successfully.`);
+    } catch (issueError) {
+      toast(
+        getApiErrorMessage(issueError, 'Stock issue failed.'),
+        'error'
+      );
+    }
+  };
+
   const runAction = async (
     action: IssueInternalExternalDocumentAction,
     note: string
@@ -614,8 +706,8 @@ export default function IssueInternalExternalForm({
       <div className="note">
         <span className="material-symbols-rounded">info</span>
         <span>
-          Workflow: DRAFT → SUBMITTED → APPROVED → POSTED • Posting reduces
-          stock • Internal = INT, External = EXT
+          Click Stock Issue to post in one step — stock reduces immediately •
+          Internal = INT, External = EXT
         </span>
       </div>
 
@@ -755,7 +847,7 @@ export default function IssueInternalExternalForm({
                 <option value="">— Select —</option>
                 {locations.map((location) => (
                   <option key={location.code} value={location.code}>
-                    {location.code}
+                    {location.name || location.code}
                   </option>
                 ))}
               </select>
@@ -797,6 +889,7 @@ export default function IssueInternalExternalForm({
             <table className="tbl lines">
               <thead>
                 <tr>
+                  <th>S.No</th>
                   <th>Item Code *</th>
                   <th>Item Name</th>
                   <th>Available</th>
@@ -804,7 +897,6 @@ export default function IssueInternalExternalForm({
                   <th>Batch No</th>
                   <th>Heat No</th>
                   <th>Returnable *</th>
-                  <th>Location *</th>
                   <th>Remarks</th>
                   <th />
                 </tr>
@@ -813,6 +905,7 @@ export default function IssueInternalExternalForm({
               <tbody>
                 {form.lines.map((line, index) => (
                   <tr key={index}>
+                    <td className="num mut">{index + 1}</td>
                     <td>
                       <select
                         className="in w-i"
@@ -823,7 +916,7 @@ export default function IssueInternalExternalForm({
                         }
                       >
                         <option value="">— Select Item —</option>
-                        {items.map((item) => (
+                        {allowedItems.map((item) => (
                           <option key={item.code} value={item.code}>
                             {item.code} — {item.description}
                           </option>
@@ -903,24 +996,6 @@ export default function IssueInternalExternalForm({
                     </td>
 
                     <td>
-                      <select
-                        className="in"
-                        value={line.location}
-                        disabled={!editable}
-                        onChange={(event) =>
-                          updateLine(index, 'location', event.target.value)
-                        }
-                      >
-                        <option value="">— Select —</option>
-                        {locations.map((location) => (
-                          <option key={location.code} value={location.code}>
-                            {location.code}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-
-                    <td>
                       <input
                         className="in"
                         value={line.remarks}
@@ -974,12 +1049,14 @@ export default function IssueInternalExternalForm({
 
                 <button
                   type="button"
-                  className="btn btn-p"
-                  onClick={() => save(true)}
+                  className="btn btn-g"
+                  onClick={handleStockIssue}
                   disabled={isBusy}
                 >
-                  <span className="material-symbols-rounded">send</span>
-                  Submit
+                  <span className="material-symbols-rounded">
+                    published_with_changes
+                  </span>
+                  Stock Issue
                 </button>
               </>
             )}

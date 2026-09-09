@@ -640,6 +640,7 @@ export default function CustomerForm({ customerId, viewOnly = false, onBack, onS
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   <th>CODE</th>
                   <th>NAME</th>
                   <th>GROUP</th>
@@ -653,10 +654,11 @@ export default function CustomerForm({ customerId, viewOnly = false, onBack, onS
               </thead>
               <tbody>
                 {customerListSummary.length === 0 ? (
-                  <tr><td colSpan={9} className="empty">No customers found.</td></tr>
+                  <tr><td colSpan={10} className="empty">No customers found.</td></tr>
                 ) : (
-                  customerListSummary.map(c => (
+                  customerListSummary.map((c, idx) => (
                     <tr key={c.id}>
+                      <td className="num mut">{idx + 1}</td>
                       <td style={{ fontWeight: 700 }}>{c.code}</td>
                       <td style={{ fontWeight: 600 }}>{c.name}</td>
                       <td>{c.customerGroup || 'Others'}</td>

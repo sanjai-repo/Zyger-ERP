@@ -100,7 +100,10 @@ export default function SupplierForm({ customerId, viewOnly = false, onBack, onS
         paymentTerms: form.paymentTerms ?? '',
         supplierGroup: form.supplierGroup ?? '',
         qualityCertRequired: Boolean(form.qualityCertRequired),
-        inspectionRequired: Boolean(form.inspectionRequired),
+        // Party's real column is inspectionRequiredParty (inspectionRequired is a
+        // distinct, unrelated field on other entities) — send the correct key so
+        // this checkbox actually persists instead of being silently dropped.
+        inspectionRequiredParty: Boolean(form.inspectionRequired),
         contactsJson: JSON.stringify(form.contacts ?? []),
         addressesJson: JSON.stringify(syncedAddresses),
         bankAccountsJson: JSON.stringify(form.bankAccounts ?? []),
@@ -255,7 +258,7 @@ export default function SupplierForm({ customerId, viewOnly = false, onBack, onS
             </label>
             <label className="fld">
               <span>FACTORY / DISPATCH ADDRESS</span>
-              <textarea className="in" rows={2} placeholder="If different from billing" value={String(form.deliveryAddress ?? '')} onChange={e => updateForm('deliveryAddress', e.target.value)} disabled={viewOnly} />
+              <textarea className="in" rows={2} placeholder="If different from billing" value={String(form.shippingAddress ?? '')} onChange={e => updateForm('shippingAddress', e.target.value)} disabled={viewOnly} />
             </label>
           </div>
 

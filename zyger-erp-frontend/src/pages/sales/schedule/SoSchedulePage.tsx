@@ -119,6 +119,7 @@ export default function SoSchedulePage() {
         <table className="table table-sm w-full text-sm">
           <thead className="bg-gray-50 sticky top-0">
             <tr>
+              <th className="num">S.No</th>
               <th>SO No</th>
               <th>Customer</th>
               <th>Item Code</th>
@@ -132,12 +133,13 @@ export default function SoSchedulePage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} className="text-center py-8 text-gray-400">Loading...</td></tr>
+              <tr><td colSpan={10} className="text-center py-8 text-gray-400">Loading...</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={9} className="text-center py-8 text-gray-400">No schedule data found</td></tr>
+              <tr><td colSpan={10} className="text-center py-8 text-gray-400">No schedule data found</td></tr>
             ) : (
               filtered.map((s, i) => (
                 <tr key={i} className="hover:bg-gray-50">
+                  <td className="num mut">{i + 1}</td>
                   <td className="font-medium">{s.soNo}</td>
                   <td>{s.customer}</td>
                   <td>{s.itemCode}</td>

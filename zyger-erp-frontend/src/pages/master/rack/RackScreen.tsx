@@ -99,11 +99,11 @@ export default function RackScreen() {
         <div className="twrap">
           {loading ? <div className="empty"><span className="material-symbols-rounded">hourglass_empty</span> Loading...</div> : (
             <table className="tbl">
-              <thead><tr><th>Code</th><th>Name</th><th>Store</th><th>Location</th><th>Capacity</th><th>Unit</th><th>Active</th><th>Actions</th></tr></thead>
+              <thead><tr><th className="num">S.No</th><th>Code</th><th>Name</th><th>Store</th><th>Location</th><th>Capacity</th><th>Unit</th><th>Active</th><th>Actions</th></tr></thead>
               <tbody>
-                {rows.length === 0 ? <tr><td colSpan={8}><div className="empty"><span className="material-symbols-rounded">description</span> No racks.</div></td></tr>
-                : rows.map(r => (
-                  <tr key={r.id}><td>{r.code}</td><td>{r.name}</td><td>{r.storeName ?? ''}</td><td>{r.location ?? ''}</td>
+                {rows.length === 0 ? <tr><td colSpan={9}><div className="empty"><span className="material-symbols-rounded">description</span> No racks.</div></td></tr>
+                : rows.map((r, idx) => (
+                  <tr key={r.id}><td className="num mut">{idx + 1}</td><td>{r.code}</td><td>{r.name}</td><td>{r.storeName ?? ''}</td><td>{r.location ?? ''}</td>
                     <td>{r.capacity ?? ''}</td><td>{r.capacityUnit ?? ''}</td>
                     <td>{r.active ? <span className="badge badge-green">Active</span> : <span className="badge badge-yellow">Inactive</span>}</td>
                     <td>

@@ -105,6 +105,7 @@ export default function MaintenanceMastersPage() {
         <table className="tbl">
           <thead>
             <tr>
+              <th className="num">S.No</th>
               <th>Code</th>
               <th>{activeTab === 'Failure Codes' || activeTab === 'Root Cause Codes' ? 'Description' : 'Name'}</th>
               {activeTab === 'Technicians' && <th>Skill Category</th>}
@@ -116,9 +117,10 @@ export default function MaintenanceMastersPage() {
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', padding: 16, color: '#999' }}>No records</td></tr>}
-            {filtered.map((r) => (
+            {filtered.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', padding: 16, color: '#999' }}>No records</td></tr>}
+            {filtered.map((r, idx) => (
               <tr key={r.id}>
+                <td className="num mut">{idx + 1}</td>
                 <td>{r.code}</td>
                 <td>{activeTab === 'Failure Codes' || activeTab === 'Root Cause Codes' ? r.description : r.name}</td>
                 {activeTab === 'Technicians' && <td>{r.skillCategory}</td>}

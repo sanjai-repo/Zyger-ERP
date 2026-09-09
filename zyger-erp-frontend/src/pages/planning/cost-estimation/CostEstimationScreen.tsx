@@ -338,6 +338,7 @@ export default function CostEstimationScreen() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   <th style={{ width: 40 }}></th>
                   <th>Item Code</th>
                   <th>Description</th>
@@ -351,12 +352,13 @@ export default function CostEstimationScreen() {
               </thead>
               <tbody>
                 {rows.length === 0 ? (
-                  <tr><td colSpan={9}><div className="empty"><span className="material-symbols-rounded">search_off</span> No cost estimations.</div></td></tr>
-                ) : rows.map((r) => {
+                  <tr><td colSpan={10}><div className="empty"><span className="material-symbols-rounded">search_off</span> No cost estimations.</div></td></tr>
+                ) : rows.map((r, idx) => {
                   const sc = STATUS_COLORS[r.status] ?? { color: '#888', bg: '#e9ecef' };
                   return (
                     <>
                       <tr key={r.id} onClick={() => toggleLines(r)} style={{ cursor: 'pointer' }}>
+                        <td className="num mut">{page * PAGE_SIZE + idx + 1}</td>
                         <td>
                           <span className="material-symbols-rounded">{expandedId === r.id ? 'expand_less' : 'expand_more'}</span>
                         </td>
@@ -394,7 +396,7 @@ export default function CostEstimationScreen() {
                       </tr>
                       {expandedId === r.id && (
                         <tr key={`${r.id}-lines`}>
-                          <td colSpan={9}>
+                          <td colSpan={10}>
                             <div style={{ background: '#f9fafb', padding: 12, borderBottom: '1px solid #e5e7eb' }}>
                               <h4 style={{ margin: '0 0 8px', fontSize: 13, color: '#555' }}>Cost Breakdown</h4>
                               {linesLoading ? (
@@ -405,6 +407,7 @@ export default function CostEstimationScreen() {
                                 <table className="tbl">
                                   <thead>
                                     <tr>
+                                      <th>S.No</th>
                                       <th>Type</th>
                                       <th>Code</th>
                                       <th>Description</th>
@@ -417,6 +420,7 @@ export default function CostEstimationScreen() {
                                   <tbody>
                                     {lines.map((ln, idx) => (
                                       <tr key={ln.id}>
+                                        <td className="num mut">{idx + 1}</td>
                                         <td>
                                           <select className="in" value={String(ln.lineType ?? '')} onChange={(e) => {
                                             const val = e.target.value;

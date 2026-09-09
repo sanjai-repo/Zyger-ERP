@@ -589,6 +589,7 @@ export default function BomMappingEditor({ onBack, onSaveSuccess, mapping, mode 
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   <th>AUTO CODE</th>
                   <th>NAME</th>
                   <th>SEMI FG NAME</th>
@@ -598,9 +599,10 @@ export default function BomMappingEditor({ onBack, onSaveSuccess, mapping, mode 
               </thead>
               <tbody>
                 {filteredSemi.length === 0 ? (
-                  <tr><td colSpan={5} className="empty">No mappings found.</td></tr>
-                ) : filteredSemi.map((s) => (
+                  <tr><td colSpan={6} className="empty">No mappings found.</td></tr>
+                ) : filteredSemi.map((s, idx) => (
                   <tr key={s.autoCode}>
+                    <td className="num mut">{idx + 1}</td>
                     <td style={{ fontWeight: 700 }}>{s.autoCode}</td>
                     <td>{s.name || '\u2014'}</td>
                     <td>{s.semiFgItemCode}{s.semiFgItemName && s.semiFgItemName !== s.semiFgItemCode ? ` — ${s.semiFgItemName}` : ''}</td>
@@ -718,6 +720,7 @@ export default function BomMappingEditor({ onBack, onSaveSuccess, mapping, mode 
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   <th>AUTO CODE</th>
                   <th>NAME</th>
                   <th>FG NAME</th>
@@ -728,9 +731,10 @@ export default function BomMappingEditor({ onBack, onSaveSuccess, mapping, mode 
               </thead>
               <tbody>
                 {filteredFg.length === 0 ? (
-                  <tr><td colSpan={6} className="empty">No FG mappings found.</td></tr>
-                ) : filteredFg.map((f) => (
+                  <tr><td colSpan={7} className="empty">No FG mappings found.</td></tr>
+                ) : filteredFg.map((f, idx) => (
                   <tr key={f.autoCode}>
+                    <td className="num mut">{idx + 1}</td>
                     <td style={{ fontWeight: 700 }}>{f.autoCode}</td>
                     <td>{f.name || '\u2014'}</td>
                     <td>{f.fgItemCode}{f.fgItemName && f.fgItemName !== f.fgItemCode ? ` — ${f.fgItemName}` : ''}</td>
@@ -832,6 +836,7 @@ export default function BomMappingEditor({ onBack, onSaveSuccess, mapping, mode 
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   <th>AUTO CODE</th>
                   <th>NAME</th>
                   <th>FG COUNT</th>
@@ -842,9 +847,10 @@ export default function BomMappingEditor({ onBack, onSaveSuccess, mapping, mode 
               </thead>
               <tbody>
                 {filteredMbm.length === 0 ? (
-                  <tr><td colSpan={6} className="empty">No Multi Level BOMs found.</td></tr>
-                ) : filteredMbm.map((m) => (
+                  <tr><td colSpan={7} className="empty">No Multi Level BOMs found.</td></tr>
+                ) : filteredMbm.map((m, idx) => (
                   <tr key={m.autoCode}>
+                    <td className="num mut">{idx + 1}</td>
                     <td style={{ fontWeight: 700 }}>{m.autoCode}</td>
                     <td>{m.name || '\u2014'}</td>
                     <td><span style={{ fontWeight: 700, color: '#6d28d9' }}>{m.fgs.length} FG</span></td>

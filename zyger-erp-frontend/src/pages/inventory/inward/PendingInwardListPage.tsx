@@ -145,6 +145,7 @@ export default function PendingInwardListPage({
               <table className="tbl">
                 <thead>
                   <tr>
+                    <th className="num">S.No</th>
                     <th>Date</th>
                     <th>Doc No</th>
                     <th>Type</th>
@@ -160,10 +161,11 @@ export default function PendingInwardListPage({
 
                 <tbody>
                   {rows.length > 0 ? (
-                    rows.map((row) => {
+                    rows.map((row, idx) => {
                       const config = typeConfig(String(row.type));
                       return (
                         <tr key={String(row.id)}>
+                          <td className="num mut">{idx + 1}</td>
                           <td>{formatDate(row.date)}</td>
                           <td>
                             <span className="cell-b">{row.docNo}</span>
@@ -273,7 +275,7 @@ export default function PendingInwardListPage({
                     })
                   ) : (
                     <tr>
-                      <td colSpan={10}>
+                      <td colSpan={11}>
                         <div className="empty">
                           <span className="material-symbols-rounded">
                             folder_open

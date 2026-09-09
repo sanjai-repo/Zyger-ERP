@@ -48,12 +48,13 @@ export default function MeterMasterPage() {
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ borderBottom: '2px solid #313244', textAlign: 'left' }}>
-            <th style={{ padding: 8 }}>Code</th><th style={{ padding: 8 }}>Name</th><th style={{ padding: 8 }}>Type</th><th style={{ padding: 8 }}>Location</th><th style={{ padding: 8 }}>Budget Units</th>
+            <th className="num" style={{ padding: 8 }}>S.No</th><th style={{ padding: 8 }}>Code</th><th style={{ padding: 8 }}>Name</th><th style={{ padding: 8 }}>Type</th><th style={{ padding: 8 }}>Location</th><th style={{ padding: 8 }}>Budget Units</th>
           </tr>
         </thead>
         <tbody>
-          {items.map(m => (
+          {items.map((m, idx) => (
             <tr key={m.id} style={{ borderBottom: '1px solid #313244' }}>
+              <td className="num mut" style={{ padding: 8 }}>{idx + 1}</td>
               <td style={{ padding: 8 }}>{m.code}</td><td style={{ padding: 8 }}>{m.name}</td><td style={{ padding: 8 }}>{m.meterType}</td><td style={{ padding: 8 }}>{m.location || '-'}</td><td style={{ padding: 8 }}>{m.budgetMonthlyUnits ?? '-'}</td>
             </tr>
           ))}

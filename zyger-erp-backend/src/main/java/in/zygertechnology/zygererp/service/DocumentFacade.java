@@ -43,6 +43,11 @@ public class DocumentFacade {
     @Autowired DocumentWorkflowEngine workflowEngine;
     @Autowired BackdatedEntryGuardService backdatedEntryGuard;
     @Lazy @Autowired AttachmentService attachmentService;
+    @Autowired DocLinkService docLinks;
+    @Autowired in.zygertechnology.zygererp.repo.StoreMasterRepository stores;
+    @Autowired in.zygertechnology.zygererp.repo.LocationRepository locations;
+    @Autowired VendorLedgerService vendorLedger;
+    @Autowired in.zygertechnology.zygererp.repo.PoAmendmentHistoryRepository poAmendments;
 
     private final Map<String, Class<? extends DocEntity>> reg = new HashMap<>();
 
@@ -427,6 +432,14 @@ public class DocumentFacade {
      * stock-effect and order doc types where an empty payload is always a defect;
      * content-driven docs (quality records, master data) are left untouched.
      */
+    // Inward Entry's "Update Inventory" button (InwardForm.tsx) posts a freshly-created DRAFT
+    // document directly (skipping Submit/Approve) whenever QC isn't required, for all four
+    // inward types alike. Only "po-inward" was ever exempted from the generic APPROVED-before-
+    // post guard below, so LO/JO/General Inward's identical "Update Inventory" path always
+    // threw "Action not allowed in status DRAFT" — fixed by exempting all four consistently.
+    private static final Set<String> DIRECT_POST_INWARD_KEYS = Set.of(
+            "po-inward", "lo-inward", "jo-inward", "general-inward", "inward");
+
     private static final Set<String> REQUIRED_LINES_KEYS = Set.of(
             // Inventory (Effect IN/OUT/ADJUST)
             "po-inward", "lo-inward", "jo-inward", "general-inward", "return-inward", "grn",
@@ -566,6 +579,7 @@ public class DocumentFacade {
         attach(e);
 
         validateLineQtyAndPresence(key, e, body);
+        validateDcStockAvailability(key, e);
         validateReturnEligibility(key, e);
         validateReceivedAgainstIssue(key, e);
         validateBatchHeat(key, e);
@@ -585,6 +599,7 @@ public class DocumentFacade {
         em.persist(e);
         em.flush();
         createQualityInspectionIfRequired(e, body, user);
+        recordDocLinks(key, e, user);
         return e;
     }
 
@@ -657,22 +672,14 @@ public class DocumentFacade {
             qi.setCreatedAt(Instant.now());
             qi.setUpdatedAt(Instant.now());
 
-            String itemCode = null;
-            String itemDesc = null;
-            BigDecimal qty = BigDecimal.ONE;
-
-            try {
-                Field fCode = line.getClass().getDeclaredField("itemCode");
-                fCode.setAccessible(true);
-                itemCode = (String) fCode.get(line);
-            } catch (Exception ignored) {}
-
-            try {
-                Field fDesc = line.getClass().getDeclaredField("itemDesc");
-                fDesc.setAccessible(true);
-                itemDesc = (String) fDesc.get(line);
-            } catch (Exception ignored) {}
-
+            // getItemCode()/getItemDesc()/getQty() are LineEntity interface methods, present on
+            // every line type (PoInwardLine.getQty() aliases its own receivedQty column) — calling
+            // them directly avoids the reflective "qty"/"itemCode" field lookups that silently
+            // failed for line classes without a literal field of that exact name (e.g. PoInwardLine
+            // has no `qty` field, only `receivedQty`), which previously left every auto-created
+            // inspection's quantity hardcoded at the BigDecimal.ONE fallback.
+            String itemCode = line.getItemCode();
+            String itemDesc = line.getItemDesc();
             if (itemDesc == null || itemDesc.isBlank()) {
                 try {
                     Field fName = line.getClass().getDeclaredField("itemName");
@@ -680,14 +687,7 @@ public class DocumentFacade {
                     itemDesc = (String) fName.get(line);
                 } catch (Exception ignored) {}
             }
-
-            try {
-                Field fQty = line.getClass().getDeclaredField("qty");
-                fQty.setAccessible(true);
-                Object val = fQty.get(line);
-                if (val instanceof BigDecimal bd) qty = bd;
-                else if (val != null) qty = new BigDecimal(val.toString());
-            } catch (Exception ignored) {}
+            BigDecimal qty = line.getQty() != null ? line.getQty() : BigDecimal.ONE;
 
             try {
                 Field fPoNo = e.getClass().getDeclaredField("purchaseOrderNo");
@@ -765,7 +765,17 @@ public class DocumentFacade {
 
         normalizeLines(body, key);
         DocEntity incoming = mapper.convertValue(body, cls(key));
+        Integer poNextRevision = null;
+        if ("purchase-order".equals(key) && !List.of("DRAFT", "REJECTED").contains(old.getStatus())) {
+            // Must snapshot + compute before copyFields overwrites `old`'s fields with `incoming`'s
+            // (which, for a client PUT that never sent revisionNumber, would otherwise reset it).
+            poNextRevision = recordPoAmendment((PurchaseOrder) old, (PurchaseOrder) incoming, user);
+        }
         copyFields(old, incoming);
+        if (poNextRevision != null) {
+            ((PurchaseOrder) old).setRevisionNumber(poNextRevision);
+            ((PurchaseOrder) old).setLastAmendedAt(Instant.now());
+        }
 
         if (def.hasLines() && incoming.getLines() != null) {
             @SuppressWarnings("unchecked")
@@ -904,7 +914,7 @@ public class DocumentFacade {
         // Validate against workflow state machine
         String docKey = findKeyForEntity(e);
         String upperDocKey = docKey.toUpperCase().replace("-", "_");
-        if (!"po-inward".equals(docKey) && !"inward".equals(docKey)) {
+        if (!DIRECT_POST_INWARD_KEYS.contains(docKey)) {
             workflowEngine.validate(upperDocKey, e.getStatus(), targetStatus);
         }
 
@@ -918,14 +928,44 @@ public class DocumentFacade {
                 }
                 case "reject" -> requireStatus(e, "SUBMITTED", "DRAFT");
                 case "reopen" -> requireStatus(e, "REJECTED");
-                case "cancel" -> requireStatus(e, "DRAFT", "SUBMITTED", "APPROVED");
+                case "cancel" -> {
+                    requireStatus(e, "DRAFT", "SUBMITTED", "APPROVED", "CONFIRMED", "POSTED", "RECEIVED");
+                    if (Set.of("jo-dc", "general-dc", "transfer-dc").contains(key)) {
+                        if (note == null || note.isBlank()) {
+                            throw new IllegalArgumentException("Cancellation remark is mandatory");
+                        }
+                        if (Set.of("CONFIRMED", "POSTED", "RECEIVED").contains(e.getStatus())) {
+                            reverseDcStock(key, e, user);
+                        }
+                    }
+                }
+                case "confirm-receipt", "confirm_receipt" -> {
+                    if ("transfer-dc".equals(key) && e instanceof TransferDc t) {
+                        if (Boolean.TRUE.equals(t.getReceiptConfirmed())) {
+                            throw new IllegalStateException("Receipt already confirmed for Transfer DC " + t.getDocNo());
+                        }
+                        for (LineEntity line : t.getLines()) {
+                            stockService.recordStockOut(t.getDocNo(), "transfer-dc", "TRANSFER_INTRANSIT_OUT",
+                                    line.getItemCode(), "In-Transit", line.getBatchNo(), line.getHeatNo(),
+                                    line.getQty(), LocalDate.now(), user, true);
+                            stockService.recordStockIn(t.getDocNo(), "transfer-dc", "TRANSFER_RECEIPT",
+                                    line.getItemCode(), t.getDestinationLocation(), line.getBatchNo(), line.getHeatNo(),
+                                    line.getQty(), LocalDate.now(), user, "FREE");
+                        }
+                        t.setReceiptConfirmed(true);
+                        t.setReceiptConfirmedBy(user);
+                        t.setReceiptConfirmedAt(Instant.now());
+                        t.setStatus("RECEIVED");
+                    }
+                }
                 case "post" -> {
-                    if (!"po-inward".equals(key) && !"inward".equals(key)) {
+                    if (!DIRECT_POST_INWARD_KEYS.contains(key)) {
                         requireStatus(e, "APPROVED");
                     }
                     if ("sales-dc".equals(key)) enforceFinalInspectionGate(e, options);
                     post(key, e, boolVal(options.get("authorizedOverride")));
                     e.setStatus("POSTED");
+                    postToVendorLedger(key, e);
                 }
                 default -> { }
             }
@@ -948,6 +988,7 @@ public class DocumentFacade {
             case "close" -> { e.setClosedBy(user); e.setClosedAt(Instant.now()); }
             case "cancel" -> { e.setCancelledBy(user); e.setCancelledAt(Instant.now()); }
             case "reopen" -> { e.setReopenedBy(user); e.setReopenedAt(Instant.now()); }
+            case "post" -> e.setPostedAt(Instant.now());
         }
 
         // FRS §6.3: Mandatory-attachment enforcement on close
@@ -1022,10 +1063,14 @@ public class DocumentFacade {
         List<LedgerLine> lines = collectLines(def, e);
         String txType = def.tx().isEmpty() ? key.toUpperCase() : def.tx();
         String stockStatus = determineStockStatus(key, e);
+        boolean skipStockEffect = "grn".equals(key) && sourceAlreadyPostedStock(e);
 
         for (LedgerLine l : lines) {
+            requireActiveStore(l.loc());
+            if (skipStockEffect) continue;
             if ("transfer-dc".equals(key)) {
                 String destLoc = headerStr(e, "destinationLocation");
+                requireActiveStore(destLoc);
                 stockService.recordStockOut(
                         e.getDocNo(), key, txType, l.item(), l.loc(), l.batch(), l.heat(),
                         BigDecimal.valueOf(l.qty()), e.getDocDate(), e.getCreatedBy(),
@@ -1056,6 +1101,162 @@ public class DocumentFacade {
                 default -> { }
             }
         }
+    }
+
+    /**
+     * Every Inward type (PO/LO/JO/General/Return) already has Effect.IN and posts
+     * stock directly to store on its own POST action. GRN's source-document picker
+     * only ever offers an already-POSTED Inward, so posting the GRN would add a
+     * second, separate stock entry for the same physical receipt. GRN still
+     * completes its own lifecycle normally (accepted/rejected qty, inspection
+     * reference, printable paperwork) — this just tells post() to skip the
+     * stock-ledger effect for that case, rather than double-counting.
+     */
+    private boolean sourceAlreadyPostedStock(DocEntity e) {
+        if (!(e instanceof Grn g)) return false;
+        String sourceNo = g.getSourceDocumentNo();
+        if (sourceNo == null || sourceNo.isBlank()) return false;
+        String sourceKey = switch (String.valueOf(g.getSourceType())) {
+            case "LO_INWARD" -> "lo-inward";
+            case "JO_INWARD" -> "jo-inward";
+            case "GENERAL_INWARD" -> "general-inward";
+            case "RETURN_INWARD" -> "return-inward";
+            default -> "po-inward";
+        };
+        try {
+            DocEntity source = getByNumber(sourceKey, sourceNo);
+            return DocTypes.get(sourceKey).effect() == DocTypes.Effect.IN && "POSTED".equals(source.getStatus());
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    /**
+     * FRS DOC-PUR-FRS-02 §11 (PUR-08/PUR-09) — writes the vendor-ledger effect of a document
+     * reaching POSTED. Purchase Invoice increases the payable by its total; a Purchase Return
+     * flagged debitNoteRequired decreases it by the debit note amount (falling back to the
+     * sum of returned-line net amounts if no explicit debitNoteAmount was entered).
+     * VendorLedgerService itself is idempotent per (refDocType, refDocNo), so re-posting the
+     * same document (which shouldn't be reachable given the status guards) never double-counts.
+     */
+    private void postToVendorLedger(String key, DocEntity e) {
+        try {
+            if ("purchase-invoice".equals(key) && e instanceof PurchaseInvoice inv) {
+                if (inv.getTotalAmount() == null || inv.getSupplier() == null || inv.getSupplier().isBlank()) return;
+                String[] resolved = resolveParty(inv.getSupplier());
+                vendorLedger.record(resolved[0], resolved[1], e.getDocDate(), "INVOICE",
+                        "purchase-invoice", e.getDocNo(), inv.getTotalAmount(),
+                        "Supplier invoice " + (inv.getSupplierInvoiceNo() != null ? inv.getSupplierInvoiceNo() : e.getDocNo()),
+                        e.getUpdatedBy());
+            } else if ("purchase-return".equals(key) && e instanceof PurchaseReturn ret) {
+                if (!Boolean.TRUE.equals(ret.getDebitNoteRequired()) || ret.getSupplier() == null || ret.getSupplier().isBlank()) return;
+                BigDecimal amount = ret.getDebitNoteAmount();
+                if (amount == null || amount.signum() <= 0) {
+                    amount = BigDecimal.ZERO;
+                    for (LineEntity l : e.getLines()) {
+                        if (l instanceof PurchaseReturnLine prl && prl.getNetAmount() != null) {
+                            amount = amount.add(prl.getNetAmount());
+                        }
+                    }
+                }
+                if (amount.signum() <= 0) return;
+                String[] resolved = resolveParty(ret.getSupplier());
+                vendorLedger.record(resolved[0], resolved[1], e.getDocDate(), "RETURN",
+                        "purchase-return", e.getDocNo(), amount.negate(),
+                        "Debit note for return " + e.getDocNo() + (ret.getReasonCode() != null ? " (" + ret.getReasonCode() + ")" : ""),
+                        e.getUpdatedBy());
+            }
+        } catch (Exception ex) {
+            log.warn("postToVendorLedger skipped for {} {}: {}", key, e.getDocNo(), ex.getMessage());
+        }
+    }
+
+    /**
+     * FRS DOC-PUR-FRS-02 §6 (PUR-04) — records a PO amendment: called right before the
+     * incoming payload is merged into the managed PO entity, whenever that PO is being edited
+     * outside DRAFT/REJECTED (i.e. it was already RELEASED/SUBMITTED/APPROVED — a real
+     * amendment to a document the vendor may already hold, not just an in-progress draft edit).
+     * Snapshots the pre-edit state, bumps revisionNumber, and flags whether supplier/qty/price
+     * actually changed (vs. e.g. only remarks).
+     *
+     * [TBC] Re-approval-on-material-change is intentionally NOT enforced here — per the brief,
+     * this is implemented as a basic, disabled-by-default rule (REQUIRE_REAPPROVAL_ON_AMENDMENT)
+     * until the business confirms whether a material amendment should force the PO back to
+     * SUBMITTED. Flip that constant to true to enable it.
+     */
+    private static final boolean REQUIRE_REAPPROVAL_ON_AMENDMENT = false;
+
+    /** Returns the next revision number to apply to `old` after copyFields runs, or null on failure. */
+    private Integer recordPoAmendment(PurchaseOrder old, PurchaseOrder incoming, String user) {
+        try {
+            boolean materialChange = !Objects.equals(old.getSupplier(), incoming.getSupplier());
+            if (!materialChange && old.getLines() != null && incoming.getLines() != null) {
+                Map<String, PurchaseOrderItem> oldByItem = new LinkedHashMap<>();
+                for (PurchaseOrderItem l : old.getLines()) oldByItem.put(l.getItemCode(), l);
+                if (old.getLines().size() != incoming.getLines().size()) {
+                    materialChange = true;
+                } else {
+                    for (PurchaseOrderItem nl : incoming.getLines()) {
+                        PurchaseOrderItem ol = oldByItem.get(nl.getItemCode());
+                        if (ol == null
+                                || !Objects.equals(ol.getOrderQty(), nl.getOrderQty())
+                                || !Objects.equals(ol.getUnitPrice(), nl.getUnitPrice())) {
+                            materialChange = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            PoAmendmentHistory hist = new PoAmendmentHistory();
+            hist.setPoId(old.getId());
+            hist.setPoDocNo(old.getDocNo());
+            int nextRevision = (old.getRevisionNumber() == null ? 1 : old.getRevisionNumber()) + 1;
+            hist.setRevisionNumber(nextRevision);
+            hist.setStatusAtAmendment(old.getStatus());
+            hist.setMaterialChange(materialChange);
+            hist.setSnapshotBefore(mapper.writeValueAsString(mapper.convertValue(old, LinkedHashMap.class)));
+            hist.setAmendedBy(user);
+            poAmendments.save(hist);
+
+            // [TBC/disabled] Not applied to `old` here — copyFields() runs right after this
+            // returns and would overwrite a status change made now. See REQUIRE_REAPPROVAL_ON_AMENDMENT.
+            if (materialChange && REQUIRE_REAPPROVAL_ON_AMENDMENT) {
+                log.info("PO {} materially amended — re-approval flag set but not enforced (disabled by default)", old.getDocNo());
+            }
+            return nextRevision;
+        } catch (Exception ex) {
+            log.warn("recordPoAmendment skipped for {}: {}", old.getDocNo(), ex.getMessage());
+            return null;
+        }
+    }
+
+    /** Returns {code, name}, resolving a header string (which may hold either) against Party master. */
+    private String[] resolveParty(String supplierField) {
+        return parties.findByCode(supplierField)
+                .or(() -> parties.findByName(supplierField))
+                .map(p -> new String[]{p.getCode(), p.getName()})
+                .orElse(new String[]{supplierField, supplierField});
+    }
+
+    /**
+     * DOCUMENT 02 v2.0 §02.1 (FR-INV-STORE-2): a non-blank location must resolve to a
+     * recognized active location before it can be posted to. store_master is the
+     * FRS's authoritative store list, but most existing document forms still pick
+     * from the older, separate location_master table (e.g. "RM-A-12") — both are
+     * accepted here so this check catches genuine typos/unknown locations without
+     * breaking every screen that hasn't been migrated onto store_master yet. Blank
+     * locations are left alone — StockService defaults those to "MAIN" today and
+     * changing that default is out of scope here.
+     */
+    private void requireActiveStore(String location) {
+        if (location == null || location.isBlank()) return;
+        boolean isStore = stores.findByCode(location).map(s -> Boolean.TRUE.equals(s.getActive())).orElse(false);
+        if (isStore) return;
+        if (locations.existsByCodeAndActiveTrue(location)) return;
+        throw new BusinessRuleException("LOCATION_NOT_A_STORE",
+                "Location '" + location + "' is not a recognized active store or location",
+                Map.of("location", location));
     }
 
     /** FRS §6.2: blocks dispatch of any batch/lot that has not cleared Final Inspection when the item requires QC. */
@@ -1231,11 +1432,14 @@ public class DocumentFacade {
     }
 
     private void validateReturnEligibility(String key, DocEntity e) {
-        if (!Set.of("dc-return", "invoice-return", "inward-return", "internal-return", "receipt-return").contains(key)) return;
+        if (!Set.of("dc-return", "invoice-return", "inward-return", "internal-return", "receipt-return", "purchase-return").contains(key)) return;
 
         String originalDocNo = null;
         String origDocType = null;
-        if ("dc-return".equals(key) && e instanceof DcReturn dr) {
+        if ("purchase-return".equals(key) && e instanceof PurchaseReturn pr) {
+            originalDocNo = pr.getOriginalDocumentNo();
+            origDocType = "purchase-order".equals(pr.getOriginalDocumentType()) ? "purchase-order" : "po-inward";
+        } else if ("dc-return".equals(key) && e instanceof DcReturn dr) {
             originalDocNo = dr.getOriginalDcNumber();
             origDocType = "sales-dc";
         } else if ("invoice-return".equals(key) && e instanceof InvoiceReturn ir) {
@@ -1255,8 +1459,15 @@ public class DocumentFacade {
         if (originalDocNo != null && !originalDocNo.isBlank()) {
             try {
                 DocEntity origDoc = getByNumber(origDocType, originalDocNo);
-                if (!"POSTED".equals(origDoc.getStatus())) {
-                    throw new IllegalStateException("Original document " + originalDocNo + " must be POSTED to allow returns");
+                // A referenced Purchase Order is almost never itself POSTED in this system —
+                // per FRS DOC-PUR-FRS-02 §5D, disableApprovalWorkflow historically kept most
+                // real POs in DRAFT/RELEASED. Accept any status beyond DRAFT for that case;
+                // every other origDocType keeps the stricter POSTED requirement.
+                boolean eligible = "purchase-order".equals(origDocType)
+                        ? !"DRAFT".equals(origDoc.getStatus()) && !"CANCELLED".equals(origDoc.getStatus())
+                        : "POSTED".equals(origDoc.getStatus());
+                if (!eligible) {
+                    throw new IllegalStateException("Original document " + originalDocNo + " is not eligible for a return (status " + origDoc.getStatus() + ")");
                 }
             } catch (IllegalArgumentException ex) {
                 throw new IllegalStateException("Original document " + originalDocNo + " not found");
@@ -1271,20 +1482,35 @@ public class DocumentFacade {
             BigDecimal currentReturnQty = line.getQty();
             if (currentReturnQty == null || currentReturnQty.compareTo(BigDecimal.ZERO) <= 0) continue;
 
+            // NOTE: lineClass/qtyField must match the persistent attribute name on each
+            // line entity — DcReturnLine/InvoiceReturnLine only expose a Java getQty()
+            // override backed by currentReturnQty, InternalReturnLine/InwardReturnLine/
+            // ReceiptReturnLine are backed by returnedQty. HQL resolves against mapped
+            // attributes, not interface method overrides, so "l.qty" always threw
+            // UnknownPathException here, and inward-return fell through to the
+            // unrelated InvoiceReturnLine class — this blocked every return with an
+            // original-document reference from ever being created.
             String lineClass = switch (key) {
                 case "dc-return" -> "DcReturnLine";
                 case "internal-return" -> "InternalReturnLine";
                 case "receipt-return" -> "ReceiptReturnLine";
+                case "inward-return" -> "InwardReturnLine";
+                case "purchase-return" -> "PurchaseReturnLine";
                 default -> "InvoiceReturnLine";
+            };
+            String qtyField = switch (key) {
+                case "dc-return", "invoice-return" -> "currentReturnQty";
+                case "purchase-return" -> "returnQty";
+                default -> "returnedQty";
             };
             String origField = switch (key) {
                 case "dc-return" -> "doc.originalDcNumber";
                 case "invoice-return" -> "doc.originalInvoiceNumber";
-                case "inward-return", "internal-return", "receipt-return" -> "doc.originalDocumentNo";
+                case "inward-return", "internal-return", "receipt-return", "purchase-return" -> "doc.originalDocumentNo";
                 default -> null;
             };
 
-            String hql = "SELECT COALESCE(SUM(l.qty), 0) FROM " + lineClass + " l " +
+            String hql = "SELECT COALESCE(SUM(l." + qtyField + "), 0) FROM " + lineClass + " l " +
                 "WHERE l.doc.docNo != :docNo AND l.doc.status = 'POSTED' " +
                 "AND l.itemCode = :itemCode " +
                 "AND (:batchNo = '' OR l.batchNo = :batchNo)";
@@ -1514,5 +1740,142 @@ public class DocumentFacade {
     private void validatePoInward(String key, DocEntity e) {
         if (!"po-inward".equals(key)) return;
         // Direct inventory update enabled — business rule validation bypassed as requested.
+    }
+
+    private void validateDcStockAvailability(String key, DocEntity e) {
+        if (!Set.of("jo-dc", "general-dc", "transfer-dc").contains(key)) return;
+
+        if (e.getDocDate() != null && e.getDocDate().isAfter(LocalDate.now())) {
+            throw new IllegalArgumentException("DC Date cannot be a future date");
+        }
+
+        String sourceLoc = headerStr(e, "sourceLocation");
+        if (sourceLoc == null || sourceLoc.isBlank()) {
+            throw new IllegalArgumentException("From Location is required");
+        }
+
+        if (e.getLines() == null || e.getLines().isEmpty()) {
+            throw new IllegalArgumentException("Delivery Challan requires at least one line item");
+        }
+
+        boolean isJoReceiving = "jo-dc".equals(key) && e instanceof JoDc joDc && "Receiving after Job Work".equalsIgnoreCase(joDc.getChallanPurpose());
+
+        for (LineEntity line : e.getLines()) {
+            String itemCode = line.getItemCode();
+            if (itemCode == null || itemCode.isBlank()) continue;
+            BigDecimal qty = line.getQty();
+            if (qty == null || qty.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new IllegalArgumentException("Line quantity for item " + itemCode + " must be greater than zero");
+            }
+
+            String checkLoc = isJoReceiving ? "Goods with Job Worker" : sourceLoc;
+            String batchNo = line.getBatchNo() != null ? line.getBatchNo() : "";
+
+            var item = itemCache.findByCode(itemCode).orElse(null);
+            if (item != null && Boolean.TRUE.equals(item.getRequiresBatch()) && batchNo.isBlank()) {
+                throw new IllegalArgumentException("Item " + itemCode + " is batch-tracked and requires a Batch/Lot No");
+            }
+
+            double available = stockService.available(itemCode, checkLoc);
+            if (available < qty.doubleValue()) {
+                throw new IllegalStateException("Quantity " + qty + " for item " + itemCode +
+                        " exceeds available stock (" + available + ") at " + checkLoc);
+            }
+        }
+    }
+
+    private void reverseDcStock(String key, DocEntity e, String user) {
+        if (e.getLines() == null) return;
+        LocalDate now = LocalDate.now();
+        if ("jo-dc".equals(key) && e instanceof JoDc joDc) {
+            boolean isReceiving = "Receiving after Job Work".equalsIgnoreCase(joDc.getChallanPurpose());
+            String sourceLoc = joDc.getSourceLocation();
+            for (LineEntity line : joDc.getLines()) {
+                if (isReceiving) {
+                    stockService.recordStockOut(e.getDocNo(), key, "JO_DC_CANCEL", line.getItemCode(), sourceLoc, line.getBatchNo(), line.getHeatNo(), line.getQty(), now, user, true);
+                    stockService.recordStockIn(e.getDocNo(), key, "JO_DC_CANCEL", line.getItemCode(), "Goods with Job Worker", line.getBatchNo(), line.getHeatNo(), line.getQty(), now, user, "FREE");
+                } else {
+                    stockService.recordStockOut(e.getDocNo(), key, "JO_DC_CANCEL", line.getItemCode(), "Goods with Job Worker", line.getBatchNo(), line.getHeatNo(), line.getQty(), now, user, true);
+                    stockService.recordStockIn(e.getDocNo(), key, "JO_DC_CANCEL", line.getItemCode(), sourceLoc, line.getBatchNo(), line.getHeatNo(), line.getQty(), now, user, "FREE");
+                }
+            }
+        } else if ("general-dc".equals(key) && e instanceof GeneralDc gDc) {
+            String sourceLoc = gDc.getSourceLocation();
+            for (LineEntity line : gDc.getLines()) {
+                stockService.recordStockIn(e.getDocNo(), key, "GENERAL_DC_CANCEL", line.getItemCode(), sourceLoc, line.getBatchNo(), line.getHeatNo(), line.getQty(), now, user, "FREE");
+            }
+        } else if ("transfer-dc".equals(key) && e instanceof TransferDc tDc) {
+            String sourceLoc = tDc.getSourceLocation();
+            String destLoc = tDc.getDestinationLocation();
+            boolean receiptConfirmed = Boolean.TRUE.equals(tDc.getReceiptConfirmed());
+            boolean inTransit = Boolean.TRUE.equals(tDc.getInTransitTracking());
+            for (LineEntity line : tDc.getLines()) {
+                if (receiptConfirmed) {
+                    stockService.recordStockOut(e.getDocNo(), key, "TRANSFER_DC_CANCEL", line.getItemCode(), destLoc, line.getBatchNo(), line.getHeatNo(), line.getQty(), now, user, true);
+                    stockService.recordStockIn(e.getDocNo(), key, "TRANSFER_DC_CANCEL", line.getItemCode(), sourceLoc, line.getBatchNo(), line.getHeatNo(), line.getQty(), now, user, "FREE");
+                } else if (inTransit) {
+                    stockService.recordStockOut(e.getDocNo(), key, "TRANSFER_DC_CANCEL", line.getItemCode(), "In-Transit", line.getBatchNo(), line.getHeatNo(), line.getQty(), now, user, true);
+                    stockService.recordStockIn(e.getDocNo(), key, "TRANSFER_DC_CANCEL", line.getItemCode(), sourceLoc, line.getBatchNo(), line.getHeatNo(), line.getQty(), now, user, "FREE");
+                } else {
+                    stockService.recordStockOut(e.getDocNo(), key, "TRANSFER_DC_CANCEL", line.getItemCode(), destLoc, line.getBatchNo(), line.getHeatNo(), line.getQty(), now, user, true);
+                    stockService.recordStockIn(e.getDocNo(), key, "TRANSFER_DC_CANCEL", line.getItemCode(), sourceLoc, line.getBatchNo(), line.getHeatNo(), line.getQty(), now, user, "FREE");
+                }
+            }
+        }
+    }
+
+    /**
+     * DOCUMENT 02 v2.0 §03.2/03.3 (BR-INV-TRACE-1/2): records a doc_links row by
+     * internal ID for every cross-document reference this doc type carries, reusing
+     * the same reference-field-to-target-type mapping the validators above already
+     * resolve. Called once per created document, after it has been assigned an ID.
+     * Each lookup is best-effort: an optional/blank reference is simply skipped.
+     */
+    private void recordDocLinks(String key, DocEntity e, String user) {
+        try {
+            String targetType = null;
+            String refNo = null;
+            switch (key) {
+                case "dc-return" -> { if (e instanceof DcReturn d) { refNo = d.getOriginalDcNumber(); targetType = "sales-dc"; } }
+                case "invoice-return" -> { if (e instanceof InvoiceReturn d) { refNo = d.getOriginalInvoiceNumber(); targetType = "sales-invoice"; } }
+                case "inward-return" -> { if (e instanceof InwardReturn d) { refNo = d.getOriginalDocumentNo(); targetType = "po-inward"; } }
+                case "internal-return" -> { if (e instanceof InternalReturn d) { refNo = d.getOriginalDocumentNo(); targetType = "general-issue"; } }
+                case "receipt-return" -> { refNo = headerStr(e, "originalDocumentNo"); targetType = "rm-issue"; }
+                case "rm-issue" -> { if (e instanceof RmIssue d) { refNo = d.getIssueRequestNo(); targetType = "stock-issue-request"; } }
+                case "stock-release" -> { if (e instanceof StockRelease d) { refNo = d.getAllotmentNo(); targetType = "stock-allotment"; } }
+                case "received-against-issue" -> {
+                    if (e instanceof ReceivedAgainstIssue d) {
+                        refNo = d.getOriginalDocumentNo();
+                        if (refNo != null && !refNo.isBlank()) {
+                            for (String t : ISSUE_SOURCE_TYPES) {
+                                try {
+                                    DocEntity target = getByNumber(t, refNo);
+                                    docLinks.record(key, e.getId(), t, target.getId(), user);
+                                } catch (IllegalArgumentException ignored) { /* not this issue type */ }
+                            }
+                        }
+                        return;
+                    }
+                }
+                case "grn" -> {
+                    if (e instanceof Grn g) {
+                        refNo = g.getSourceDocumentNo();
+                        targetType = switch (String.valueOf(g.getSourceType())) {
+                            case "LO_INWARD" -> "lo-inward";
+                            case "JO_INWARD" -> "jo-inward";
+                            case "GENERAL_INWARD" -> "general-inward";
+                            case "RETURN_INWARD" -> "return-inward";
+                            default -> "po-inward";
+                        };
+                    }
+                }
+                default -> { return; }
+            }
+            if (refNo == null || refNo.isBlank() || targetType == null) return;
+            DocEntity target = getByNumber(targetType, refNo);
+            docLinks.record(key, e.getId(), targetType, target.getId(), user);
+        } catch (Exception ex) {
+            log.warn("recordDocLinks skipped for {} {}: {}", key, e.getDocNo(), ex.getMessage());
+        }
     }
 }

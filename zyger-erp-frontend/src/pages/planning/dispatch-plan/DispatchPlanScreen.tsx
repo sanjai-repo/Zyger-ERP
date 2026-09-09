@@ -256,6 +256,7 @@ export default function DispatchPlanScreen() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   <th>Dispatch No</th>
                   <th>Date</th>
                   <th>Customer</th>
@@ -268,11 +269,12 @@ export default function DispatchPlanScreen() {
               </thead>
               <tbody>
                 {rows.length === 0 ? (
-                  <tr><td colSpan={8}><div className="empty"><span className="material-symbols-rounded">description</span> No dispatch plans.</div></td></tr>
-                ) : rows.map((r) => {
+                  <tr><td colSpan={9}><div className="empty"><span className="material-symbols-rounded">description</span> No dispatch plans.</div></td></tr>
+                ) : rows.map((r, idx) => {
                   const sc = STATUS_COLORS[r.status] ?? { color: '#888', bg: '#e9ecef' };
                   return (
                     <tr key={r.id}>
+                      <td className="num mut">{page * PAGE_SIZE + idx + 1}</td>
                       <td>{r.dispatchNumber}</td>
                       <td>{r.dispatchDate}</td>
                       <td>{r.customerName}</td>

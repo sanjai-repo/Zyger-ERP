@@ -148,6 +148,7 @@ export default function PlanningDashboard() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
                       <tr style={{ borderBottom: '2px solid #e5e7eb', textAlign: 'left' }}>
+                        <th style={{ padding: '8px 12px', color: '#6b7280', fontWeight: 600 }}>S.No</th>
                         <th style={{ padding: '8px 12px', color: '#6b7280', fontWeight: 600 }}>Type</th>
                         <th style={{ padding: '8px 12px', color: '#6b7280', fontWeight: 600 }}>Doc No</th>
                         <th style={{ padding: '8px 12px', color: '#6b7280', fontWeight: 600 }}>Item / Name</th>
@@ -167,6 +168,7 @@ export default function PlanningDashboard() {
                         const tabKey = docType === 'work-order' ? 'workorder' : docType === 'production-bom' ? 'bom' : docType === 'route-sheet' ? 'routesheet' : docType;
                         return (
                           <tr key={idx} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                            <td style={{ padding: '8px 12px', color: '#6b7280' }}>{idx + 1}</td>
                             <td style={{ padding: '8px 12px' }}><span style={{ background: docType === 'work-order' ? '#dbeafe' : docType === 'production-bom' ? '#d1fae5' : '#fef3c7', color: docType === 'work-order' ? '#1e40af' : docType === 'production-bom' ? '#065f46' : '#92400e', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600 }}>{typeLabel}</span></td>
                             <td style={{ padding: '8px 12px', fontWeight: 600, color: '#111827' }}>{docNo}</td>
                             <td style={{ padding: '8px 12px', color: '#374151' }}>{itemName}</td>

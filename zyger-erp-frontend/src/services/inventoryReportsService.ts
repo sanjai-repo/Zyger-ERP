@@ -107,6 +107,32 @@ export const inventoryReportsService = {
     return response.data;
   },
 
+  async getTraceability(
+    params: { docType?: string; docNo?: string; itemCode?: string; batchNo?: string; heatNo?: string },
+    signal?: AbortSignal
+  ): Promise<{
+    nodes: Array<{
+      nodeId: string;
+      docType: string;
+      docNo: string;
+      date: string;
+      status: string;
+      qty: number;
+      location: string;
+      batchNo: string;
+      heatNo: string;
+      actor: string;
+    }>;
+    edges: Array<{ from: string; to: string }>;
+    error?: string;
+  }> {
+    const response = await apiClient.get('/inventory/traceability', {
+      params,
+      signal,
+    });
+    return response.data;
+  },
+
   async deleteDocument(
     docKey: string,
     id: string | number

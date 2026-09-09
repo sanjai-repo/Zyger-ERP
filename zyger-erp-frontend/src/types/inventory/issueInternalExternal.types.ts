@@ -63,6 +63,7 @@ export interface IssueInternalExternalListRowDto {
   docNo: string;
   date: string;
   issueType: IssueInternalExternalType;
+  issueRequestNo?: string;
   toDepartment?: string;
   issuedTo?: string;
   returnable?: string;

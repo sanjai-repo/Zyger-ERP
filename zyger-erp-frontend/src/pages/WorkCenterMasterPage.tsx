@@ -46,13 +46,13 @@ export default function WorkCenterMasterPage() {
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ borderBottom: '2px solid #313244', textAlign: 'left' }}>
-            <th style={{ padding: 8 }}>Code</th><th style={{ padding: 8 }}>Name</th><th style={{ padding: 8 }}>Department</th><th style={{ padding: 8 }}>Capacity</th><th style={{ padding: 8 }}>Hourly Rate</th>
+            <th className="num" style={{ padding: 8 }}>S.No</th><th style={{ padding: 8 }}>Code</th><th style={{ padding: 8 }}>Name</th><th style={{ padding: 8 }}>Department</th><th style={{ padding: 8 }}>Capacity</th><th style={{ padding: 8 }}>Hourly Rate</th>
           </tr>
         </thead>
         <tbody>
-          {items.map(w => (
+          {items.map((w, idx) => (
             <tr key={w.id} style={{ borderBottom: '1px solid #313244' }}>
-              <td style={{ padding: 8 }}>{w.code}</td><td style={{ padding: 8 }}>{w.name}</td><td style={{ padding: 8 }}>{w.department || '-'}</td><td style={{ padding: 8 }}>{w.capacity ?? '-'}</td><td style={{ padding: 8 }}>{w.hourlyRate ?? '-'}</td>
+              <td className="num mut" style={{ padding: 8 }}>{idx + 1}</td><td style={{ padding: 8 }}>{w.code}</td><td style={{ padding: 8 }}>{w.name}</td><td style={{ padding: 8 }}>{w.department || '-'}</td><td style={{ padding: 8 }}>{w.capacity ?? '-'}</td><td style={{ padding: 8 }}>{w.hourlyRate ?? '-'}</td>
             </tr>
           ))}
         </tbody>

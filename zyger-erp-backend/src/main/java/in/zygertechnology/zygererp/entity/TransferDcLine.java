@@ -6,5 +6,10 @@ public class TransferDcLine extends BaseLine implements LineEntity {
     @ManyToOne(fetch=FetchType.LAZY) @JoinColumn(name="doc_id") @JsonIgnore
     TransferDc doc;
     BigDecimal qty;
-    public BigDecimal getQty(){ return qty; }
+    BigDecimal transferValue;
+    String uom;
+
+    @Override public BigDecimal getQty(){ return qty; }
+    @Override public BigDecimal getRate(){ return transferValue; }
+    @Override public String getUom(){ return uom; }
 }

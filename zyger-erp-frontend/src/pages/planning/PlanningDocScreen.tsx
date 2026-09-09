@@ -625,10 +625,11 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
         </div>
         <div className="twrap">
           <table className="tbl">
-            <thead><tr>{config.columns.map((c) => <th key={c.field} className={c.numeric ? 'num' : ''}>{c.label}</th>)}<th>Actions</th></tr></thead>
+            <thead><tr><th className="num">S.No</th>{config.columns.map((c) => <th key={c.field} className={c.numeric ? 'num' : ''}>{c.label}</th>)}<th>Actions</th></tr></thead>
             <tbody>
-              {rows.length > 0 ? rows.map((row: Record<string, unknown>) => (
+              {rows.length > 0 ? rows.map((row: Record<string, unknown>, idx: number) => (
                 <tr key={String(row.id)}>
+                  <td className="num mut">{page * PAGE_SIZE + idx + 1}</td>
                   {config.columns.map((c) => (
                     <td key={c.field} className={c.numeric ? 'num' : ''}>
                       {c.field === config.statusField ? <StatusBadge status={String(row[c.field] ?? 'DRAFT')} /> : cellValue(row, c.field)}
@@ -640,7 +641,7 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
                     <button className="ibtn danger" title="Delete" onClick={() => setDeleteTarget(row)}><span className="material-symbols-rounded">delete</span></button>
                   </td>
                 </tr>
-              )) : <tr><td colSpan={config.columns.length + 1}><div className="empty"><span className="material-symbols-rounded">description</span> No records found. Click &quot;Add&quot;.</div></td></tr>}
+              )) : <tr><td colSpan={config.columns.length + 2}><div className="empty"><span className="material-symbols-rounded">description</span> No records found. Click &quot;Add&quot;.</div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -869,10 +870,11 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
             </div>
             <div className="twrap">
               <table className="tbl lines">
-                <thead><tr>{config.lines.fields.map((f) => <th key={f.key}>{f.label}</th>)}{!config.lines.seed && <th></th>}</tr></thead>
+                <thead><tr><th className="num">S.No</th>{config.lines.fields.map((f) => <th key={f.key}>{f.label}</th>)}{!config.lines.seed && <th></th>}</tr></thead>
                 <tbody>
                   {lines.map((line, index) => (
                     <tr key={index} onClick={() => config.childGrids && setSelectedLineIdx(selectedLineIdx === index ? null : index)} style={config.childGrids ? { cursor: 'pointer' } : undefined} className={selectedLineIdx === index ? 'selected-row' : ''}>
+                      <td className="num mut">{index + 1}</td>
                       {config.lines!.fields.map((f) => (
                         <td key={f.key}>
                           {docType === 'route-sheet' && f.key === 'processId' ? (
@@ -1013,10 +1015,11 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
             <div className="panel-h"><h2><span className="material-symbols-rounded">table_view</span> {config.lines.title}</h2></div>
             <div className="twrap">
               <table className="tbl">
-                <thead><tr>{config.lines.fields.map((f) => <th key={f.key}>{f.label}</th>)}</tr></thead>
+                <thead><tr><th className="num">S.No</th>{config.lines.fields.map((f) => <th key={f.key}>{f.label}</th>)}</tr></thead>
                 <tbody>
                   {(form.lines as Array<Record<string, unknown>>).map((line, index) => (
                     <tr key={index} onClick={() => config.childGrids && setSelectedLineIdx(selectedLineIdx === index ? null : index)} style={config.childGrids ? { cursor: 'pointer' } : undefined} className={selectedLineIdx === index ? 'selected-row' : ''}>
+                      <td className="num mut">{index + 1}</td>
                       {config.lines!.fields.map((f) => {
                         let displayVal = line[f.key] == null ? '—' : String(line[f.key]);
                         if (config.docType === 'production-bom' && f.key === 'componentItemCode') {
@@ -1053,10 +1056,10 @@ export default function PlanningDocScreen({ config, initialDocId, viewOnly = fal
             {childGridQuery.isSuccess && childGridData.length > 0 && (
               <div className="twrap">
                 <table className="tbl">
-                  <thead><tr>{childGrid.fields.map((f) => <th key={f.key}>{f.label}</th>)}</tr></thead>
+                  <thead><tr><th className="num">S.No</th>{childGrid.fields.map((f) => <th key={f.key}>{f.label}</th>)}</tr></thead>
                   <tbody>
                     {childGridData.map((row, idx) => (
-                      <tr key={idx}>{childGrid.fields.map((f) => <td key={f.key}>{row[f.key] == null ? '\u2014' : String(row[f.key])}</td>)}</tr>
+                      <tr key={idx}><td className="num mut">{idx + 1}</td>{childGrid.fields.map((f) => <td key={f.key}>{row[f.key] == null ? '\u2014' : String(row[f.key])}</td>)}</tr>
                     ))}
                   </tbody>
                 </table>

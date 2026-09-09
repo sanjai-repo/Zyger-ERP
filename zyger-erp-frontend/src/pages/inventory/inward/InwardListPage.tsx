@@ -213,6 +213,7 @@ export default function InwardListPage({ inwardType }: InwardListPageProps) {
               <table className="tbl">
                 <thead>
                   <tr>
+                    <th className="num">S.No</th>
                     <th>Date</th>
                     <th>Doc No</th>
                     <th>Item</th>
@@ -227,8 +228,9 @@ export default function InwardListPage({ inwardType }: InwardListPageProps) {
 
                 <tbody>
                   {rows.length > 0 ? (
-                    rows.map((row) => (
+                    rows.map((row, idx) => (
                       <tr key={row.id}>
+                        <td className="num mut">{page * PAGE_SIZE + idx + 1}</td>
                         <td>{formatDate(row.date)}</td>
                         <td>
                           <span className="cell-b">{row.docNo}</span>
@@ -296,7 +298,7 @@ export default function InwardListPage({ inwardType }: InwardListPageProps) {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={9}>
+                      <td colSpan={10}>
                         <div className="empty">
                           <span className="material-symbols-rounded">
                             folder_open

@@ -35,6 +35,7 @@ const COLUMNS: ColumnConfig[] = [
   { label: 'Doc No', field: 'docNo' },
   { label: 'Date', field: 'date' },
   { label: 'Item', field: 'itemCode' },
+  { label: 'Item Name', field: 'itemName' },
   { label: 'Diff', field: 'differenceQty', numeric: true },
   { label: 'Reason', field: 'reasonCode' },
   { label: 'Status', field: 'status' },
@@ -227,6 +228,7 @@ export default function StockAmendmentList({
           <table className="tbl">
             <thead>
               <tr>
+                <th className="num">S.No</th>
                 {COLUMNS.map((column) => (
                   <th
                     key={column.field}
@@ -243,13 +245,15 @@ export default function StockAmendmentList({
 
             <tbody>
               {rows.length > 0 ? (
-                rows.map((row) => (
+                rows.map((row, idx) => (
                   <tr key={row.id}>
+                    <td className="num mut">{page * PAGE_SIZE + idx + 1}</td>
                     <td>
                       <span className="cell-b">{row.docNo}</span>
                     </td>
                     <td>{formatDate(row.date)}</td>
                     <td>{row.itemCode || '—'}</td>
+                    <td>{row.itemName || '—'}</td>
                     <td className="num">
                       {formatNumber(row.differenceQty ?? 0)}
                     </td>
@@ -306,7 +310,7 @@ export default function StockAmendmentList({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={COLUMNS.length + 1}>
+                  <td colSpan={COLUMNS.length + 2}>
                     <div className="empty">
                       <span className="material-symbols-rounded">
                         folder_open

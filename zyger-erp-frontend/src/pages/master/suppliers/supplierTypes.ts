@@ -115,7 +115,7 @@ export const defaultForm = (): Record<string, unknown> => ({
   supplierGroup: 'Raw Material', supplierType: 'Raw Material Supplier',
   qualityCertRequired: false, inspectionRequired: false,
   contactPerson: '', phone: '', mobile: '', email: '', website: '', fax: '',
-  billingAddress: '', deliveryAddress: '', city: '', state: 'Tamil Nadu', pincode: '', country: 'India',
+  billingAddress: '', shippingAddress: '', city: '', state: 'Tamil Nadu', pincode: '', country: 'India',
   gstin: '', gstRegType: 'Regular', gstState: 'Tamil Nadu', pan: '', cin: '', msmeNo: '', msmeType: '',
   tdsApplicable: false,
   currency: 'INR', paymentTerms: '30 Days', creditDays: 30, minOrderQty: '', minOrderValue: 0, discountPct: 0,

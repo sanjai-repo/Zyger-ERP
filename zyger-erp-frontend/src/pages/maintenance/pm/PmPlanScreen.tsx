@@ -167,10 +167,11 @@ export default function PmPlanScreen() {
           <div className="twrap">
             {loading ? <div className="empty"><span className="material-symbols-rounded">hourglass_empty</span> Loading...</div> : (
               <table className="tbl">
-                <thead><tr><th>Plan No</th><th>Machine</th><th>Frequency</th><th>Next Due</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr><th className="num">S.No</th><th>Plan No</th><th>Machine</th><th>Frequency</th><th>Next Due</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
-                  {filtered.length === 0 ? <tr><td colSpan={6}><div className="empty"><span className="material-symbols-rounded">description</span> No PM plans.</div></td></tr> : filtered.map((r) => (
+                  {filtered.length === 0 ? <tr><td colSpan={7}><div className="empty"><span className="material-symbols-rounded">description</span> No PM plans.</div></td></tr> : filtered.map((r, idx) => (
                     <tr key={r.id}>
+                      <td className="num mut">{idx + 1}</td>
                       <td><b>{r.planNumber}</b></td>
                       <td>{r.machineCode}</td>
                       <td>{(r.frequency ?? '').replace(/_/g, ' ')}</td>

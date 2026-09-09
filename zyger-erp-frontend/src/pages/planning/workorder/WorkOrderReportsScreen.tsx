@@ -94,6 +94,7 @@ export default function WorkOrderReportsScreen() {
               <table className="tbl">
                 <thead>
                   <tr>
+                    <th className="num">S.No</th>
                     <th>WO No</th>
                     <th>Item</th>
                     <th>SO No</th>
@@ -104,8 +105,9 @@ export default function WorkOrderReportsScreen() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row: Record<string, unknown>) => (
+                  {rows.map((row: Record<string, unknown>, idx: number) => (
                     <tr key={String(row.id)} style={activeReport === 'overdue' ? { background: '#fef2f2' } : {}}>
+                      <td className="num mut">{idx + 1}</td>
                       <td>{String(row.woNumber ?? row.docNo ?? '')}</td>
                       <td>{String(row.itemCode ?? '')}</td>
                       <td>{String(row.salesOrderNo ?? '')}</td>

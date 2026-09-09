@@ -13,6 +13,7 @@ import type {
 } from '../../../../types/inventory/stockIssueRequest.types';
 import { getApiErrorMessage } from '../../../../utils/apiError';
 import { toOptionalNumber } from '../../../../utils/format';
+import { filterPurchaseRelevantItems } from '../../../../utils/itemClassification';
 import StatusBadge from '../../../../components/common/StatusBadge';
 import ConfirmActionModal from '../../../../components/common/ConfirmActionModal';
 import {
@@ -26,7 +27,12 @@ import {
   type SirLineFormState,
 } from './stockIssueRequestForm';
 
-const RETURNABLE_OPTIONS = ['Yes', 'No'];
+// Stored value stays 'Yes'/'No' (matches IssueInternalExternalForm.tsx's same field) —
+// only the displayed label changes to Returnable / Non-Returnable.
+const RETURNABLE_OPTIONS = [
+  { value: 'Yes', label: 'Returnable' },
+  { value: 'No', label: 'Non-Returnable' },
+];
 
 interface ActionModalState {
   action: SirDocumentAction;
@@ -80,12 +86,15 @@ export default function StockIssueRequestForm({
     [items]
   );
 
+  // Item Code should only ever offer Purchasable / Customer-Supplied / Manufacturing items
+  // (the three item screens under Master → Inventory → Items) — this picker previously
+  // showed every item in the system unfiltered.
+  const allowedItems = useMemo(() => filterPurchaseRelevantItems(items), [items]);
+
   const status = currentDocument?.status ?? 'DRAFT';
 
   // Requested fields editable only while drafting.
   const canEditRequested = !viewOnly && (status === 'DRAFT' || status === 'REJECTED');
-  // Approved Qty is editable during drafting AND during approval (SUBMITTED).
-  const canEditApprovedQty = canEditRequested || status === 'SUBMITTED';
 
   const docNo =
     currentDocument?.docNo ||
@@ -573,10 +582,10 @@ export default function StockIssueRequestForm({
             <table className="tbl lines">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   <th>Item Code *</th>
                   <th>Item Name</th>
                   <th>Requested Qty *</th>
-                  <th>Approved Qty</th>
                   <th>Returnable *</th>
                   <th>Remarks</th>
                   <th />
@@ -586,6 +595,7 @@ export default function StockIssueRequestForm({
               <tbody>
                 {form.lines.map((line, index) => (
                   <tr key={index}>
+                    <td className="num mut">{index + 1}</td>
                     <td>
                       <select
                         className="in w-i"
@@ -596,7 +606,7 @@ export default function StockIssueRequestForm({
                         }
                       >
                         <option value="">— Select Item —</option>
-                        {items.map((item) => (
+                        {allowedItems.map((item) => (
                           <option key={item.code} value={item.code}>
                             {item.code} — {item.description}
                           </option>
@@ -627,19 +637,6 @@ export default function StockIssueRequestForm({
                     </td>
 
                     <td>
-                      <input
-                        type="number"
-                        step="any"
-                        className="in"
-                        value={line.approvedQty}
-                        readOnly={!canEditApprovedQty}
-                        onChange={(event) =>
-                          updateLine(index, 'approvedQty', event.target.value)
-                        }
-                      />
-                    </td>
-
-                    <td>
                       <select
                         className="in"
                         value={line.returnable}
@@ -650,8 +647,8 @@ export default function StockIssueRequestForm({
                       >
                         <option value="">— Select —</option>
                         {RETURNABLE_OPTIONS.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
+                          <option key={option.value} value={option.value}>
+                            {option.label}
                           </option>
                         ))}
                       </select>

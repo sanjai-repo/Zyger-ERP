@@ -70,6 +70,13 @@ export function useStockAllotmentLookups() {
     retry: 1,
   });
 
+  const storesQuery = useQuery({
+    queryKey: ['master', 'stores'],
+    queryFn: ({ signal }) => masterService.getStores(signal),
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
+  });
+
   const isLoading =
     itemsQuery.isPending ||
     locationsQuery.isPending ||
@@ -93,11 +100,13 @@ export function useStockAllotmentLookups() {
       itemsQuery.refetch(),
       locationsQuery.refetch(),
       customersQuery.refetch(),
+      storesQuery.refetch(),
     ]);
 
   return {
     items: itemsQuery.data ?? [],
     locations: locationsQuery.data ?? [],
+    stores: storesQuery.data ?? [],
     customers: customersQuery.data ?? [],
     isLoading,
     isError,

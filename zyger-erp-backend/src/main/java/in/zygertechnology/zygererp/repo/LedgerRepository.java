@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 public interface LedgerRepository extends JpaRepository<StockLedger, Long> {
@@ -22,5 +23,8 @@ public interface LedgerRepository extends JpaRepository<StockLedger, Long> {
     BigDecimal onHandBalance(@Param("item") String item,
                              @Param("loc") String loc,
                              @Param("batch") String batch);
+
+    @Query("SELECT MAX(s.txDate) FROM StockLedger s WHERE s.location = :loc")
+    LocalDate maxTxDateByLocation(@Param("loc") String loc);
 }
 

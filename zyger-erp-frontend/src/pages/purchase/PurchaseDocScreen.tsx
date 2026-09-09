@@ -50,11 +50,13 @@ function SearchableItemLookup({
   onChange,
   disabled,
   items,
+  allowOthers = false,
 }: {
   value: string;
   onChange: (val: string) => void;
   disabled?: boolean;
   items: Array<{ id: number; code: string; name: string; description?: string }>;
+  allowOthers?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState(value || '');
@@ -179,26 +181,28 @@ function SearchableItemLookup({
               </div>
             ))
           )}
-          <div
-            onMouseDown={(e) => {
-              e.preventDefault();
-              setSearch('OTHERS');
-              onChange('OTHERS');
-              setIsOpen(false);
-            }}
-            style={{
-              padding: '8px 10px',
-              cursor: 'pointer',
-              fontWeight: 700,
-              fontSize: '11px',
-              color: '#2563eb',
-              backgroundColor: '#f8fafc',
-              borderTop: '1px solid #e2e8f0',
-              textAlign: 'left',
-            }}
-          >
-            + OTHERS (Custom Item)
-          </div>
+          {allowOthers && (
+            <div
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setSearch('OTHERS');
+                onChange('OTHERS');
+                setIsOpen(false);
+              }}
+              style={{
+                padding: '8px 10px',
+                cursor: 'pointer',
+                fontWeight: 700,
+                fontSize: '11px',
+                color: '#2563eb',
+                backgroundColor: '#f8fafc',
+                borderTop: '1px solid #e2e8f0',
+                textAlign: 'left',
+              }}
+            >
+              + OTHERS (Custom Item)
+            </div>
+          )}
         </div>,
         document.body
       )}
@@ -428,6 +432,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
   const [prList, setPrList] = useState<Array<Record<string, unknown>>>([]);
   const [enquiryList, setEnquiryList] = useState<Array<Record<string, unknown>>>([]);
   const [quotationList, setQuotationList] = useState<Array<Record<string, unknown>>>([]);
+  const [poInwardList, setPoInwardList] = useState<Array<Record<string, unknown>>>([]);
 
   useEffect(() => {
     // Load suppliers
@@ -507,6 +512,14 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
     }).catch(() => {
       setUomMasters([{ id: 1, code: 'NOS', name: 'Numbers' }, { id: 2, code: 'KG', name: 'Kilogram' }, { id: 3, code: 'MTR', name: 'Metre' }]);
     });
+
+    // Load POSTED PO Inwards (Purchase Return's reference lookup) — only needed on that screen.
+    if (config.docType === 'purchase-return') {
+      axiosClient.get('/inventory/documents/po-inward?size=200&status=POSTED').then((res) => {
+        const content = res.data?.content || res.data || [];
+        setPoInwardList(Array.isArray(content) ? content : []);
+      }).catch(() => setPoInwardList([]));
+    }
 
     // Load active PRs
     axiosClient.get('/v1/purchase/purchase-request?size=100').then((res) => {
@@ -1126,6 +1139,55 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
     }
   };
 
+  // FRS DOC-PUR-FRS-02 §9 (PUR-07) [ASSUMPTION]: auto-fill only wired for originalDocumentType
+  // === 'po-inward' — that's also the tighter server-side over-return guard (checked against
+  // actual received qty, not ordered qty). Selecting a Purchase Order as the reference is still
+  // allowed but the user enters lines manually; wiring full PO-line auto-fill was out of scope
+  // for this pass given the size of the rest of this build.
+  const handleOriginalDocSelect = async (docNo: string) => {
+    if (!docNo) return;
+    const listed = poInwardList.find((d) => d.docNo === docNo) as any;
+    let full = listed;
+    if (listed?.id) {
+      try {
+        const res = await axiosClient.get(`/inventory/documents/po-inward/${listed.id}`);
+        if (res.data) full = res.data;
+      } catch (e) {
+        console.error('Failed to fetch full PO Inward details', e);
+      }
+    }
+    if (!full) return;
+
+    const foundSupp = supplierMasters.find((s) => s.name === full.supplier || s.code === full.supplier);
+    setForm((prev) => ({
+      ...prev,
+      originalDocumentNo: docNo,
+      supplier: full.supplier || prev.supplier,
+      supplierCode: foundSupp?.code || prev.supplierCode,
+    }));
+
+    const srcLines = Array.isArray(full.lines) ? full.lines : [];
+    if (srcLines.length > 0) {
+      setLines(srcLines.map((l: any, i: number) => {
+        const receivedQty = Number(l.receivedQty ?? l.qty ?? 0);
+        const acceptedQty = Number(l.acceptedQty ?? receivedQty);
+        const rate = Number(l.rate ?? 0);
+        return {
+          lineNo: i + 1,
+          itemCode: l.itemCode || '',
+          itemDesc: l.itemDesc || l.description || l.itemCode || '',
+          uom: l.uom || '',
+          returnQty: acceptedQty,
+          qty: acceptedQty,
+          rate,
+          netAmount: acceptedQty * rate,
+          originalReceivedQty: acceptedQty,
+          reasonCode: '',
+        };
+      }));
+    }
+  };
+
   const handleSupplierSelect = (supplierName: string) => {
     if (!supplierName) {
       setForm(prev => ({
@@ -1484,7 +1546,12 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
                         <button
                           onClick={() => setDeleteTarget(row)}
                           className="ibtn danger"
-                          title="Delete"
+                          title={
+                            ['DRAFT', 'REJECTED'].includes(String(row.status))
+                              ? 'Delete'
+                              : 'Only DRAFT or REJECTED documents can be deleted'
+                          }
+                          disabled={!['DRAFT', 'REJECTED'].includes(String(row.status))}
                         >
                           <span className="material-symbols-rounded">delete</span>
                         </button>
@@ -1740,6 +1807,29 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
               );
             }
 
+            if (field.key === 'originalDocumentNo') {
+              const poiOptions = poInwardList.map((d: any) => ({
+                value: String(d.docNo || ''),
+                label: String(d.docNo || ''),
+                sublabel: `${d.supplier || 'Supplier'} (${d.date || ''})`,
+              }));
+              return (
+                <div key={field.key} className="fld">
+                  <span>Original PO Inward *</span>
+                  <SearchableDocLookup
+                    value={String(val || '')}
+                    disabled={!editable}
+                    options={poiOptions}
+                    placeholder="Search posted PO Inward No or Supplier..."
+                    onChange={(selectedDocNo) => {
+                      setForm((prev) => ({ ...prev, originalDocumentNo: selectedDocNo }));
+                      handleOriginalDocSelect(selectedDocNo);
+                    }}
+                  />
+                </div>
+              );
+            }
+
             // Supplier Master Select with Searchable Lookup
             if (field.key === 'supplier') {
               const suppOptions = supplierMasters.map((s) => ({
@@ -1822,6 +1912,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
               <table className="tbl lines">
                 <thead>
                   <tr>
+                    <th className="num" style={{ width: '50px' }}>S.No</th>
                     {config.lines.fields.map((f) => (
                       <th key={f.key} style={f.width ? { width: f.width, minWidth: f.width } : undefined}>
                         {f.label}
@@ -1833,6 +1924,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
                 <tbody>
                   {lines.map((line, idx) => (
                     <tr key={idx}>
+                      <td className="num mut">{idx + 1}</td>
                       {config.lines!.fields.map((f) => {
                         const cellVal = line[f.key] ?? '';
                         const isOthers = String(line.itemCode).toUpperCase() === 'OTHERS';
@@ -1855,6 +1947,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
                                 value={String(cellVal)}
                                 disabled={!editable}
                                 items={itemMasters}
+                                allowOthers={f.allowOthers}
                                 onChange={(val) => handleLineItemChange(idx, f.key, val)}
                               />
                             </td>

@@ -758,7 +758,7 @@ export default function SalesDocScreen({ config, initialDocId, viewOnly = false,
       if (fieldKey === 'itemCode') {
         const item = itemMasters.find(i => i.code === value);
         if (item) {
-          row.description = item.name + (item.description ? ` (${item.description})` : '');
+          row.description = item.description || item.name || '';
           row.uom = item.uom || 'PCS';
           if (item.price) row.unitPrice = item.price;
         }
@@ -920,6 +920,7 @@ export default function SalesDocScreen({ config, initialDocId, viewOnly = false,
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   {config.columns.map((col) => (
                     <th key={col.field} className={col.numeric ? 'num' : ''}>
                       {col.label}
@@ -931,20 +932,21 @@ export default function SalesDocScreen({ config, initialDocId, viewOnly = false,
               <tbody>
                 {listQuery.isLoading ? (
                   <tr>
-                    <td colSpan={config.columns.length + 1} className="empty">
+                    <td colSpan={config.columns.length + 2} className="empty">
                       Loading sales documents...
                     </td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={config.columns.length + 1} className="empty">
+                    <td colSpan={config.columns.length + 2} className="empty">
                       <span className="material-symbols-rounded">inventory_2</span>
                       No sales documents found. Click <strong>+ New {config.title}</strong> to create one.
                     </td>
                   </tr>
                 ) : (
-                  rows.map((row: any) => (
+                  rows.map((row: any, idx: number) => (
                     <tr key={row.id}>
+                      <td className="num mut">{page * PAGE_SIZE + idx + 1}</td>
                       {config.columns.map((col) => {
                         const val = row[col.field];
                         if (col.badge) {
@@ -1327,7 +1329,7 @@ export default function SalesDocScreen({ config, initialDocId, viewOnly = false,
                                 <option value="">-- Select Item --</option>
                                 {itemMasters.filter(it => it.active !== false).map((item) => (
                                   <option key={item.id} value={item.code}>
-                                    {item.code} - {item.name}
+                                    {item.code} - {item.description || item.name}
                                   </option>
                                 ))}
                               </select>

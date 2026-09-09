@@ -261,12 +261,13 @@ export function BatchCardScreen({ screenId }: { screenId: string }) {
           <div className="twrap">
             {loading ? <div className="empty"><span className="material-symbols-rounded">hourglass_empty</span> Loading...</div> : (
               <table className="tbl">
-                <thead><tr><th>Doc No</th><th>Entry</th><th>Item</th><th>Batch</th><th>Qty</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr><th className="num">S.No</th><th>Doc No</th><th>Entry</th><th>Item</th><th>Batch</th><th>Qty</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
                   {filtered.length === 0 ? (
-                    <tr><td colSpan={7}><div className="empty"><span className="material-symbols-rounded">description</span> No batch cards.</div></td></tr>
-                  ) : filtered.map((r) => (
+                    <tr><td colSpan={8}><div className="empty"><span className="material-symbols-rounded">description</span> No batch cards.</div></td></tr>
+                  ) : filtered.map((r, idx) => (
                     <tr key={r.id}>
+                      <td className="num mut">{idx + 1}</td>
                       <td><b>{r.docNumber}</b>{r.isReversal && <span className="pill" style={{ marginLeft: 6, color: '#e11d48', background: '#ffe4e6', padding: '1px 6px', borderRadius: 10, fontSize: 11 }}>REVERSAL</span>}</td>
                       <td>{r.entryNumber ?? '-'}</td>
                       <td>{r.itemCode ?? '-'}</td>

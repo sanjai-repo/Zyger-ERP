@@ -278,6 +278,7 @@ export default function ToolScreen() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   <th>TOOL CODE</th>
                   <th>TOOL NAME</th>
                   <th>TYPE</th>
@@ -291,14 +292,15 @@ export default function ToolScreen() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={9} className="empty">Loading tools...</td></tr>
+                  <tr><td colSpan={10} className="empty">Loading tools...</td></tr>
                 ) : filteredRows.length === 0 ? (
-                  <tr><td colSpan={9} className="empty">No tools found.</td></tr>
+                  <tr><td colSpan={10} className="empty">No tools found.</td></tr>
                 ) : (
-                  filteredRows.map(r => {
+                  filteredRows.map((r, idx) => {
                     const pct = getLifePct(r);
                     return (
                       <tr key={r.id}>
+                        <td className="num mut">{idx + 1}</td>
                         <td style={{ fontWeight: 700, color: '#0f172a' }}>{r.code}</td>
                         <td style={{ fontWeight: 600 }}>{r.name}</td>
                         <td>{r.toolType || 'END MILL'}</td>

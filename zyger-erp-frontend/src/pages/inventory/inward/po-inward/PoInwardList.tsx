@@ -265,6 +265,7 @@ export default function PoInwardList({
           <table className="tbl">
             <thead>
               <tr>
+                <th className="num">S.No</th>
                 {COLUMNS.map((column) => (
                   <th
                     key={column.field}
@@ -281,8 +282,9 @@ export default function PoInwardList({
 
             <tbody>
               {rows.length > 0 ? (
-                rows.map((row) => (
+                rows.map((row, idx) => (
                   <tr key={row.id}>
+                    <td className="num mut">{page * PAGE_SIZE + idx + 1}</td>
                     <td>
                       <span className="cell-b">{row.docNo}</span>
                     </td>
@@ -315,7 +317,12 @@ export default function PoInwardList({
 
                       <button
                         className="ibtn danger"
-                        title="Delete"
+                        title={
+                          ['DRAFT', 'REJECTED'].includes(String(row.status))
+                            ? 'Delete'
+                            : 'Only DRAFT or REJECTED documents can be deleted'
+                        }
+                        disabled={!['DRAFT', 'REJECTED'].includes(String(row.status))}
                         onClick={() => setDeleteTarget(row)}
                       >
                         <span className="material-symbols-rounded">delete</span>
@@ -345,7 +352,7 @@ export default function PoInwardList({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={COLUMNS.length + 1}>
+                  <td colSpan={COLUMNS.length + 2}>
                     <div className="empty">
                       <span className="material-symbols-rounded">folder_open</span>
                       No records found. Click “Add PO Inward”.

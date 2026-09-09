@@ -4,6 +4,23 @@ import { useToast } from '../../../contexts/ToastContext';
 import { getApiErrorMessage } from '../../../utils/apiError';
 import ConfirmActionModal from '../../../components/common/ConfirmActionModal';
 
+const STORE_TYPES = [
+  'Raw Material Store',
+  'WIP Store',
+  'Finished Goods Store',
+  'Tool Store',
+  'Consumable Store',
+  'Spare Parts Store',
+  'Packing Material Store',
+  'Quarantine Store',
+  'Rejection Store',
+  'Scrap Store',
+  'General Store',
+  'Customer Material Store',
+  'Subcontractor Material Store',
+  'Dispatch Store',
+];
+
 interface StoreItem {
   id: number;
   code: string;
@@ -11,6 +28,17 @@ interface StoreItem {
   location?: string;
   description?: string;
   active: boolean;
+  storeType?: string;
+  department?: string;
+  binLocation?: string;
+  capacity?: number;
+  remarks?: string;
+  isRaw?: boolean;
+  isWip?: boolean;
+  isFinished?: boolean;
+  isQcHold?: boolean;
+  isScrap?: boolean;
+  isDispatch?: boolean;
 }
 
 interface RackItem {
@@ -41,7 +69,11 @@ export default function StoreScreen() {
 
   // Stores state
   const [stores, setStores] = useState<StoreItem[]>([]);
-  const [storeForm, setStoreForm] = useState<Partial<StoreItem>>({ code: 'STORE-01', name: '', location: '', description: '', active: true });
+  const [storeForm, setStoreForm] = useState<Partial<StoreItem>>({
+    code: 'STORE-01', name: '', location: '', description: '', active: true,
+    storeType: '', department: '', binLocation: '', capacity: undefined, remarks: '',
+    isRaw: false, isWip: false, isFinished: false, isQcHold: false, isScrap: false, isDispatch: false,
+  });
   const [editStoreId, setEditStoreId] = useState<number | null>(null);
   const [storeSearch, setStoreSearch] = useState('');
   const [deleteStoreTarget, setDeleteStoreTarget] = useState<StoreItem | null>(null);
@@ -86,7 +118,11 @@ export default function StoreScreen() {
   useEffect(() => { loadAll(); }, []);
 
   const openNewStore = () => {
-    setStoreForm({ code: `STORE-0${stores.length + 1}`, name: '', location: '', description: '', active: true });
+    setStoreForm({
+      code: `STORE-0${stores.length + 1}`, name: '', location: '', description: '', active: true,
+      storeType: '', department: '', binLocation: '', capacity: undefined, remarks: '',
+      isRaw: false, isWip: false, isFinished: false, isQcHold: false, isScrap: false, isDispatch: false,
+    });
     setEditStoreId(null);
     setViewOnly(false);
     setViewMode('FORM');
@@ -363,6 +399,30 @@ export default function StoreScreen() {
                     <input className="in" type="text" required disabled={viewOnly} value={storeForm.location || ''} onChange={e => setStoreForm(c => ({ ...c, location: e.target.value }))} placeholder="Plant / Building / Floor" />
                   </label>
                   <label className="fld">
+                    <span>STORE TYPE</span>
+                    <select
+                      className="in"
+                      disabled={viewOnly}
+                      value={storeForm.storeType || ''}
+                      onChange={e => setStoreForm(c => ({ ...c, storeType: e.target.value }))}
+                    >
+                      <option value="">Select...</option>
+                      {STORE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </label>
+                  <label className="fld">
+                    <span>DEPARTMENT</span>
+                    <input className="in" type="text" disabled={viewOnly} value={storeForm.department || ''} onChange={e => setStoreForm(c => ({ ...c, department: e.target.value }))} />
+                  </label>
+                  <label className="fld">
+                    <span>BIN LOCATION</span>
+                    <input className="in" type="text" disabled={viewOnly} value={storeForm.binLocation || ''} onChange={e => setStoreForm(c => ({ ...c, binLocation: e.target.value }))} />
+                  </label>
+                  <label className="fld">
+                    <span>CAPACITY</span>
+                    <input className="in" type="number" step="0.01" disabled={viewOnly} value={storeForm.capacity ?? ''} onChange={e => setStoreForm(c => ({ ...c, capacity: e.target.value === '' ? undefined : parseFloat(e.target.value) }))} />
+                  </label>
+                  <label className="fld">
                     <span>STATUS</span>
                     <select
                       className="in"
@@ -374,9 +434,36 @@ export default function StoreScreen() {
                       <option value="Inactive">Inactive</option>
                     </select>
                   </label>
+                  <label className="fld span3">
+                    <span>USAGE FLAGS</span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', paddingTop: '6px' }}>
+                      {([
+                        ['isRaw', 'Raw Material'],
+                        ['isWip', 'WIP'],
+                        ['isFinished', 'Finished Goods'],
+                        ['isQcHold', 'QC Hold'],
+                        ['isScrap', 'Scrap'],
+                        ['isDispatch', 'Dispatch'],
+                      ] as const).map(([field, label]) => (
+                        <label key={field} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 400 }}>
+                          <input
+                            type="checkbox"
+                            disabled={viewOnly}
+                            checked={!!storeForm[field]}
+                            onChange={e => setStoreForm(c => ({ ...c, [field]: e.target.checked }))}
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                  </label>
                   <label className="fld span2">
                     <span>DESCRIPTION</span>
                     <textarea className="in" disabled={viewOnly} value={storeForm.description || ''} onChange={e => setStoreForm(c => ({ ...c, description: e.target.value }))} />
+                  </label>
+                  <label className="fld span2">
+                    <span>REMARKS</span>
+                    <textarea className="in" disabled={viewOnly} value={storeForm.remarks || ''} onChange={e => setStoreForm(c => ({ ...c, remarks: e.target.value }))} />
                   </label>
                 </div>
 

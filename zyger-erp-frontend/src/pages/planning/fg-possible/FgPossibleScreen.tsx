@@ -193,6 +193,7 @@ export default function FgPossibleScreen() {
                 <table className="tbl">
                   <thead>
                     <tr>
+                      <th className="num">S.No</th>
                       <th>Component Code</th>
                       <th>Description</th>
                       <th>UOM</th>
@@ -206,6 +207,7 @@ export default function FgPossibleScreen() {
                       const sc = STATUS_COLORS[comp.status] ?? { color: '#888', bg: '#e9ecef' };
                       return (
                         <tr key={idx}>
+                          <td className="num mut">{idx + 1}</td>
                           <td>{comp.componentCode}</td>
                           <td>{comp.componentDescription}</td>
                           <td>{comp.uom}</td>

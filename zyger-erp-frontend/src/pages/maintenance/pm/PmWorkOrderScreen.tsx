@@ -157,12 +157,13 @@ export default function PmWorkOrderScreen() {
         <div className="twrap">
           {loading ? <div className="empty"><span className="material-symbols-rounded">hourglass_empty</span> Loading...</div> : (
             <table className="tbl">
-              <thead><tr><th>WO No</th><th>Machine</th><th>Title</th><th>Assigned</th><th>Priority</th><th>Status</th><th>Actions</th></tr></thead>
+              <thead><tr><th className="num">S.No</th><th>WO No</th><th>Machine</th><th>Title</th><th>Assigned</th><th>Priority</th><th>Status</th><th>Actions</th></tr></thead>
               <tbody>
-                {filtered.length === 0 ? <tr><td colSpan={7}><div className="empty"><span className="material-symbols-rounded">description</span> No work orders.</div></td></tr> : filtered.map((r) => {
+                {filtered.length === 0 ? <tr><td colSpan={8}><div className="empty"><span className="material-symbols-rounded">description</span> No work orders.</div></td></tr> : filtered.map((r, idx) => {
                   const pc = PRIORITY_COLORS[r.priority] ?? PRIORITY_COLORS.MEDIUM;
                   return (
                     <tr key={r.id}>
+                      <td className="num mut">{idx + 1}</td>
                       <td><b>{r.workOrderNumber}</b></td>
                       <td>{r.machineCode}</td>
                       <td>{r.title || '-'}</td>

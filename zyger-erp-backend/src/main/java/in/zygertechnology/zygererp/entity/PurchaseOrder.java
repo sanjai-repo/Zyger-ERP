@@ -29,6 +29,10 @@ public class PurchaseOrder extends BaseDoc implements DocEntity {
     @Column(name = "email_sent_at") Instant emailSentAt;
     @Column(name = "email_status", length = 30) String emailStatus;
     @Column(name = "email_error", length = 500) String emailError;
+    // FRS DOC-PUR-FRS-02 §6 (PUR-04) — bumped by DocumentFacade.update() whenever this PO is
+    // edited outside DRAFT/REJECTED; see PoAmendmentHistory for the per-revision snapshot.
+    @Column(name = "revision_number") Integer revisionNumber = 1;
+    @Column(name = "last_amended_at") java.time.Instant lastAmendedAt;
     @OneToMany(mappedBy = "doc", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     List<PurchaseOrderItem> lines = new ArrayList<>();
     @OneToMany(mappedBy = "doc", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)

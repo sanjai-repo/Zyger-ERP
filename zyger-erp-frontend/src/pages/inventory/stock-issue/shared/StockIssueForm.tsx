@@ -17,6 +17,7 @@ import type {
   StockIssueTypeConfig,
 } from '../../../../types/inventory/stockIssue.types';
 import { getApiErrorMessage } from '../../../../utils/apiError';
+import { filterPurchaseRelevantItems } from '../../../../utils/itemClassification';
 
 import StatusBadge from '../../../../components/common/StatusBadge';
 import ConfirmActionModal from '../../../../components/common/ConfirmActionModal';
@@ -31,7 +32,10 @@ import {
   type StockIssueLineFormState,
 } from './stockIssueForm';
 
-const RETURNABLE_OPTIONS = ['Yes', 'No'];
+const RETURNABLE_OPTIONS = [
+  { value: 'Yes', label: 'Returnable' },
+  { value: 'No', label: 'Non-Returnable' },
+];
 
 interface ActionModalState {
   action: StockIssueDocumentAction;
@@ -79,12 +83,17 @@ export default function StockIssueForm({
   const [availabilityMap, setAvailabilityMap] = useState<Record<string, string>>(
     {}
   );
+  const [requestedByName, setRequestedByName] = useState('');
 
   const validationBoxRef = useRef<HTMLDivElement | null>(null);
   const initializedFor = useRef<string | null>(null);
 
   const items = lookups.items;
-  const locations = lookups.locations;
+  // FRS DOC-INV-FRS-02 §2.3/Priority#1 [FIXED] — was `stores.length > 0 ? stores : locations`,
+  // an all-or-nothing fallback that hid every location_master code (and the real stock sitting
+  // under it) as soon as a single store_master row existed. Now a merged, deduplicated union so
+  // every location real stock can be at stays selectable.
+  const locations = lookups.stores ?? [];
   const departments = lookups.departments;
   const suppliers = lookups.suppliers;
   const jobOrders = lookups.jobOrders;
@@ -93,6 +102,11 @@ export default function StockIssueForm({
     () => new Map(items.map((item) => [item.code, item])),
     [items]
   );
+
+  // Item Code should only ever offer Purchasable / Customer-Supplied / Manufacturing
+  // items (the three item screens under Master → Inventory → Items) — this picker
+  // previously showed every item in the system unfiltered.
+  const allowedItems = useMemo(() => filterPurchaseRelevantItems(items), [items]);
 
   const status = currentDocument?.status ?? 'DRAFT';
   const editable = !viewOnly && (status === 'DRAFT' || status === 'REJECTED');
@@ -131,6 +145,7 @@ export default function StockIssueForm({
       initializedFor.current = null;
       setCurrentDocument(null);
       setForm(createEmptyForm(config));
+      setRequestedByName('');
       return;
     }
 
@@ -138,6 +153,7 @@ export default function StockIssueForm({
       initializedFor.current = documentId;
       setCurrentDocument(documentQuery.data);
       setForm(formFromDto(config, documentQuery.data, items));
+      setRequestedByName('');
     }
   }, [config, documentId, documentQuery.data, items]);
 
@@ -243,8 +259,16 @@ export default function StockIssueForm({
       };
 
       if (key === 'sourceLocation') {
+        // Priority#1 [FIXED] — was `line.location ? line : {...}`: once a line acquired ANY
+        // location (even just inherited from the header on the very first render), changing
+        // Source Location again silently stopped updating it, so the availability check kept
+        // querying the old store forever. Now a line still follows the header unless its
+        // location has actually diverged from the header's *previous* value (a real per-line
+        // override), matching what a user switching stores on this doc actually expects.
         next.lines = previous.lines.map((line) =>
-          line.location ? line : { ...line, location: value }
+          (!line.location || line.location === previous.sourceLocation)
+            ? { ...line, location: value }
+            : line
         );
       }
 
@@ -264,6 +288,7 @@ export default function StockIssueForm({
 
   const updateIssueRequest = (value: string) => {
     setForm((previous) => ({ ...previous, issueRequestNo: value }));
+    setRequestedByName('');
 
     if (!value) {
       return;
@@ -281,6 +306,7 @@ export default function StockIssueForm({
     void stockIssueRequestService
       .getById(request.id)
       .then((sir) => {
+        setRequestedByName(sir.requestedBy ?? '');
         setForm((previous) => {
           const fields = { ...previous.fields };
           const fieldMap: Record<string, string | undefined> = {
@@ -344,7 +370,13 @@ export default function StockIssueForm({
         const item = itemsMap.get(value);
         line.itemDesc = item?.description ?? '';
         if (!line.location) {
-          line.location = previous.sourceLocation || locations[0]?.code || 'MAIN';
+          // Priority#1 [FIXED]: was `|| 'MAIN'` — a literal fallback code that exists in
+          // neither store_master nor location_master. Confirmed live: ~17,000 units of real
+          // stock had been silently posted under that orphan code before this fix, permanently
+          // invisible to every dropdown/availability lookup afterward. Leaving this blank when
+          // no real location is loaded yet lets the existing required-field validation catch
+          // it, instead of writing a location no document can ever be matched against again.
+          line.location = previous.sourceLocation || locations[0]?.code || '';
         }
       }
 
@@ -551,6 +583,83 @@ export default function StockIssueForm({
     }
   };
 
+  const handleStockIssue = async () => {
+    if (!editable) {
+      return;
+    }
+
+    setValidationMode('submit');
+
+    const errors = validateStockIssueForm(
+      config,
+      form,
+      itemsMap,
+      true,
+      availabilityMap
+    );
+
+    if (errors.length > 0) {
+      return;
+    }
+
+    try {
+      const targetId = documentId ?? currentDocument?.id ?? null;
+
+      if (targetId && status === 'REJECTED') {
+        await actionMutation.mutateAsync({
+          id: targetId,
+          action: 'reopen',
+          note: '',
+        });
+      }
+
+      const payload = buildPayload(form);
+
+      let saved: StockIssueDto = targetId
+        ? await updateMutation.mutateAsync({ id: targetId, payload })
+        : await createMutation.mutateAsync(payload);
+
+      if (saved.status === 'DRAFT' && saved.id) {
+        saved = await actionMutation.mutateAsync({
+          id: saved.id,
+          action: 'submit',
+          note: '',
+        });
+      }
+
+      if (saved.status === 'SUBMITTED' && saved.id) {
+        saved = await actionMutation.mutateAsync({
+          id: saved.id,
+          action: 'approve',
+          note: '',
+        });
+      }
+
+      if (saved.status === 'APPROVED' && saved.id) {
+        saved = await actionMutation.mutateAsync({
+          id: saved.id,
+          action: 'post',
+          note: '',
+        });
+      }
+
+      setCurrentDocument(saved);
+      setForm(formFromDto(config, saved, items));
+
+      if (saved.id) {
+        initializedFor.current = saved.id;
+        onSaved?.(saved.id);
+      }
+
+      toast(`${saved.docNo || config.title} — Stock issued successfully.`);
+    } catch (issueError) {
+      toast(
+        getApiErrorMessage(issueError, 'Stock issue failed.'),
+        'error'
+      );
+    }
+  };
+
   const runAction = async (action: StockIssueDocumentAction, note: string) => {
     const id = currentDocument?.id ?? documentId;
 
@@ -705,8 +814,7 @@ export default function StockIssueForm({
       <div className="note">
         <span className="material-symbols-rounded">info</span>
         <span>
-          Workflow: DRAFT → SUBMITTED → APPROVED → POSTED • Posting reduces
-          stock
+          Click Stock Issue to post in one step — stock reduces immediately
         </span>
       </div>
 
@@ -775,6 +883,17 @@ export default function StockIssueForm({
               </select>
             </label>
 
+            <label className="fld">
+              <span>Requested By</span>
+              <input
+                className="in"
+                value={requestedByName}
+                readOnly
+                tabIndex={-1}
+                placeholder="Auto-filled from Issue Request"
+              />
+            </label>
+
             {config.headerFields.map((field) => (
               <label
                 key={field.key}
@@ -803,7 +922,7 @@ export default function StockIssueForm({
                 <option value="">— Select —</option>
                 {locations.map((location) => (
                   <option key={location.code} value={location.code}>
-                    {location.code}
+                    {location.name || location.code}
                   </option>
                 ))}
               </select>
@@ -843,6 +962,7 @@ export default function StockIssueForm({
             <table className="tbl lines">
               <thead>
                 <tr>
+                  <th>S.No</th>
                   <th>Item Code *</th>
                   <th>Item Name</th>
                   <th>Available</th>
@@ -850,7 +970,6 @@ export default function StockIssueForm({
                   <th>Batch No</th>
                   <th>Heat No</th>
                   <th>Returnable</th>
-                  <th>Location *</th>
                   <th>Remarks</th>
                   <th />
                 </tr>
@@ -859,6 +978,7 @@ export default function StockIssueForm({
               <tbody>
                 {form.lines.map((line, index) => (
                   <tr key={index}>
+                    <td className="num mut">{index + 1}</td>
                     <td>
                       <select
                         className="in w-i"
@@ -869,7 +989,7 @@ export default function StockIssueForm({
                         }
                       >
                         <option value="">— Select Item —</option>
-                        {items.map((item) => (
+                        {allowedItems.map((item) => (
                           <option key={item.code} value={item.code}>
                             {item.code} — {item.description}
                           </option>
@@ -941,26 +1061,8 @@ export default function StockIssueForm({
                       >
                         <option value="">— Select —</option>
                         {RETURNABLE_OPTIONS.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-
-                    <td>
-                      <select
-                        className="in"
-                        value={line.location}
-                        disabled={!editable}
-                        onChange={(event) =>
-                          updateLine(index, 'location', event.target.value)
-                        }
-                      >
-                        <option value="">— Select —</option>
-                        {locations.map((location) => (
-                          <option key={location.code} value={location.code}>
-                            {location.code}
+                          <option key={option.value} value={option.value}>
+                            {option.label}
                           </option>
                         ))}
                       </select>
@@ -1020,12 +1122,14 @@ export default function StockIssueForm({
 
                 <button
                   type="button"
-                  className="btn btn-p"
-                  onClick={() => save(true)}
+                  className="btn btn-g"
+                  onClick={handleStockIssue}
                   disabled={isBusy}
                 >
-                  <span className="material-symbols-rounded">send</span>
-                  Submit
+                  <span className="material-symbols-rounded">
+                    published_with_changes
+                  </span>
+                  Stock Issue
                 </button>
               </>
             )}

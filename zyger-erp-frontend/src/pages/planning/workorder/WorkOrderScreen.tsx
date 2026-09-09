@@ -764,6 +764,7 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
               <table className="tbl">
                 <thead>
                   <tr>
+                    <th className="num">S.No</th>
                     <th>WO No</th>
                     <th>SO No</th>
                     <th>Customer</th>
@@ -776,8 +777,9 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.length > 0 ? rows.map((row: Record<string, unknown>) => (
+                  {rows.length > 0 ? rows.map((row: Record<string, unknown>, idx: number) => (
                     <tr key={String(row.id)}>
+                      <td className="num mut">{page * PAGE_SIZE + idx + 1}</td>
                       <td className="cell-b">{String(row.woNumber ?? row.docNo ?? '')}</td>
                       <td>{String(row.salesOrderNo ?? row.soNumber ?? '—')}</td>
                       <td>{String(row.customer ?? row.customerCode ?? '—')}</td>
@@ -795,7 +797,7 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
                       </td>
                     </tr>
                   )) : (
-                    <tr><td colSpan={9}><div className="empty"><span className="material-symbols-rounded">description</span> No work orders found.</div></td></tr>
+                    <tr><td colSpan={10}><div className="empty"><span className="material-symbols-rounded">description</span> No work orders found.</div></td></tr>
                   )}
                 </tbody>
               </table>
@@ -1317,6 +1319,7 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
               <table className="tbl">
                 <thead>
                   <tr>
+                    <th className="num">S.No</th>
                     <th>SO No</th>
                     <th>Customer</th>
                     <th>ITEM CODE / NAME</th>
@@ -1326,15 +1329,17 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
                 </thead>
                 <tbody>
                   {filteredSoList.length === 0 ? (
-                    <tr><td colSpan={5} className="empty">No confirmed Sales Orders with pending quantity found.</td></tr>
-                  ) : (
-                    filteredSoList.flatMap((so) => {
+                    <tr><td colSpan={6} className="empty">No confirmed Sales Orders with pending quantity found.</td></tr>
+                  ) : (() => { let soRowNum = 0; return filteredSoList.flatMap((so) => {
                       const lines = (so.lines ?? []) as Array<Record<string, unknown>>;
                       if (lines.length === 0) {
                         const fallbackCode = String(so.itemCode || so.itemName || so.description || so.docNo);
                         const fallbackDesc = String(so.description || so.itemName || '');
+                        soRowNum += 1;
+                        const sn = soRowNum;
                         return [
                           <tr key={String(so.id)}>
+                            <td className="num mut">{sn}</td>
                             <td className="cell-b">{String(so.docNo ?? '')}</td>
                             <td>{String(so.customer ?? so.customerCode ?? '—')}</td>
                             <td>
@@ -1360,8 +1365,11 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
                         const code = String(line.itemCode || line.itemName || line.description || line.internalPartNumber || so.docNo);
                         const rawDesc = String(line.description || line.itemName || '');
                         const desc = cleanModalText(rawDesc);
+                        soRowNum += 1;
+                        const sn = soRowNum;
                         return (
                           <tr key={`${so.id}-${lIdx}`}>
+                            <td className="num mut">{sn}</td>
                             <td className="cell-b">{String(so.docNo ?? '')}</td>
                             <td>{String(so.customer ?? so.customerCode ?? '—')}</td>
                             <td>
@@ -1375,8 +1383,8 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
                           </tr>
                         );
                       });
-                    })
-                  )}
+                    }); })()
+                  }
                 </tbody>
               </table>
             </div>

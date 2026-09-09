@@ -93,6 +93,13 @@ export function useReturnManagementLookups(
     retry: 1,
   });
 
+  const storesQuery = useQuery({
+    queryKey: ['master', 'stores'],
+    queryFn: ({ signal }) => masterService.getStores(signal),
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
+  });
+
   const partyOptions =
     config.partySource === 'suppliers'
       ? (suppliersQuery.data ?? []).map((party) => ({
@@ -122,11 +129,12 @@ export function useReturnManagementLookups(
       : `Unable to load ${config.title} master data.`;
 
   const refetch = () =>
-    Promise.all([itemsQuery.refetch(), locationsQuery.refetch()]);
+    Promise.all([itemsQuery.refetch(), locationsQuery.refetch(), storesQuery.refetch()]);
 
   return {
     items: itemsQuery.data ?? [],
     locations: locationsQuery.data ?? [],
+    stores: storesQuery.data ?? [],
     partyOptions,
     isLoading,
     isError,

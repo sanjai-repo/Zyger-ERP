@@ -160,6 +160,7 @@ export default function MainInventoryDashboardPage({ onNavigateToQC, onNavigateT
             <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--bg-muted, #f8fafc)', textAlign: 'left' }}>
+                  <th className="num" style={{ padding: '12px 16px' }}>S.No</th>
                   <th style={{ padding: '12px 16px' }}>Item Code</th>
                   <th style={{ padding: '12px 16px' }}>{t('itemName')}</th>
                   <th style={{ padding: '12px 16px' }}>{t('specification')}</th>
@@ -175,6 +176,7 @@ export default function MainInventoryDashboardPage({ onNavigateToQC, onNavigateT
 
                   return (
                     <tr key={idx} style={{ borderBottom: '1px solid var(--border-subtle, #f1f5f9)' }}>
+                      <td className="num mut" style={{ padding: '12px 16px' }}>{idx + 1}</td>
                       <td style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--p-color)' }}>
                         {row.itemCode || row.item || 'ITM-001'}
                       </td>

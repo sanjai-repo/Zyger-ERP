@@ -58,6 +58,7 @@ export default function ProductionSummaryReportModal({ open, onClose, reportType
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0', textAlign: 'left' }}>
+                  <th style={{ padding: '10px 12px' }}>S.No</th>
                   {Object.keys(data[0]).map((key) => (
                     <th key={key} style={{ padding: '10px 12px', textTransform: 'capitalize' }}>
                       {key.replace(/([A-Z])/g, ' $1')}
@@ -68,6 +69,7 @@ export default function ProductionSummaryReportModal({ open, onClose, reportType
               <tbody>
                 {data.map((row, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '10px 12px', color: '#94a3b8' }}>{i + 1}</td>
                     {Object.values(row).map((val, colIdx) => (
                       <td key={colIdx} style={{ padding: '10px 12px' }}>
                         {String(val ?? '-')}

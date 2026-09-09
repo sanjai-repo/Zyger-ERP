@@ -1676,6 +1676,7 @@ export default function ProductionBomScreen() {
               <table className="bom-table">
                 <thead>
                   <tr>
+                    <th className="num">S.No</th>
                     <th>BOM Code</th>
                     <th>Item Name</th>
                     <th>Item Type</th>
@@ -1688,12 +1689,13 @@ export default function ProductionBomScreen() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredBomList.map((bom) => {
+                  {filteredBomList.map((bom, bomIdx) => {
                     const itemObj = items.find((i) => i.code === bom.itemCode);
                     const itemName = itemObj?.name || itemObj?.description || bom.description || bom.itemCode || '—';
                     const typeBadge = formatTableItemType(bom.itemType, bom.itemCode);
                     return (
                       <tr key={bom.id} onClick={() => handleOpenDoc(bom.id!)}>
+                        <td className="num mut">{bomIdx + 1}</td>
                         <td style={{ fontWeight: 700, color: '#2563eb' }}>{bom.bomNumber || bom.docNo || `BOM-${bom.id}`}</td>
                         <td style={{ fontWeight: 600, color: '#0f172a' }}>{itemName}</td>
                         <td>
@@ -2045,6 +2047,7 @@ export default function ProductionBomScreen() {
                 <table className="tbl lines">
                   <thead>
                     <tr>
+                      <th className="num">S.No</th>
                       <th style={{ width: '80px' }}>Level</th>
                       <th style={{ width: '100px' }}>Item Type</th>
                       <th style={{ minWidth: '180px' }}>Item Code *</th>
@@ -2059,7 +2062,7 @@ export default function ProductionBomScreen() {
                   <tbody>
                     {lines.length === 0 ? (
                       <tr>
-                        <td colSpan={isEditing ? 9 : 8}>
+                        <td colSpan={isEditing ? 10 : 9}>
                           <div className="empty">
                             <span className="material-symbols-rounded">playlist_add</span> No components added yet. Click &quot;Add Component Line&quot;.
                           </div>
@@ -2072,6 +2075,7 @@ export default function ProductionBomScreen() {
                         const lineBadge = getComponentLineItemType(line);
                         return (
                           <tr key={index}>
+                            <td className="num mut">{index + 1}</td>
                             <td>
                               <input
                                 className="in"

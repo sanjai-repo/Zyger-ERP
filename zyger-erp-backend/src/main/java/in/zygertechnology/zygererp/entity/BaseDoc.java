@@ -39,6 +39,8 @@ public abstract class BaseDoc {
     String reopenedBy;
     Instant reopenedAt;
 
+    Instant postedAt;
+
     // ── Audit ──
     String createdBy;
     Instant createdAt;

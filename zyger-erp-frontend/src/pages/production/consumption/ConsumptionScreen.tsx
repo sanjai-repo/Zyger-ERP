@@ -47,7 +47,7 @@ export default function ConsumptionScreen() {
   const [actionBusyId, setActionBusyId] = useState<number | null>(null);
   const [tab, setTab] = useState<'list' | 'form'>('list');
   const [jobOptions, setJobOptions] = useState<JobOption[]>([]);
-  const [items, setItems] = useState<Array<{ code: string; name: string; uom?: string }>>([]);
+  const [items, setItems] = useState<Array<{ code: string; name: string; description?: string; uom?: string }>>([]);
 
   const fetchItems = useCallback(async () => {
     try {
@@ -96,7 +96,7 @@ export default function ConsumptionScreen() {
   const handleItemPick = (i: number, code: string) => {
     const item = items.find((it) => it.code === code);
     setLine(i, 'itemCode', code);
-    if (item) { setLine(i, 'itemDescription', item.name); setLine(i, 'uom', item.uom || ''); }
+    if (item) { setLine(i, 'itemDescription', item.description || item.name); setLine(i, 'uom', item.uom || ''); }
   };
 
   const addLine = () => setLines((ls) => [...ls, emptyLine()]);
@@ -180,14 +180,15 @@ export default function ConsumptionScreen() {
           <div className="panel-h" style={{ marginTop: 16 }}><h2>Consumed Material</h2></div>
           <div className="twrap">
             <table className="tbl">
-              <thead><tr><th>Item Code *</th><th>Description</th><th>Issued Qty</th><th>Consumed Qty *</th><th>Return</th><th>Scrap</th><th>UOM</th><th>Location</th><th>Batch</th><th></th></tr></thead>
+              <thead><tr><th>S.No</th><th>Item Code *</th><th>Description</th><th>Issued Qty</th><th>Consumed Qty *</th><th>Return</th><th>Scrap</th><th>UOM</th><th>Location</th><th>Batch</th><th></th></tr></thead>
               <tbody>
                 {lines.map((l, i) => (
                   <tr key={i}>
+                    <td className="num mut">{i + 1}</td>
                     <td>
                       <select className="in" value={l.itemCode} onChange={(e) => handleItemPick(i, e.target.value)}>
                         <option value="">Select...</option>
-                        {items.map((it) => <option key={it.code} value={it.code}>{it.code} - {it.name}</option>)}
+                        {items.map((it) => <option key={it.code} value={it.code}>{it.code} - {it.description || it.name}</option>)}
                       </select>
                     </td>
                     <td><input className="in" value={l.itemDescription ?? ''} onChange={(e) => setLine(i, 'itemDescription', e.target.value)} /></td>
@@ -237,10 +238,11 @@ export default function ConsumptionScreen() {
           <div className="twrap">
             {loading ? <div className="empty"><span className="material-symbols-rounded">hourglass_empty</span> Loading...</div> : (
               <table className="tbl">
-                <thead><tr><th>Consumption No</th><th>Date</th><th>Job Card</th><th>Work Order</th><th>Lines</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr><th className="num">S.No</th><th>Consumption No</th><th>Date</th><th>Job Card</th><th>Work Order</th><th>Lines</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
-                  {filtered.length === 0 ? <tr><td colSpan={7}><div className="empty"><span className="material-symbols-rounded">description</span> No consumptions.</div></td></tr> : filtered.map((r) => (
+                  {filtered.length === 0 ? <tr><td colSpan={8}><div className="empty"><span className="material-symbols-rounded">description</span> No consumptions.</div></td></tr> : filtered.map((r, idx) => (
                     <tr key={r.id}>
+                      <td className="num mut">{idx + 1}</td>
                       <td><b>{r.consumptionNo}</b></td>
                       <td>{String(r.consumptionDate ?? '').slice(0, 10)}</td>
                       <td>{r.jobCardNumber ?? '-'}</td>

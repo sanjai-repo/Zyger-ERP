@@ -89,12 +89,13 @@ export default function ProductionOrderScreen({ initialSearch }: { initialSearch
           <table className="tbl">
             <thead>
               <tr>
-                <th>Order No</th><th>Type</th><th>Part</th><th>Description</th><th>Planned</th><th>Completed</th><th>Due</th><th>Status</th><th>Actions</th>
+                <th className="num">S.No</th><th>Order No</th><th>Type</th><th>Part</th><th>Description</th><th>Planned</th><th>Completed</th><th>Due</th><th>Status</th><th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((r) => (
+              {filtered.map((r, idx) => (
                 <tr key={r.id}>
+                  <td className="num mut">{idx + 1}</td>
                   <td><b>{r.workOrderNumber ?? r.woNumber}</b></td>
                   <td>{r.orderType ?? '-'}</td>
                   <td>{r.partCode ?? '-'}</td>

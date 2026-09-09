@@ -242,6 +242,7 @@ export default function RouteSheetPage() {
                 <table className="tbl">
                   <thead>
                     <tr>
+                      <th className="num">S.No</th>
                       <th>Resource Code</th>
                       <th>Resource Name</th>
                       <th>Type</th>
@@ -256,8 +257,9 @@ export default function RouteSheetPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredUtilRows.map((r) => (
+                    {filteredUtilRows.map((r, idx) => (
                       <tr key={r.resourceId}>
+                        <td className="num mut">{idx + 1}</td>
                         <td>{r.resourceCode}</td>
                         <td style={{ fontWeight: 600 }}>{r.resourceName}</td>
                         <td>
@@ -281,7 +283,7 @@ export default function RouteSheetPage() {
                     ))}
                     {filteredUtilRows.length === 0 && (
                       <tr>
-                        <td colSpan={11} className="empty">
+                        <td colSpan={12} className="empty">
                           No resource utilization records found.
                         </td>
                       </tr>
@@ -372,6 +374,7 @@ export default function RouteSheetPage() {
                 <table className="tbl">
                   <thead>
                     <tr>
+                      <th className="num">S.No</th>
                       <th>Route No</th>
                       <th>Item</th>
                       <th>Rev</th>
@@ -388,6 +391,7 @@ export default function RouteSheetPage() {
                   <tbody>
                     {filteredOutsourceRows.map((r, i) => (
                       <tr key={i}>
+                        <td className="num mut">{i + 1}</td>
                         <td style={{ fontWeight: 600 }}>{r.routeNumber}</td>
                         <td>{r.itemCode}</td>
                         <td>{r.itemRevision}</td>
@@ -422,7 +426,7 @@ export default function RouteSheetPage() {
                     ))}
                     {filteredOutsourceRows.length === 0 && (
                       <tr>
-                        <td colSpan={11} className="empty">
+                        <td colSpan={12} className="empty">
                           No outsource operations found.
                         </td>
                       </tr>

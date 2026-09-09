@@ -116,6 +116,7 @@ export default function NotificationLogPage() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="num">S.No</th>
                   <th style={{ width: 40 }}></th>
                   <th>Channel</th>
                   <th>Subject</th>
@@ -127,7 +128,7 @@ export default function NotificationLogPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => {
+                {filtered.map((r, idx) => {
                   const isExpanded = expandedId === r.id;
                   const isUnread = !r.readAt && r.status !== 'READ';
                   return (
@@ -137,6 +138,7 @@ export default function NotificationLogPage() {
                         style={{ cursor: 'pointer', background: isUnread ? '#f8fafc' : undefined, fontWeight: isUnread ? 600 : undefined }}
                         onClick={() => { setExpandedId(isExpanded ? null : r.id); if (isUnread) markRead(r.id); }}
                       >
+                        <td className="num mut">{idx + 1}</td>
                         <td>
                           <span className="material-symbols-rounded" style={{ fontSize: 18, color: r.status === 'FAILED' ? '#dc2626' : '#2563eb' }}>
                             {CHANNEL_ICONS[r.channel] ?? 'notifications'}
@@ -152,7 +154,7 @@ export default function NotificationLogPage() {
                       </tr>
                       {isExpanded && (
                         <tr key={`${r.id}-detail`}>
-                          <td colSpan={8} style={{ padding: '12px 20px', background: '#f9fafb', borderTop: 'none' }}>
+                          <td colSpan={9} style={{ padding: '12px 20px', background: '#f9fafb', borderTop: 'none' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                               <div>
                                 <strong style={{ fontSize: 12, color: '#6b7280' }}>Subject</strong>

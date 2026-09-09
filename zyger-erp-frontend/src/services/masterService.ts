@@ -143,7 +143,17 @@ export const masterService = {
 
     async getCustomers(
     signal?: AbortSignal
-  ): Promise<Array<{ code: string; name: string }>> {
+  ): Promise<Array<{
+    code: string;
+    name: string;
+    address?: string;
+    billingAddress?: string;
+    shippingAddress?: string;
+    gstin?: string;
+    contactPerson?: string;
+    phone?: string;
+    mobile?: string;
+  }>> {
     const response = await apiClient.get('/master/customers', {
       params: {
         active: true,
@@ -155,26 +165,6 @@ export const masterService = {
     });
 
     return unwrap(response.data);
-  },
-
-    async getPostedGrns(
-    signal?: AbortSignal
-  ): Promise<Array<{ docNo: string; date?: string; party?: string }>> {
-    const response = await apiClient.get<any>('/inventory/store-receipt/grn', {
-      params: {
-        status: 'POSTED',
-        page: 0,
-        size: 200,
-        sort: 'date,desc',
-      },
-      signal,
-    });
-
-    return (response.data.content ?? []).map((row: any) => ({
-      docNo: row.docNo,
-      date: row.date,
-      party: row.party,
-    }));
   },
 
   async getStores(signal?: AbortSignal): Promise<Array<{ id?: number; code: string; name: string }>> {

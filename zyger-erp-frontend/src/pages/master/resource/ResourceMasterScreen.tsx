@@ -169,10 +169,11 @@ export default function ResourceMasterScreen() {
         <div className="panel-h"><h2>Resources ({rows.length})</h2></div>
         {loading ? <div className="empty">Loading...</div> : (
           <table className="tbl">
-            <thead><tr><th>Code</th><th>Name</th><th>Type</th><th>Capacity</th><th>UOM</th><th>Dept</th><th>Rate</th><th>Status</th><th>Actions</th></tr></thead>
+            <thead><tr><th className="num">S.No</th><th>Code</th><th>Name</th><th>Type</th><th>Capacity</th><th>UOM</th><th>Dept</th><th>Rate</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
-              {rows.map((r) => (
+              {rows.map((r, idx) => (
                 <tr key={r.id}>
+                  <td className="num mut">{idx + 1}</td>
                   <td>{r.resourceCode}</td><td>{r.resourceName}</td>
                   <td><StatusBadge status={r.resourceType} /></td>
                   <td>{r.capacity}</td><td>{r.capacityUom}</td>
@@ -194,7 +195,7 @@ export default function ResourceMasterScreen() {
                   </td>
                 </tr>
               ))}
-              {rows.length === 0 && <tr><td colSpan={9} className="empty">No resources found</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={10} className="empty">No resources found</td></tr>}
             </tbody>
           </table>
         )}

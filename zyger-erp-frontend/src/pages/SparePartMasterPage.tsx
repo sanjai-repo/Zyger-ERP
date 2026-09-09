@@ -47,13 +47,13 @@ export default function SparePartMasterPage() {
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ borderBottom: '2px solid #313244', textAlign: 'left' }}>
-            <th style={{ padding: 8 }}>Code</th><th style={{ padding: 8 }}>Item</th><th style={{ padding: 8 }}>Name</th><th style={{ padding: 8 }}>UOM</th><th style={{ padding: 8 }}>Unit Cost</th>
+            <th className="num" style={{ padding: 8 }}>S.No</th><th style={{ padding: 8 }}>Code</th><th style={{ padding: 8 }}>Item</th><th style={{ padding: 8 }}>Name</th><th style={{ padding: 8 }}>UOM</th><th style={{ padding: 8 }}>Unit Cost</th>
           </tr>
         </thead>
         <tbody>
-          {items.map(s => (
+          {items.map((s, idx) => (
             <tr key={s.id} style={{ borderBottom: '1px solid #313244' }}>
-              <td style={{ padding: 8 }}>{s.code}</td><td style={{ padding: 8 }}>{s.itemCode || '-'}</td><td style={{ padding: 8 }}>{s.name}</td><td style={{ padding: 8 }}>{s.uom}</td><td style={{ padding: 8 }}>{s.unitCost}</td>
+              <td className="num mut" style={{ padding: 8 }}>{idx + 1}</td><td style={{ padding: 8 }}>{s.code}</td><td style={{ padding: 8 }}>{s.itemCode || '-'}</td><td style={{ padding: 8 }}>{s.name}</td><td style={{ padding: 8 }}>{s.uom}</td><td style={{ padding: 8 }}>{s.unitCost}</td>
             </tr>
           ))}
         </tbody>
