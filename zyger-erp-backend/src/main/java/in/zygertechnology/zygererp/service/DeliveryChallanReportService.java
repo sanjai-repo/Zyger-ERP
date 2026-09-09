@@ -226,4 +226,101 @@ public class DeliveryChallanReportService {
         }
         return report;
     }
+
+    /**
+     * DC Module FRS v1.0 §9 — DC-wise Item Movement Report: line-level dispatched/received
+     * movement across the selected DC types, for audit & reconciliation of dispatched vs
+     * received quantities. Filters: dcType (jo-dc|general-dc|transfer-dc|ALL), date range,
+     * party, itemCode, status.
+     */
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getDcWiseItemMovement(String dcType, String startDate, String endDate, String party, String itemCode, String status) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+
+        if (dcType == null || dcType.isBlank() || "ALL".equalsIgnoreCase(dcType) || "jo-dc".equalsIgnoreCase(dcType)) {
+            StringBuilder hql = new StringBuilder("select d from JoDc d where d.deleted = false ");
+            Map<String, Object> params = new HashMap<>();
+            addCommonFilters(hql, params, startDate, endDate, party, status);
+            var joQuery = em.createQuery(hql.toString(), JoDc.class);
+            params.forEach(joQuery::setParameter);
+            List<JoDc> list = joQuery.getResultList();
+            for (JoDc d : list) {
+                boolean receiving = "Receiving after Job Work".equalsIgnoreCase(d.getChallanPurpose());
+                for (var l : d.getLines()) {
+                    addMovementRow(rows, "JO DC", "jo-dc", d.getDocNo(), d.getDocDate(), d.getParty(), d.getSourceLocation(),
+                            receiving ? d.getParty() : "Goods with Job Worker",
+                            receiving ? "RECEIPT" : "DISPATCH", l.getItemCode(), l.getItemDesc(), l.getBatchNo(),
+                            l.getUom(), l.getQty(), l.getRate(), l.getAmount(), d.getStatus(), itemCode, d.getChallanPurpose());
+                }
+            }
+        }
+
+        if (dcType == null || dcType.isBlank() || "ALL".equalsIgnoreCase(dcType) || "general-dc".equalsIgnoreCase(dcType)) {
+            StringBuilder hql = new StringBuilder("select d from GeneralDc d where d.deleted = false ");
+            Map<String, Object> params = new HashMap<>();
+            addCommonFilters(hql, params, startDate, endDate, party, status);
+            var genQuery = em.createQuery(hql.toString(), GeneralDc.class);
+            params.forEach(genQuery::setParameter);
+            List<GeneralDc> list = genQuery.getResultList();
+            for (GeneralDc d : list) {
+                for (var l : d.getLines()) {
+                    addMovementRow(rows, "General DC", "general-dc", d.getDocNo(), d.getDocDate(), d.getParty(), d.getSourceLocation(),
+                            d.getParty(), "DISPATCH", l.getItemCode(), l.getItemDesc(), l.getBatchNo(),
+                            l.getUom(), l.getQty(), l.getRate(), l.getAmount(), d.getStatus(), itemCode, d.getDcAgainst());
+                }
+            }
+        }
+
+        if (dcType == null || dcType.isBlank() || "ALL".equalsIgnoreCase(dcType) || "transfer-dc".equalsIgnoreCase(dcType)) {
+            StringBuilder hql = new StringBuilder("select d from TransferDc d where d.deleted = false ");
+            Map<String, Object> params = new HashMap<>();
+            addCommonFilters(hql, params, startDate, endDate, party, status);
+            var trQuery = em.createQuery(hql.toString(), TransferDc.class);
+            params.forEach(trQuery::setParameter);
+            List<TransferDc> list = trQuery.getResultList();
+            for (TransferDc d : list) {
+                for (var l : d.getLines()) {
+                    addMovementRow(rows, "Transfer DC", "transfer-dc", d.getDocNo(), d.getDocDate(), d.getDestinationLocation(),
+                            d.getSourceLocation(), d.getDestinationLocation(),
+                            Boolean.TRUE.equals(d.getReceiptConfirmed()) ? "TRANSFER_RECEIVED" : "TRANSFER",
+                            l.getItemCode(), l.getItemDesc(), l.getBatchNo(),
+                            l.getUom(), l.getQty(), l.getRate(), null, d.getStatus(), itemCode, d.getTransferType());
+                }
+            }
+        }
+
+        rows.sort((a, b) -> {
+            int c = String.valueOf(b.get("docDate")).compareTo(String.valueOf(a.get("docDate")));
+            return c != 0 ? c : String.valueOf(a.get("docNo")).compareTo(String.valueOf(b.get("docNo")));
+        });
+        return rows;
+    }
+
+    private void addMovementRow(List<Map<String, Object>> rows, String docType, String typeKey, String docNo, LocalDate docDate,
+                                String party, String fromLocation, String toLocation, String movement,
+                                String itemCode, String itemDesc, String batchNo, String uom,
+                                java.math.BigDecimal qty, java.math.BigDecimal rate, java.math.BigDecimal amount,
+                                String status, String itemFilter, String purpose) {
+        if (itemFilter != null && !itemFilter.isBlank()
+                && (itemCode == null || !itemCode.toLowerCase().contains(itemFilter.toLowerCase()))) return;
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("docType", docType);
+        r.put("typeKey", typeKey);
+        r.put("docNo", docNo);
+        r.put("docDate", docDate != null ? docDate.toString() : "");
+        r.put("party", party);
+        r.put("fromLocation", fromLocation);
+        r.put("toLocation", toLocation);
+        r.put("movement", movement);
+        r.put("itemCode", itemCode);
+        r.put("itemDesc", itemDesc);
+        r.put("batchNo", batchNo);
+        r.put("uom", uom);
+        r.put("qty", qty != null ? qty.doubleValue() : 0);
+        r.put("rate", rate != null ? rate.doubleValue() : null);
+        r.put("amount", amount != null ? amount.doubleValue() : null);
+        r.put("purpose", purpose);
+        r.put("status", status);
+        rows.add(r);
+    }
 }

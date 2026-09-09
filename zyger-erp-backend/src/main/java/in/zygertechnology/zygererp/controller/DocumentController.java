@@ -211,6 +211,17 @@ public class DocumentController {
         return dcReports.getStockInTransitReport();
     }
 
+    @GetMapping("/delivery-challan/reports/dc-wise-item-movement")
+    List<Map<String, Object>> getDcWiseItemMovement(
+            @RequestParam(required = false) String dcType,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(required = false) String party,
+            @RequestParam(required = false) String itemCode,
+            @RequestParam(required = false) String status) {
+        return dcReports.getDcWiseItemMovement(dcType, startDate, endDate, party, itemCode, status);
+    }
+
     /** Printable PDF of a GRN / Store Receipt (inline for print, attachment when download=true). */
     @GetMapping({"/store-receipt/{type}/{id}/print"})
     ResponseEntity<byte[]> printGrn(@PathVariable String type, @PathVariable Long id,

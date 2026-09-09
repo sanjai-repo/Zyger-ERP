@@ -4,7 +4,7 @@ import { getApiErrorMessage } from '../../../../utils/apiError';
 
 export default function DeliveryChallanReports() {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<'register' | 'ageing' | 'pending-invoice' | 'stock-in-transit'>('register');
+  const [activeTab, setActiveTab] = useState<'register' | 'ageing' | 'pending-invoice' | 'stock-in-transit' | 'item-movement'>('register');
   const [loading, setLoading] = useState<boolean>(false);
 
   // DC Register state
@@ -19,6 +19,14 @@ export default function DeliveryChallanReports() {
   const [ageingRows, setAgeingRows] = useState<any[]>([]);
   const [pendingInvoiceRows, setPendingInvoiceRows] = useState<any[]>([]);
   const [stockInTransitRows, setStockInTransitRows] = useState<any[]>([]);
+
+  // Item-wise Movement state
+  const [itemMovStartDate, setItemMovStartDate] = useState<string>('');
+  const [itemMovEndDate, setItemMovEndDate] = useState<string>('');
+  const [itemMovParty, setItemMovParty] = useState<string>('');
+  const [itemMovItemCode, setItemMovItemCode] = useState<string>('');
+  const [itemMovStatus, setItemMovStatus] = useState<string>('ALL');
+  const [itemMovementRows, setItemMovementRows] = useState<any[]>([]);
 
   const fetchRegister = async () => {
     setLoading(true);
@@ -83,11 +91,33 @@ export default function DeliveryChallanReports() {
     }
   };
 
+  const fetchItemMovement = async () => {
+    setLoading(true);
+    try {
+      const q = new URLSearchParams();
+      q.set('dcType', 'ALL');
+      if (itemMovStartDate) q.set('startDate', itemMovStartDate);
+      if (itemMovEndDate) q.set('endDate', itemMovEndDate);
+      if (itemMovParty) q.set('party', itemMovParty);
+      if (itemMovItemCode) q.set('itemCode', itemMovItemCode);
+      if (itemMovStatus !== 'ALL') q.set('status', itemMovStatus);
+      const res = await fetch(`/api/inventory/delivery-challan/reports/dc-wise-item-movement?${q.toString()}`);
+      if (!res.ok) throw new Error('Failed to fetch Item Movement report');
+      const data = await res.json();
+      setItemMovementRows(data);
+    } catch (err) {
+      toast(getApiErrorMessage(err, 'Failed to load Item-wise Movement Report'), 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'register') fetchRegister();
     else if (activeTab === 'ageing') fetchAgeing();
     else if (activeTab === 'pending-invoice') fetchPendingInvoice();
     else if (activeTab === 'stock-in-transit') fetchStockInTransit();
+    else if (activeTab === 'item-movement') fetchItemMovement();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
@@ -148,6 +178,14 @@ export default function DeliveryChallanReports() {
         >
           <span className="material-symbols-rounded">local_shipping</span>
           Stock-in-Transit
+        </button>
+        <button
+          type="button"
+          className={`btn ${activeTab === 'item-movement' ? 'btn-p' : ''}`}
+          onClick={() => setActiveTab('item-movement')}
+        >
+          <span className="material-symbols-rounded">swap_vert</span>
+          DC-wise Item Movement
         </button>
       </div>
 
@@ -403,6 +441,101 @@ export default function DeliveryChallanReports() {
                           Confirm Receipt
                         </button>
                       </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'item-movement' && (
+        <div className="panel">
+          <div className="fgrid" style={{ marginBottom: '16px' }}>
+            <label className="fld">
+              <span>From Date</span>
+              <input type="date" className="in" value={itemMovStartDate} onChange={(e) => setItemMovStartDate(e.target.value)} />
+            </label>
+
+            <label className="fld">
+              <span>To Date</span>
+              <input type="date" className="in" value={itemMovEndDate} onChange={(e) => setItemMovEndDate(e.target.value)} />
+            </label>
+
+            <label className="fld">
+              <span>Party / Location Search</span>
+              <input className="in" placeholder="Search party or branch" value={itemMovParty} onChange={(e) => setItemMovParty(e.target.value)} />
+            </label>
+
+            <label className="fld">
+              <span>Item Code</span>
+              <input className="in" placeholder="e.g. RM-200" value={itemMovItemCode} onChange={(e) => setItemMovItemCode(e.target.value)} />
+            </label>
+
+            <label className="fld">
+              <span>Status</span>
+              <select className="in" value={itemMovStatus} onChange={(e) => setItemMovStatus(e.target.value)}>
+                <option value="ALL">All Statuses</option>
+                <option value="POSTED">POSTED</option>
+                <option value="CONFIRMED">CONFIRMED</option>
+                <option value="RECEIVED">RECEIVED</option>
+                <option value="CANCELLED">CANCELLED</option>
+              </select>
+            </label>
+
+            <div className="fld" style={{ display: 'flex', alignItems: 'flex-end' }}>
+              <button type="button" className="btn btn-p" onClick={fetchItemMovement} disabled={loading}>
+                <span className="material-symbols-rounded">search</span>
+                Apply Filters
+              </button>
+            </div>
+          </div>
+
+          <div className="twrap">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>DC Type</th>
+                  <th>DC No</th>
+                  <th>Date</th>
+                  <th>Movement</th>
+                  <th>Item Code</th>
+                  <th>Description</th>
+                  <th>Batch</th>
+                  <th>From</th>
+                  <th>To</th>
+                  <th>Qty</th>
+                  <th>UOM</th>
+                  <th>Purpose</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <td colSpan={13} style={{ textAlign: 'center', padding: '24px' }}>Loading DC-wise Item Movement Report...</td>
+                  </tr>
+                ) : itemMovementRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={13} style={{ textAlign: 'center', padding: '24px' }}>No movements found matching the filters</td>
+                  </tr>
+                ) : (
+                  itemMovementRows.map((r, i) => (
+                    <tr key={i}>
+                      <td><span className="badge">{r.docType}</span></td>
+                      <td><b>{r.docNo}</b></td>
+                      <td>{r.docDate}</td>
+                      <td><span className={`badge ${r.movement?.includes('SEND') || r.movement === 'DISPATCH' || r.movement === 'TRANSFER' ? 'warn' : 'success'}`}>{r.movement}</span></td>
+                      <td>{r.itemCode}</td>
+                      <td>{r.itemDesc || '-'}</td>
+                      <td>{r.batchNo || '-'}</td>
+                      <td>{r.fromLocation || '-'}</td>
+                      <td>{r.toLocation || '-'}</td>
+                      <td className="num">{r.qty}</td>
+                      <td>{r.uom || 'PCS'}</td>
+                      <td>{r.purpose || '-'}</td>
+                      <td><span className="badge">{r.status}</span></td>
                     </tr>
                   ))
                 )}

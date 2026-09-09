@@ -440,6 +440,12 @@ public class DocumentFacade {
     private static final Set<String> DIRECT_POST_INWARD_KEYS = Set.of(
             "po-inward", "lo-inward", "jo-inward", "general-inward", "inward");
 
+    // DC Module FRS v1.0 §6/§7: a Delivery Challan is saved straight to Confirmed and posts its
+    // stock movement on the same "Save & Post Stock" action, without a separate Submit/Approve
+    // step. So the three DC types are exempt from the generic APPROVED-before-post guard.
+    private static final Set<String> DIRECT_POST_DC_KEYS = Set.of(
+            "jo-dc", "general-dc", "transfer-dc");
+
     private static final Set<String> REQUIRED_LINES_KEYS = Set.of(
             // Inventory (Effect IN/OUT/ADJUST)
             "po-inward", "lo-inward", "jo-inward", "general-inward", "return-inward", "grn",
@@ -580,6 +586,7 @@ public class DocumentFacade {
 
         validateLineQtyAndPresence(key, e, body);
         validateDcStockAvailability(key, e);
+        validateGeneralDcGstin(key, e);
         validateReturnEligibility(key, e);
         validateReceivedAgainstIssue(key, e);
         validateBatchHeat(key, e);
@@ -821,6 +828,7 @@ public class DocumentFacade {
         old.setDocDate(parse(body.get("date")));
         old.setUpdatedAt(Instant.now());
         old.setUpdatedBy(user);
+        validateGeneralDcGstin(key, old);
         attach(old);
         return old;
     }
@@ -908,6 +916,7 @@ public class DocumentFacade {
             case "cancel" -> "CANCELLED";
             case "post" -> "POSTED";
             case "close" -> "CLOSED";
+            case "confirm-receipt" -> "RECEIVED";
             default -> action;
         };
 
@@ -959,7 +968,7 @@ public class DocumentFacade {
                     }
                 }
                 case "post" -> {
-                    if (!DIRECT_POST_INWARD_KEYS.contains(key)) {
+                    if (!DIRECT_POST_INWARD_KEYS.contains(key) && !DIRECT_POST_DC_KEYS.contains(key)) {
                         requireStatus(e, "APPROVED");
                     }
                     if ("sales-dc".equals(key)) enforceFinalInspectionGate(e, options);
@@ -1060,10 +1069,20 @@ public class DocumentFacade {
 
     private void post(String key, DocEntity e, boolean allowNegativeOverride) {
         DocTypes.DocDef def = DocTypes.get(key);
+        // DC Module FRS v1.0 §7: availability is re-validated at posting time, not only on entry,
+        // so a draft posted later cannot exceed the stock on hand at the movement location.
+        if (Set.of("jo-dc", "general-dc", "transfer-dc").contains(key)) {
+            validateDcStockAvailability(key, e);
+        }
         List<LedgerLine> lines = collectLines(def, e);
         String txType = def.tx().isEmpty() ? key.toUpperCase() : def.tx();
         String stockStatus = determineStockStatus(key, e);
         boolean skipStockEffect = "grn".equals(key) && sourceAlreadyPostedStock(e);
+
+        boolean transferInTransit = "transfer-dc".equals(key)
+                && Boolean.TRUE.equals(headerBool(e, "inTransitTracking"));
+        boolean joDcReceiving = "jo-dc".equals(key)
+                && "Receiving after Job Work".equalsIgnoreCase(headerStr(e, "challanPurpose"));
 
         for (LedgerLine l : lines) {
             requireActiveStore(l.loc());
@@ -1075,9 +1094,37 @@ public class DocumentFacade {
                         e.getDocNo(), key, txType, l.item(), l.loc(), l.batch(), l.heat(),
                         BigDecimal.valueOf(l.qty()), e.getDocDate(), e.getCreatedBy(),
                         allowNegativeOverride);
-                if (destLoc != null && !destLoc.isBlank()) {
+                if (transferInTransit) {
+                    // FRS §3.3 E: with In-Transit Tracking ON the goods rest in the In-Transit
+                    // bucket and only reach the destination on "Confirm Receipt at Destination".
+                    stockService.recordStockIn(
+                            e.getDocNo(), key, "TRANSFER_INTRANSIT_IN", l.item(), "In-Transit", l.batch(), l.heat(),
+                            BigDecimal.valueOf(l.qty()), e.getDocDate(), e.getCreatedBy(), "FREE");
+                } else if (destLoc != null && !destLoc.isBlank()) {
                     stockService.recordStockIn(
                             e.getDocNo(), key, "TRANSFER_IN", l.item(), destLoc, l.batch(), l.heat(),
+                            BigDecimal.valueOf(l.qty()), e.getDocDate(), e.getCreatedBy(), "FREE");
+                }
+            } else if ("jo-dc".equals(key)) {
+                if (joDcReceiving) {
+                    // FRS §3.1 E: receiving pulls from the "Goods with Job Worker" bucket back
+                    // into the From Location instead of deducting the main store again.
+                    stockService.recordStockOut(
+                            e.getDocNo(), key, "JO_DC_RECEIPT", l.item(), "Goods with Job Worker", l.batch(), l.heat(),
+                            BigDecimal.valueOf(l.qty()), e.getDocDate(), e.getCreatedBy(),
+                            allowNegativeOverride);
+                    stockService.recordStockIn(
+                            e.getDocNo(), key, "JO_DC_RECEIPT_IN", l.item(), l.loc(), l.batch(), l.heat(),
+                            BigDecimal.valueOf(l.qty()), e.getDocDate(), e.getCreatedBy(), "FREE");
+                } else {
+                    // FRS §3.1 E: sending deducts From Location and funds the "Goods with Job Worker"
+                    // virtual bucket so a later receiving DC can validate against it.
+                    stockService.recordStockOut(
+                            e.getDocNo(), key, txType, l.item(), l.loc(), l.batch(), l.heat(),
+                            BigDecimal.valueOf(l.qty()), e.getDocDate(), e.getCreatedBy(),
+                            allowNegativeOverride);
+                    stockService.recordStockIn(
+                            e.getDocNo(), key, "JO_DC_SEND", l.item(), "Goods with Job Worker", l.batch(), l.heat(),
                             BigDecimal.valueOf(l.qty()), e.getDocDate(), e.getCreatedBy(), "FREE");
                 }
             } else switch (def.effect()) {
@@ -1101,6 +1148,68 @@ public class DocumentFacade {
                 default -> { }
             }
         }
+        if (joDcReceiving && e instanceof JoDc joDc) {
+            updateJobOrderReceiptStatus(joDc, e.getCreatedBy());
+        }
+    }
+
+    /**
+     * DC Module FRS v1.0 §3.1 E: when a Receiving-after-Job-Work JO DC is posted, the linked
+     * Job Order status advances to RECEIVED (all quantities in) or PARTIALLY_RECEIVED (some
+     * quantities still pending). This is a best-effort bookkeeping update keyed to the Job Order
+     * number the DC carries; if the Job Order cannot be found or is already terminal, nothing
+     * changes.
+     */
+    private void updateJobOrderReceiptStatus(JoDc joDc, String user) {
+        String joNo = joDc.getJobOrderNo() != null && !joDc.getJobOrderNo().isBlank()
+                ? joDc.getJobOrderNo() : joDc.getLinkedDocumentNo();
+        if (joNo == null || joNo.isBlank()) return;
+
+        JobOrder jo = em.createQuery("select j from JobOrder j where j.docNo = :no", JobOrder.class)
+                .setParameter("no", joNo)
+                .getResultStream().findFirst().orElse(null);
+        if (jo == null || jo.getLines() == null || jo.getLines().isEmpty()) return;
+        if ("CANCELLED".equalsIgnoreCase(jo.getStatus())) return;
+
+        Map<String, BigDecimal> received = new HashMap<>();
+        em.createQuery("select l.itemCode, coalesce(sum(l.producedQty), 0) from JoInwardLine l where l.doc.jobOrderNo = :no group by l.itemCode", Object[].class)
+                .setParameter("no", joNo).getResultList()
+                .forEach(r -> received.merge(keyOf(r[0]), (BigDecimal) r[1], BigDecimal::add));
+        em.createQuery("select l.itemCode, coalesce(sum(l.receivedQty), 0) from LoInwardLine l where l.doc.jobOrderNo = :no group by l.itemCode", Object[].class)
+                .setParameter("no", joNo).getResultList()
+                .forEach(r -> received.merge(keyOf(r[0]), (BigDecimal) r[1], BigDecimal::add));
+        for (LineEntity line : joDc.getLines()) {
+            if (line.getItemCode() != null && line.getQty() != null) {
+                received.merge(keyOf(line.getItemCode()), line.getQty(), BigDecimal::add);
+            }
+        }
+
+        boolean allReceived = true;
+        boolean anyReceived = false;
+        for (JobOrderItem item : jo.getLines()) {
+            BigDecimal ordered = item.getOrderQty() == null ? BigDecimal.ZERO : item.getOrderQty();
+            BigDecimal got = received.getOrDefault(keyOf(item.getItemCode()), BigDecimal.ZERO);
+            if (got.compareTo(BigDecimal.ZERO) > 0) anyReceived = true;
+            if (ordered.compareTo(BigDecimal.ZERO) > 0 && got.compareTo(ordered) < 0) allReceived = false;
+        }
+
+        String target = allReceived ? "RECEIVED" : (anyReceived ? "PARTIALLY_RECEIVED" : null);
+        if (target != null && !target.equalsIgnoreCase(jo.getStatus())) {
+            jo.setStatus(target);
+            jo.setUpdatedBy(user);
+            jo.setUpdatedAt(Instant.now());
+        }
+    }
+
+    private static String keyOf(Object v) {
+        return v == null ? "" : String.valueOf(v);
+    }
+
+    private Boolean headerBool(DocEntity e, String field) {
+        Object v = headerVal(e, field);
+        if (v instanceof Boolean b) return b;
+        if (v == null) return null;
+        return "true".equalsIgnoreCase(String.valueOf(v));
     }
 
     /**
@@ -1740,6 +1849,18 @@ public class DocumentFacade {
     private void validatePoInward(String key, DocEntity e) {
         if (!"po-inward".equals(key)) return;
         // Direct inventory update enabled — business rule validation bypassed as requested.
+    }
+
+    /**
+     * DC Module FRS v1.0 §3.2 B#5: GSTIN is mandatory on a General DC whenever Tax Applicable
+     * is checked. Enforced on create and update.
+     */
+    private void validateGeneralDcGstin(String key, DocEntity e) {
+        if (!"general-dc".equals(key) || !(e instanceof GeneralDc g)) return;
+        if (Boolean.TRUE.equals(g.getTaxApplicable())
+                && (g.getGstin() == null || g.getGstin().isBlank())) {
+            throw new IllegalArgumentException("GSTIN is mandatory when Tax Applicable is checked on a General DC");
+        }
     }
 
     private void validateDcStockAvailability(String key, DocEntity e) {

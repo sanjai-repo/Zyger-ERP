@@ -152,8 +152,8 @@ public class StockService {
         String heat = heatNo != null ? heatNo : "";
         BigDecimal qty = inQty;
 
-        if (ledger.existsByDocNoAndDocType(docNo, docType)) {
-            log.warn("Duplicate stock-in blocked: docNo={}, docType={}", docNo, docType);
+        if (ledger.existsByDocNoAndDocTypeAndTxType(docNo, docType, txType)) {
+            log.warn("Duplicate stock-in blocked: docNo={}, docType={}, txType={}", docNo, docType, txType);
             return;
         }
 
@@ -186,8 +186,8 @@ public class StockService {
         BigDecimal qty = outQty != null ? outQty : BigDecimal.ZERO;
         if (qty.compareTo(BigDecimal.ZERO) <= 0) return;
 
-        if (ledger.existsByDocNoAndDocType(docNo, docType)) {
-            log.warn("Duplicate stock-out blocked: docNo={}, docType={}", docNo, docType);
+        if (ledger.existsByDocNoAndDocTypeAndTxType(docNo, docType, txType)) {
+            log.warn("Duplicate stock-out blocked: docNo={}, docType={}, txType={}", docNo, docType, txType);
             return;
         }
 

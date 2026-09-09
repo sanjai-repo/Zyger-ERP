@@ -12,6 +12,11 @@ import type {
   DeliveryChallanDto,
   DeliveryChallanTypeConfig,
 } from '../../../../types/inventory/deliveryChallan.types';
+import type {
+  StockAvailabilityPair,
+  StockAvailabilityResult,
+} from '../../../../types/inventory/stockIssue.types';
+import apiClient from '../../../../api/axiosClient';
 import { getApiErrorMessage } from '../../../../utils/apiError';
 import { filterPurchaseRelevantItems } from '../../../../utils/itemClassification';
 import { lookupDocumentByNumber } from '../../../../utils/documentLookup';
@@ -73,6 +78,10 @@ export default function DeliveryChallanForm({
   );
   const [showPrintPreview, setShowPrintPreview] = useState<boolean>(false);
 
+  const [availabilityMap, setAvailabilityMap] = useState<Record<string, string>>(
+    {}
+  );
+
   const validationBoxRef = useRef<HTMLDivElement | null>(null);
   const initializedFor = useRef<string | null>(null);
 
@@ -133,6 +142,23 @@ export default function DeliveryChallanForm({
   const status = currentDocument?.status ?? 'DRAFT';
   const editable = !viewOnly && (status === 'DRAFT' || status === 'REJECTED');
 
+  useEffect(() => {
+    if (documentId || !editable) return;
+    if (!locations.length) return;
+    setForm((previous) => {
+      if (previous.sourceLocation) return previous;
+      const defaultLocation = locations[0].code;
+      return {
+        ...previous,
+        sourceLocation: defaultLocation,
+        lines: previous.lines.map((line) => ({
+          ...line,
+          location: line.location || defaultLocation,
+        })),
+      };
+    });
+  }, [locations, documentId, editable]);
+
   const docNo =
     currentDocument?.docNo ||
     nextNumberQuery.data?.nextNumber ||
@@ -171,6 +197,65 @@ export default function DeliveryChallanForm({
       }),
     }));
   }, [items, itemsMap]);
+
+  const availabilityKey = (itemCode: string, location: string) =>
+    `${itemCode}||${location}`;
+
+  const availabilityPairs: StockAvailabilityPair[] = useMemo(
+    () =>
+      form.lines
+        .filter((line) => line.itemCode && line.location)
+        .map((line) => ({
+          itemCode: line.itemCode,
+          location: line.location,
+        })),
+    [form.lines]
+  );
+
+  useEffect(() => {
+    if (availabilityPairs.length === 0) {
+      setAvailabilityMap({});
+      return;
+    }
+
+    let active = true;
+    const controller = new AbortController();
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await apiClient.post<
+          StockAvailabilityResult[] | { results: StockAvailabilityResult[] }
+        >(
+          '/inventory/stock/availability/check',
+          { lines: availabilityPairs },
+          { signal: controller.signal }
+        );
+
+        if (!active) return;
+
+        const data = res.data;
+        const results = Array.isArray(data) ? data : data.results ?? [];
+        const nextMap: Record<string, string> = {};
+
+        results.forEach((result) => {
+          nextMap[availabilityKey(result.itemCode, result.location)] =
+            String(result.availableQty ?? 0);
+        });
+
+        setAvailabilityMap(nextMap);
+      } catch {
+        if (active) {
+          setAvailabilityMap({});
+        }
+      }
+    }, 300);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [availabilityPairs]);
 
   const validationErrors = useMemo(() => {
     if (!validationMode) return [];
@@ -503,6 +588,19 @@ export default function DeliveryChallanForm({
         danger: true,
       });
     }
+  };
+
+  const handleClearNew = () => {
+    if (currentDocument?.id || documentId) {
+      onBack();
+      return;
+    }
+    initializedFor.current = null;
+    setCurrentDocument(null);
+    setForm(createEmptyForm());
+    setAvailabilityMap({});
+    setValidationMode(null);
+    nextNumberQuery.refetch();
   };
 
   const handlePrint = (download: boolean) => {
@@ -1085,6 +1183,7 @@ export default function DeliveryChallanForm({
                   <th>Batch / Lot No</th>
                   <th>UOM</th>
                   <th>Qty *</th>
+                  <th>Available</th>
                   {(form.jobWorkRateApplicable || config.screenId === 'general-dc') && <th>Rate</th>}
                   {form.taxApplicable && <th>Tax %</th>}
                   {(form.jobWorkRateApplicable || config.screenId === 'general-dc') && <th>Amount</th>}
@@ -1172,6 +1271,20 @@ export default function DeliveryChallanForm({
                         onChange={(event) =>
                           updateLine(index, 'qty', event.target.value)
                         }
+                      />
+                    </td>
+
+                    <td>
+                      <input
+                        className="in mut"
+                        style={{ width: '80px' }}
+                        value={
+                          line.itemCode && line.location
+                            ? availabilityMap[availabilityKey(line.itemCode, line.location)] ?? '—'
+                            : '—'
+                        }
+                        readOnly
+                        tabIndex={-1}
                       />
                     </td>
 
@@ -1281,6 +1394,18 @@ export default function DeliveryChallanForm({
               <span className="material-symbols-rounded">arrow_back</span>
               Back
             </button>
+
+            {!viewOnly && (
+              <button
+                type="button"
+                className="btn"
+                onClick={handleClearNew}
+                disabled={isBusy}
+              >
+                <span className="material-symbols-rounded">add_circle</span>
+                New / Clear
+              </button>
+            )}
 
             {editable && (
               <>

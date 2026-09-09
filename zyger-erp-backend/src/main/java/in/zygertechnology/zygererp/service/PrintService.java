@@ -78,6 +78,9 @@ public class PrintService {
             pdf.open();
 
             pdf.add(titleBar(doc, type));
+            if (copyNumber > 0) {
+                pdf.add(copyLabel(copyNumber));
+            }
             pdf.add(spacer(6));
 
             pdf.add(dcDetailsGrid(doc, type));
@@ -295,10 +298,23 @@ public class PrintService {
         canvas.restoreState();
     }
 
+    private Paragraph copyLabel(int copyNumber) {
+        String label = switch (copyNumber) {
+            case 1 -> "ORIGINAL";
+            case 2 -> "DUPLICATE";
+            case 3 -> "TRIPLICATE";
+            default -> "COPY " + copyNumber;
+        };
+        Paragraph p = new Paragraph(label,
+                FontFactory.getFont(FontFactory.HELVETICA_BOLD, 11, new Color(40, 40, 40)));
+        p.setAlignment(Element.ALIGN_CENTER);
+        return p;
+    }
+
     private Paragraph printFooter(Map<String, Object> doc, int copyNumber) {
         String text = str(doc.get("docNo")) + "  •  Printed " +
                 java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("dd-MMM-yyyy HH:mm"));
-        if (copyNumber > 1) text += "  •  COPY " + copyNumber;
+        if (copyNumber > 3) text += "  •  " + copyLabel(copyNumber).getContent();
         Paragraph p = new Paragraph(text, FontFactory.getFont(FontFactory.HELVETICA, 7, MUTED));
         p.setAlignment(Element.ALIGN_LEFT);
         return p;
