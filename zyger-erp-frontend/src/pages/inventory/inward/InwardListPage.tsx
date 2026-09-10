@@ -9,6 +9,7 @@ import { getApiErrorMessage } from '../../../utils/apiError';
 import StatusBadge from '../../../components/common/StatusBadge';
 import ConfirmActionModal from '../../../components/common/ConfirmActionModal';
 import InwardForm from './InwardForm';
+import InwardEntryPage from './InwardEntryPage';
 
 const PAGE_SIZE = 10;
 
@@ -31,7 +32,7 @@ interface EditState {
 }
 
 export default function InwardListPage({ inwardType }: InwardListPageProps) {
-  const { setActiveTab } = useTabs();
+  const { setActiveTab, openTab, tabs: openTabs } = useTabs();
   const { toast } = useToast();
   const { removeMutation } = useInwardMutations();
 
@@ -82,7 +83,21 @@ export default function InwardListPage({ inwardType }: InwardListPageProps) {
   const totalPages = data?.totalPages ?? 1;
 
   const goBack = () => {
-    setActiveTab('inward-entry');
+    // The Inward Entry tab may have been closed since this list was opened —
+    // switching to an id with no matching open tab left the screen blank, so
+    // reopen it (openTab is a no-op re-activate if it's already open) instead
+    // of assuming it still exists.
+    if (openTabs.some((t) => t.id === 'inward-entry')) {
+      setActiveTab('inward-entry');
+    } else {
+      openTab({
+        id: 'inward-entry',
+        label: 'Inward Entry',
+        icon: 'move_to_inbox',
+        component: InwardEntryPage,
+        props: { title: 'Inward Entry', screenId: 'inward-entry' },
+      });
+    }
   };
 
   const title =
@@ -103,6 +118,25 @@ export default function InwardListPage({ inwardType }: InwardListPageProps) {
     } catch (deleteError) {
       toast(getApiErrorMessage(deleteError, 'Delete failed.'), 'error');
     }
+  };
+
+  const getTaxAmount = (r: typeof rows[0]): number => {
+    if (typeof r.taxAmount === 'number') return r.taxAmount;
+    if (Array.isArray(r.lines)) {
+      return r.lines.reduce((sum, l) => sum + (Number(l.taxAmount) || 0), 0);
+    }
+    return 0;
+  };
+
+  const getNetAmount = (r: typeof rows[0]): number => {
+    if (typeof r.netAmount === 'number' && r.netAmount > 0) return r.netAmount;
+    const base = r.amount ?? r.totalAmount ?? 0;
+    const tax = getTaxAmount(r);
+    if (Array.isArray(r.lines) && r.lines.length > 0) {
+      const sumNet = r.lines.reduce((sum, l) => sum + (Number(l.netAmount) || 0), 0);
+      if (sumNet > 0) return sumNet;
+    }
+    return base + tax;
   };
 
   if (editing) {
@@ -221,6 +255,8 @@ export default function InwardListPage({ inwardType }: InwardListPageProps) {
                     <th>Party</th>
                     <th className="num">Qty</th>
                     <th className="num">Amount</th>
+                    <th className="num">Tax Amt</th>
+                    <th className="num">Net Amt</th>
                     <th>Status</th>
                     <th>Actions</th>
                   </tr>
@@ -239,7 +275,9 @@ export default function InwardListPage({ inwardType }: InwardListPageProps) {
                         <td>{row.reference || '—'}</td>
                         <td>{row.party || '—'}</td>
                         <td className="num">{formatNumber(row.qty ?? 0)}</td>
-                        <td className="num">{formatMoney(row.amount ?? 0)}</td>
+                        <td className="num">{formatMoney(getNetAmount(row))}</td>
+                        <td className="num">{formatMoney(getTaxAmount(row))}</td>
+                        <td className="num">{formatMoney(getNetAmount(row))}</td>
                         <td>
                           <StatusBadge status={row.status} />
                         </td>
@@ -298,7 +336,7 @@ export default function InwardListPage({ inwardType }: InwardListPageProps) {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={10}>
+                      <td colSpan={12}>
                         <div className="empty">
                           <span className="material-symbols-rounded">
                             folder_open

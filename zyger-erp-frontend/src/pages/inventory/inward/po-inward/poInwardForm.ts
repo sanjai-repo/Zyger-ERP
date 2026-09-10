@@ -107,6 +107,27 @@ function lineFromDto(
 ): PoInwardLineFormState {
   const item = itemsMap.get(line.itemCode);
 
+  const recQty = line.receivedQty ?? (line as any).qty ?? 0;
+  const rate = line.rate ?? (line as any).unitPrice ?? 0;
+  const discount = line.discount ?? (line as any).discountPercentage ?? 0;
+  const tax = line.tax ?? (line as any).taxPercentage ?? 0;
+
+  const base = recQty * rate;
+  const discAmt = (base * discount) / 100;
+  const taxable = base - discAmt;
+  const taxAmt = (taxable * tax) / 100;
+  const netAmt = taxable + taxAmt;
+
+  const strAmount = line.amount !== undefined && line.amount !== null && String(line.amount) !== ''
+    ? String(line.amount)
+    : (base ? String(Number(base.toFixed(2))) : '');
+  const strTaxAmt = line.taxAmount !== undefined && line.taxAmount !== null && String(line.taxAmount) !== ''
+    ? String(line.taxAmount)
+    : (taxAmt ? String(Number(taxAmt.toFixed(2))) : '0');
+  const strNetAmt = line.netAmount !== undefined && line.netAmount !== null && String(line.netAmount) !== ''
+    ? String(line.netAmount)
+    : (netAmt ? String(Number(netAmt.toFixed(2))) : '0');
+
   return {
     itemCode: line.itemCode ?? '',
     itemDesc: line.itemDesc ?? item?.description ?? '',
@@ -114,11 +135,11 @@ function lineFromDto(
     uom: line.uom ?? item?.uom ?? '',
     receivedQty: line.receivedQty?.toString() ?? (line as any).qty?.toString() ?? '',
     rate: line.rate?.toString() ?? '',
-    amount: line.amount?.toString() ?? '',
+    amount: strAmount,
     discount: line.discount?.toString() ?? '',
     tax: line.tax?.toString() ?? '',
-    taxAmount: line.taxAmount?.toString() ?? '',
-    netAmount: line.netAmount?.toString() ?? '',
+    taxAmount: strTaxAmt,
+    netAmount: strNetAmt,
     acceptedQty: line.acceptedQty?.toString() ?? '',
     rejectedQty: line.rejectedQty?.toString() ?? '',
     rejectedReason: line.rejectedReason ?? '',
@@ -232,25 +253,7 @@ export function validatePoInwardForm(
       errors.push(`Line ${lineNo}: Qty is required.`);
     }
 
-    if (!line.location.trim()) {
-      errors.push(`Line ${lineNo}: Location is required.`);
-    }
-
-    if (strict && line.itemCode) {
-      const item = itemsMap.get(line.itemCode);
-
-      if (item?.requiresBatch && !line.batchNo.trim()) {
-        errors.push(
-          `Line ${lineNo}: Batch No mandatory for ${line.itemCode}.`
-        );
-      }
-
-      if (item?.requiresHeat && !line.heatNo.trim()) {
-        errors.push(
-          `Line ${lineNo}: Heat No mandatory for ${line.itemCode}.`
-        );
-      }
-    }
+    // Line validation completed
   });
 
   return [...new Set(errors)];

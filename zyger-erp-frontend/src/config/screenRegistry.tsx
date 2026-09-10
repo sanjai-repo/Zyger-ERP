@@ -48,10 +48,12 @@ const StockReleasePage = lazy(() => import('../pages/inventory/allotment/stock-r
 const StockAmendmentPage = lazy(() => import('../pages/inventory/adjustment/stock-amendment/StockAmendmentPage'));
 const PhysicalStockAmendmentPage = lazy(() => import('../pages/inventory/adjustment/physical-stock-amendment/PhysicalStockAmendmentPage'));
 const InventoryReportsPage = lazy(() => import('../pages/inventory/reports/InventoryReportsPage'));
+const InventoryDashboardPage = lazy(() => import('../pages/inventory/reports/InventoryDashboardPage'));
 const InventoryLogPage = lazy(() => import('../pages/inventory/reports/InventoryLogPage'));
 const CurrentStockPage = lazy(() => import('../pages/inventory/reports/CurrentStockPage'));
 const StoreStockSummaryPage = lazy(() => import('../pages/inventory/reports/StoreStockSummaryPage'));
 const TraceabilityViewerPage = lazy(() => import('../pages/inventory/reports/TraceabilityViewerPage'));
+const PeriodReportPage = lazy(() => import('../pages/inventory/reports/PeriodReportPage'));
 const QualityDashboard = lazy(() => import('../pages/quality/dashboard/QualityDashboard'));
 const QualityPage = lazy(() => import('../pages/quality/inspection/QualityPage'));
 const IqcInspectionPage = lazy(() => import('../pages/quality/inspection/IqcInspectionPage'));
@@ -215,10 +217,12 @@ export const SCREEN_REGISTRY: Record<string, ScreenDefinition> = Object.fromEntr
     'stock-amendment': StockAmendmentPage,
     'physical-stock-amendment': PhysicalStockAmendmentPage,
     reports: InventoryReportsPage,
+    'inventory-dashboard': InventoryDashboardPage,
     'inventory-log': InventoryLogPage,
     'current-stock': CurrentStockPage,
     'store-stock-summary': StoreStockSummaryPage,
     'traceability-viewer': TraceabilityViewerPage,
+    'inventory-period-report': PeriodReportPage,
     'quality-dashboard': QualityDashboard,
     'quality-inspection': QualityPage,
     'quality-ncr': NcrPage,

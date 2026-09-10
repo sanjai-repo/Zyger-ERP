@@ -3,7 +3,6 @@ import axiosClient from '../../../api/axiosClient';
 import { formatNumber } from '../../../utils/format';
 import { useToast } from '../../../contexts/ToastContext';
 import { useTabs } from '../../../contexts/TabsContext';
-import StatusBadge from '../../../components/common/StatusBadge';
 import { getApiErrorMessage } from '../../../utils/apiError';
 import { purchaseApi } from '../../../services/purchase-api';
 import PurchaseOrderPage from '../order/PurchaseOrderPage';
@@ -562,17 +561,6 @@ export default function QuotationComparisonPage() {
                       );
                     })}
                   </tr>
-                  <tr>
-                    <td>Status</td>
-                    {filteredQuotations.map((q) => {
-                      const isL1 = sortedByCost[0]?.id === q.id;
-                      return (
-                        <td key={q.id} className={isL1 ? 'l1-col-cell' : undefined} style={{ textAlign: 'center' }}>
-                          <StatusBadge status={q.status || 'SUBMITTED'} />
-                        </td>
-                      );
-                    })}
-                  </tr>
 
                   {matrixItems.length === 0 ? (
                     <tr>
@@ -739,7 +727,6 @@ export default function QuotationComparisonPage() {
                       <th>Supplier</th>
                       <th>Enquiry</th>
                       <th>Lines</th>
-                      <th>Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -766,7 +753,6 @@ export default function QuotationComparisonPage() {
                           <td>{q.supplier}</td>
                           <td className="mut">{q.enquiryNumber || '—'}</td>
                           <td className="mut">{enabled ? lineCount : 'No lines'}</td>
-                          <td><StatusBadge status={q.status || 'SUBMITTED'} /></td>
                         </tr>
                       );
                     })}

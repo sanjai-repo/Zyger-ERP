@@ -141,7 +141,7 @@ class ReturnAllotmentAdjustmentIntegrationTest extends AbstractPostgresIntegrati
                 "department", "Production",
                 "purpose", "Consumption",
                 "sourceLocation", "Main Warehouse",
-                "docDate", "2026-09-09",
+                "docDate", java.time.LocalDate.now().toString(),
                 "lines", List.of(Map.of("itemCode", "RTN-001", "issueQty", 10.0, "location", "Main Warehouse"))
         ));
         assertEquals(90.0, stockService.available("RTN-001", "Main Warehouse"), 0.0001);
@@ -156,7 +156,7 @@ class ReturnAllotmentAdjustmentIntegrationTest extends AbstractPostgresIntegrati
                 "department", "Production",
                 "purpose", "Consumption",
                 "sourceLocation", "Main Warehouse",
-                "docDate", "2026-09-09",
+                "docDate", java.time.LocalDate.now().toString(),
                 "lines", List.of(Map.of("itemCode", "SR-001", "issueQty", 20.0, "location", "Main Warehouse"))
         ));
         String issueNo = getDocNo("/api/inventory/stock-issue/general-issue", issueId);
@@ -252,7 +252,7 @@ class ReturnAllotmentAdjustmentIntegrationTest extends AbstractPostgresIntegrati
                         .header("Authorization", bearer(adminToken()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
-                                "date", "2026-09-09",
+                                "date", java.time.LocalDate.now().toString(),
                                 "itemCode", "ALT-001",
                                 "location", "Main Warehouse",
                                 "neededBy", "Production",
@@ -270,7 +270,7 @@ class ReturnAllotmentAdjustmentIntegrationTest extends AbstractPostgresIntegrati
                         .header("Authorization", bearer(adminToken()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
-                                "date", "2026-09-09",
+                                "date", java.time.LocalDate.now().toString(),
                                 "allotmentNo", allotNo,
                                 "itemCode", "ALT-001",
                                 "location", "Main Warehouse",
@@ -283,6 +283,102 @@ class ReturnAllotmentAdjustmentIntegrationTest extends AbstractPostgresIntegrati
         postAction("/api/inventory/allotment/stock-release", relId);
 
         assertEquals(75.0, stockService.available("ALT-001", "Main Warehouse"), 0.0001);
+    }
+
+    @Test
+    @DisplayName("Stock Release: release 100% allotted stock succeeds when available is 0.0")
+    void testFullyAllottedStockRelease() throws Exception {
+        seedStock("CSM-2026-0001", "MAIN", 700.0);
+
+        MvcResult allotRes = mockMvc.perform(post("/api/inventory/allotment/stock-allotment")
+                        .header("Authorization", bearer(adminToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "date", java.time.LocalDate.now().toString(),
+                                "itemCode", "CSM-2026-0001",
+                                "location", "MAIN",
+                                "neededBy", "Production",
+                                "lines", List.of(Map.of("itemCode", "CSM-2026-0001", "location", "MAIN", "allottedQty", 700.0))))))
+                .andExpect(status().isOk())
+                .andReturn();
+        Long allotId = Long.valueOf(objectMapper.readTree(allotRes.getResponse().getContentAsString()).get("id").asText());
+        postAction("/api/inventory/allotment/stock-allotment", allotId);
+
+        // At this point onHand = 700, reserved = 700, available = 0.0
+        assertEquals(0.0, stockService.available("CSM-2026-0001", "MAIN"), 0.0001);
+        assertEquals(700.0, stockService.onHand("CSM-2026-0001", "MAIN", null), 0.0001);
+
+        String allotNo = getDocNo("/api/inventory/allotment/stock-allotment", allotId);
+
+        MvcResult relRes = mockMvc.perform(post("/api/inventory/allotment/stock-release")
+                        .header("Authorization", bearer(adminToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "date", java.time.LocalDate.now().toString(),
+                                "allotmentNo", allotNo,
+                                "reason", "Production Consumption",
+                                "lines", List.of(Map.of("itemCode", "CSM-2026-0001", "location", "MAIN", "releasedQty", 700.0))))))
+                .andExpect(status().isOk())
+                .andReturn();
+        Long relId = Long.valueOf(objectMapper.readTree(relRes.getResponse().getContentAsString()).get("id").asText());
+
+        // Submit, approve and post stock release
+        postAction("/api/inventory/allotment/stock-release", relId);
+
+        // After release: onHand = 700 (physical stock retained), reserved = 0, available = 700
+        assertEquals(700.0, stockService.onHand("CSM-2026-0001", "MAIN", null), 0.0001);
+        assertEquals(700.0, stockService.available("CSM-2026-0001", "MAIN"), 0.0001);
+    }
+
+    @Test
+    @DisplayName("Stock Release: posting without explicit line location updates physical stock and reports correctly")
+    void testStockReleaseUpdatesInventoryReportAndCurrentStockWithoutExplicitLineLocation() throws Exception {
+        seedStock("ITEM-REL-001", "MAIN", 100.0);
+
+        MvcResult allotRes = mockMvc.perform(post("/api/inventory/allotment/stock-allotment")
+                        .header("Authorization", bearer(adminToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "date", java.time.LocalDate.now().toString(),
+                                "itemCode", "ITEM-REL-001",
+                                "location", "MAIN",
+                                "neededBy", "Production",
+                                "lines", List.of(Map.of("itemCode", "ITEM-REL-001", "location", "MAIN", "allottedQty", 40.0))))))
+                .andExpect(status().isOk())
+                .andReturn();
+        Long allotId = Long.valueOf(objectMapper.readTree(allotRes.getResponse().getContentAsString()).get("id").asText());
+        postAction("/api/inventory/allotment/stock-allotment", allotId);
+
+        assertEquals(100.0, stockService.onHand("ITEM-REL-001", "MAIN", null), 0.0001);
+        assertEquals(60.0, stockService.available("ITEM-REL-001", "MAIN"), 0.0001);
+
+        String allotNo = getDocNo("/api/inventory/allotment/stock-allotment", allotId);
+
+        MvcResult relRes = mockMvc.perform(post("/api/inventory/allotment/stock-release")
+                        .header("Authorization", bearer(adminToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "date", java.time.LocalDate.now().toString(),
+                                "allotmentNo", allotNo,
+                                "reason", "Order Cancelled",
+                                "lines", List.of(Map.of("itemCode", "ITEM-REL-001", "releasedQty", 20.0))))))
+                .andExpect(status().isOk())
+                .andReturn();
+        Long relId = Long.valueOf(objectMapper.readTree(relRes.getResponse().getContentAsString()).get("id").asText());
+
+        postAction("/api/inventory/allotment/stock-release", relId);
+
+        // After releasing 20 of 40 reserved: physical onHand remains 100, available increases to 80
+        assertEquals(100.0, stockService.onHand("ITEM-REL-001", "MAIN", null), 0.0001);
+        assertEquals(80.0, stockService.available("ITEM-REL-001", "MAIN"), 0.0001);
+
+        mockMvc.perform(get("/api/inventory/reports/current-stock")
+                        .header("Authorization", bearer(adminToken()))
+                        .param("itemCode", "ITEM-REL-001")
+                        .param("location", "MAIN"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].onHand").value(100.0))
+                .andExpect(jsonPath("$.content[0].available").value(80.0));
     }
 
     @Test
@@ -326,7 +422,7 @@ class ReturnAllotmentAdjustmentIntegrationTest extends AbstractPostgresIntegrati
                 "department", "Production",
                 "purpose", "Consumption",
                 "sourceLocation", "Main Warehouse",
-                "docDate", "2026-09-09",
+                "docDate", java.time.LocalDate.now().toString(),
                 "lines", List.of(Map.of("itemCode", "PRT-001", "issueQty", 10.0, "location", "Main Warehouse"))
         ));
         String issueNo = getDocNo("/api/inventory/stock-issue/general-issue", issueId);

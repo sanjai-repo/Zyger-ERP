@@ -13,6 +13,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.math.BigDecimal;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -96,6 +97,37 @@ class DocumentFacadeTest {
 
             String result = documentFacade.nextNumber("purchase-order", "PO");
             assertEquals("PO-2026-0042", result);
+        }
+    }
+
+    @Nested
+    @DisplayName("validateBatchHeat()")
+    class ValidateBatchHeat {
+        @Test
+        @DisplayName("Should not throw exception for purchase-request even if item requires batch")
+        void purchaseRequestExemptFromBatchCheck() {
+            ItemMaster item = ItemMaster.builder()
+                    .code("CSM-2026-0001")
+                    .requiresBatch(true)
+                    .requiresHeat(true)
+                    .build();
+
+            PurchaseRequest pr = new PurchaseRequest();
+            PurchaseRequestLine line = new PurchaseRequestLine();
+            line.setItemCode("CSM-2026-0001");
+            line.setRequiredQty(new BigDecimal("10"));
+            line.setBatchNo(null);
+            line.setHeatNo(null);
+            pr.setLines(List.of(line));
+
+            when(numbers.next("purchase-request")).thenReturn("PR-2026-0001");
+            when(mapper.convertValue(any(), eq(PurchaseRequest.class))).thenReturn(pr);
+
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("date", "2026-09-10");
+            body.put("lines", List.of(Map.of("itemCode", "CSM-2026-0001", "requestedQty", 10)));
+
+            assertDoesNotThrow(() -> documentFacade.create("purchase-request", body, "admin"));
         }
     }
 }

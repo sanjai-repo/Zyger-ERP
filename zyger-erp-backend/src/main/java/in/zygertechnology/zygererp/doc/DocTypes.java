@@ -55,7 +55,7 @@ public final class DocTypes {
         // canonicalized to STKALT / STKREL / STKAMD / PHYAMD (previously SA / SR /
         // SAM / PSA).
         reg("stock-allotment",        "STKALT", Effect.NONE,   "STOCK_ALLOTMENT",        "allottedQty", true);
-        reg("stock-release",          "STKREL", Effect.OUT,    "STOCK_RELEASE",          "releasedQty", true);
+        reg("stock-release",          "STKREL", Effect.NONE,   "STOCK_RELEASE",          "releasedQty", true);
         reg("stock-amendment",        "STKAMD", Effect.ADJUST, "STOCK_AMENDMENT",        null, false);
         reg("physical-stock-amendment","PHYAMD",Effect.ADJUST, "PHYSICAL_STOCK_AMENDMENT","physicalQty", true);
         reg("quality-inspection",      "QI",  Effect.NONE,  "QUALITY_INSPECTION",     null, true);

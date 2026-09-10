@@ -164,6 +164,7 @@ export default function StockReleaseForm({
           itemCode: line.itemCode,
           allottedQty: line.allottedQty ?? 0,
           batchNo: line.batchNo ?? '',
+          location: line.location ?? '',
         }));
 
         setAllotmentLines(lines);
@@ -188,6 +189,7 @@ export default function StockReleaseForm({
                 reservedQty: String(line.allottedQty || ''),
                 releasedQty: String(line.allottedQty || ''),
                 batchNo: line.batchNo ?? '',
+                location: line.location ?? '',
               })),
             };
           }

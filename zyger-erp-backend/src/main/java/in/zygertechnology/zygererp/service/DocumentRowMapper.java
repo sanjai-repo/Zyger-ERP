@@ -89,8 +89,26 @@ public class DocumentRowMapper {
 
         List<? extends LineEntity> L = e.getLines();
         r.put("qty", L.stream().mapToDouble(l -> l.getQty().doubleValue()).sum());
-        r.put("totalAmount", L.stream()
-                .mapToDouble(l -> (l.getRate() == null ? 0 : l.getRate().doubleValue()) * l.getQty().doubleValue()).sum());
+        double totalAmt = L.stream()
+                .mapToDouble(l -> (l.getRate() == null ? 0 : l.getRate().doubleValue()) * l.getQty().doubleValue()).sum();
+        r.put("totalAmount", totalAmt);
+
+        double calcTaxAmt = L.stream()
+                .mapToDouble(l -> l.getTaxAmount() != null ? l.getTaxAmount().doubleValue() : 0.0).sum();
+        double calcNetAmt = L.stream()
+                .mapToDouble(l -> {
+                    if (l.getNetAmount() != null) return l.getNetAmount().doubleValue();
+                    double lineAmt = (l.getRate() == null ? 0.0 : l.getRate().doubleValue()) * l.getQty().doubleValue();
+                    double taxAmt = l.getTaxAmount() != null ? l.getTaxAmount().doubleValue() : 0.0;
+                    return lineAmt + taxAmt;
+                }).sum();
+
+        if (r.get("taxAmount") == null || ((Number) r.get("taxAmount")).doubleValue() == 0.0) {
+            r.put("taxAmount", calcTaxAmt);
+        }
+        if (r.get("netAmount") == null || ((Number) r.get("netAmount")).doubleValue() == 0.0) {
+            r.put("netAmount", calcNetAmt > 0 ? calcNetAmt : totalAmt);
+        }
 
         List<Map<String, Object>> lineRows = new ArrayList<>();
         for (LineEntity l : L) {

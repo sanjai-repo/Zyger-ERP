@@ -158,11 +158,9 @@ public class QualityInspectionService {
     private void postAcceptedQuantityToInventory(QualityInspection e, String user) {
         if (e.getItemCode() == null || e.getItemCode().isBlank()) return;
 
+        // Only the Accepted Qty updates inventory — rejected/on-hold stock never should,
+        // so unlike before this no longer falls back to the full inspection/received qty.
         BigDecimal acceptedQty = e.getAcceptedQuantity();
-        if (acceptedQty == null || acceptedQty.compareTo(BigDecimal.ZERO) <= 0) {
-            acceptedQty = e.getInspectionQuantity() != null && e.getInspectionQuantity().compareTo(BigDecimal.ZERO) > 0
-                    ? e.getInspectionQuantity() : e.getReceivedQuantity();
-        }
         if (acceptedQty == null || acceptedQty.compareTo(BigDecimal.ZERO) <= 0) return;
 
         String batch = e.getBatchNumber() != null ? e.getBatchNumber() : "";

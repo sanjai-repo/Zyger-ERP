@@ -23,7 +23,10 @@ export interface InwardPendingRow {
   party?: string;
   qty?: number;
   totalAmount?: number;
+  taxAmount?: number;
+  netAmount?: number;
   status: string;
+  lines?: Array<Record<string, any>>;
 }
 
 export interface InwardChartPoint {
@@ -52,7 +55,11 @@ export interface InwardListRow {
   party?: string;
   qty?: number;
   amount?: number;
+  totalAmount?: number;
+  taxAmount?: number;
+  netAmount?: number;
   status: string;
+  lines?: Array<Record<string, any>>;
 }
 
 export interface InwardListParams {

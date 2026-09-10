@@ -320,7 +320,9 @@ public class PurchaseService {
         po.setEmailStatus(ok ? "SENT" : "FAILED");
         if (ok) po.setEmailSentAt(Instant.now());
         else po.setEmailError("SMTP delivery failed (logged to dry-run)");
-        if (ok) po.setStatus("RELEASED");
+        if (ok) po.setStatus("SENT");
+        em.merge(po);
+        em.flush();
         notifications.notify(ok ? "DOC_SENT" : "DOC_SEND_FAILED", "PURCHASE", "purchase-order", po.getId(),
                 ok ? "INFO" : "WARNING",
                 (ok ? "Purchase Order " : "Failed to email Purchase Order ") + po.getDocNo() + " to " + po.getEmail(), po.getDocNo());
@@ -421,7 +423,7 @@ public class PurchaseService {
     public Map<String, Object> dashboard() {
         Map<String, Object> d = new LinkedHashMap<>();
         d.put("openPR", countByStatus("purchase-request", "SUBMITTED"));
-        d.put("openEnquiries", countByStatus("supplier-enquiry", "SUBMITTED"));
+        d.put("openEnquiries", countByStatus("supplier-enquiry", "DRAFT"));
         d.put("pendingQuotations", countByStatus("supplier-quotation", "SUBMITTED"));
         d.put("openPO", countByStatuses("purchase-order", OPEN_PO_STATUSES));
         d.put("pendingPOApproval", countByStatus("purchase-order", "SUBMITTED"));

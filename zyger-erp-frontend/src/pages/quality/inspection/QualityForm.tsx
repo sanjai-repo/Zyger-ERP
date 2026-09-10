@@ -227,6 +227,11 @@ export default function QualityForm({ documentId, viewOnly = false, onBack, defa
   const [attachmentsOpen, setAttachmentsOpen] = useState(false);
 
   const [inwardOptions, setInwardOptions] = useState<Array<{ docNo: string; purchaseOrderNo?: string; supplier?: string; date?: string; items?: string }>>([]);
+  const [stores, setStores] = useState<Array<{ code: string; name: string }>>([]);
+
+  useEffect(() => {
+    void masterService.getStores().then(setStores).catch(() => setStores([]));
+  }, []);
 
   const [nextNumber, setNextNumber] = useState('—');
   const [header, setHeader] = useState(() => ({
@@ -242,6 +247,7 @@ export default function QualityForm({ documentId, viewOnly = false, onBack, defa
     ndtStatus: 'NA',
     itemCode: '',
     itemDescription: '',
+    location: '',
     receivedQuantity: '',
     inspectionQuantity: '',
     acceptedQuantity: '',
@@ -284,13 +290,17 @@ export default function QualityForm({ documentId, viewOnly = false, onBack, defa
       apiClient.get<any>(`/inventory/documents/${docTypeKey}`, { params: { size: 50, sort: 'date,desc' } })
         .then((res) => {
           const content = res.data?.content || (Array.isArray(res.data) ? res.data : []);
-          const opts = content.map((d: any) => ({
-            docNo: String(d.docNo || d.number || ''),
-            purchaseOrderNo: String(d.purchaseOrderNo || d.purchaseOrderNumber || d.reference || ''),
-            supplier: String(d.supplier || d.party || d.supplierName || ''),
-            date: String(d.date || d.docDate || ''),
-            items: (d.lines || []).map((l: any) => l.itemCode).filter(Boolean).join(', '),
-          })).filter((o: any) => Boolean(o.docNo));
+          // Only inward documents marked "Quality Inspection Required" should be
+          // pickable here — everything else was already posted straight to stock.
+          const opts = content
+            .filter((d: any) => String(d.qcRequired ?? '').trim().toLowerCase() === 'yes')
+            .map((d: any) => ({
+              docNo: String(d.docNo || d.number || ''),
+              purchaseOrderNo: String(d.purchaseOrderNo || d.purchaseOrderNumber || d.reference || ''),
+              supplier: String(d.supplier || d.party || d.supplierName || ''),
+              date: String(d.date || d.docDate || ''),
+              items: (d.lines || []).map((l: any) => l.itemCode).filter(Boolean).join(', '),
+            })).filter((o: any) => Boolean(o.docNo));
           setInwardOptions(opts);
         })
         .catch(() => setInwardOptions([]));
@@ -332,6 +342,7 @@ export default function QualityForm({ documentId, viewOnly = false, onBack, defa
         supplierChallanNo: challanOrInvNo || current.supplierChallanNo,
         itemCode: itemCd || current.itemCode,
         itemDescription: itemNm || current.itemDescription,
+        location: firstLine?.location || raw.location || current.location,
         receivedQuantity: qtyStr || current.receivedQuantity,
         inspectionQuantity: qtyStr || current.inspectionQuantity,
         acceptedQuantity: qtyStr || current.acceptedQuantity,
@@ -475,6 +486,7 @@ export default function QualityForm({ documentId, viewOnly = false, onBack, defa
       ndtStatus: inspection.ndtStatus ?? 'NA',
       itemCode: inspection.itemCode ?? '',
       itemDescription: inspection.itemDescription ?? '',
+      location: inspection.location ?? '',
       receivedQuantity: inspection.receivedQuantity != null ? String(inspection.receivedQuantity) : '',
       inspectionQuantity: inspection.inspectionQuantity != null ? String(inspection.inspectionQuantity) : '',
       acceptedQuantity: inspection.acceptedQuantity != null ? String(inspection.acceptedQuantity) : '',
@@ -541,6 +553,11 @@ export default function QualityForm({ documentId, viewOnly = false, onBack, defa
       return;
     }
 
+    if (!header.location.trim()) {
+      toast('Store Location is required.', 'error');
+      return;
+    }
+
     if (payloadLines.length === 0) {
       payloadLines = [
         {
@@ -560,6 +577,7 @@ export default function QualityForm({ documentId, viewOnly = false, onBack, defa
         directInventoryUpdate: true,
         itemCode: header.itemCode.trim(),
         itemDescription: header.itemDescription.trim() || undefined,
+        location: header.location.trim() || undefined,
         referenceDocNo: header.referenceDocNo.trim() || undefined,
         purchaseOrderNumber: header.purchaseOrderNumber.trim() || undefined,
         partyCode: header.partyCode.trim() || undefined,
@@ -971,6 +989,27 @@ export default function QualityForm({ documentId, viewOnly = false, onBack, defa
                   setHeader((current) => ({ ...current, itemDescription: event.target.value }))
                 }
               />
+            </label>
+
+            <label className="fld">
+              <span>
+                Store Location <em>*</em>
+              </span>
+              <select
+                className="in"
+                value={header.location}
+                disabled={!isCreateMode}
+                onChange={(event) =>
+                  setHeader((current) => ({ ...current, location: event.target.value }))
+                }
+              >
+                <option value="">-- Select Store --</option>
+                {stores.map((s) => (
+                  <option key={s.code} value={s.code}>
+                    {s.name || s.code}
+                  </option>
+                ))}
+              </select>
             </label>
 
             <label className="fld">

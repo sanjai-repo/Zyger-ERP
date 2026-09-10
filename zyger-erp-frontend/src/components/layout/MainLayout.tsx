@@ -147,6 +147,14 @@ export default function MainLayout() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [clearedNotifIds, setClearedNotifIds] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('zyger_cleared_notifications');
+      return saved ? new Set(JSON.parse(saved)) : new Set<string>();
+    } catch {
+      return new Set<string>();
+    }
+  });
   const [companyLogo, setCompanyLogo] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState<string>('Zyger ERP');
   const [now, setNow] = useState(() => new Date());
@@ -458,8 +466,39 @@ export default function MainLayout() {
       }
     } catch { /* best-effort */ }
 
-    setNotifications(items);
-  }, [can]);
+    setNotifications(items.filter((item) => !clearedNotifIds.has(item.id)));
+  }, [can, clearedNotifIds]);
+
+  const dismissNotification = useCallback((id: string) => {
+    setClearedNotifIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      try {
+        localStorage.setItem('zyger_cleared_notifications', JSON.stringify(Array.from(next)));
+      } catch { /* best-effort */ }
+      return next;
+    });
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    if (id.startsWith('notif-')) {
+      const numericId = id.replace('notif-', '');
+      apiClient.put(`/v1/notifications/${numericId}/read`).catch(() => { /* best-effort */ });
+    }
+  }, []);
+
+  const clearAllNotifications = useCallback(() => {
+    setNotifications((prev) => {
+      const allIds = prev.map((n) => n.id);
+      setClearedNotifIds((existing) => {
+        const next = new Set([...existing, ...allIds]);
+        try {
+          localStorage.setItem('zyger_cleared_notifications', JSON.stringify(Array.from(next)));
+        } catch { /* best-effort */ }
+        return next;
+      });
+      return [];
+    });
+    apiClient.put('/v1/notifications/read-all').catch(() => { /* best-effort */ });
+  }, []);
 
   useEffect(() => {
     fetchNotifications();
@@ -570,35 +609,65 @@ export default function MainLayout() {
               {notifications.length > 0 && <span className="n-badge">{notifications.length}</span>}
             </button>
             {notifOpen && (
-              <div className="pop show">
-                <div className="p-head">
-                  <b style={{ fontSize: 13 }}>Notifications</b>
-                  <small>{notifications.length} unread</small>
+              <div className="pop notif-pop show">
+                <div className="p-head-row">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <b style={{ fontSize: 13 }}>Notifications</b>
+                    <small style={{ color: 'var(--muted)', fontSize: 11 }}>{notifications.length} unread</small>
+                  </div>
+                  {notifications.length > 0 && (
+                    <button
+                      className="notif-clear-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        clearAllNotifications();
+                      }}
+                      title="Clear all notifications"
+                    >
+                      Clear All
+                    </button>
+                  )}
                 </div>
                 <hr />
-                {notifications.length === 0 ? (
-                  <div className="notif-empty">
-                    <span className="material-symbols-rounded">notifications_off</span>
-                    No pending notifications
-                  </div>
-                ) : notifications.map((n) => (
-                  <a
-                    key={n.id}
-                    href="#"
-                    className="notif-item"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      if (n.screenId) openNotifScreen(n.screenId);
-                      setNotifOpen(false);
-                    }}
-                  >
-                    <span className="material-symbols-rounded" style={{ color: n.color }}>{n.icon}</span>
-                    <div>
-                      <b>{n.message}</b>
-                      <small>{n.detail}</small>
+                <div className="notif-list">
+                  {notifications.length === 0 ? (
+                    <div className="notif-empty">
+                      <span className="material-symbols-rounded">notifications_off</span>
+                      No pending notifications
                     </div>
-                  </a>
-                ))}
+                  ) : (
+                    notifications.map((n) => (
+                      <div key={n.id} className="notif-row">
+                        <a
+                          href="#"
+                          className="notif-item"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            if (n.screenId) openNotifScreen(n.screenId);
+                            setNotifOpen(false);
+                          }}
+                        >
+                          <span className="material-symbols-rounded" style={{ color: n.color }}>{n.icon}</span>
+                          <div className="notif-item-text">
+                            <b>{n.message}</b>
+                            <small>{n.detail}</small>
+                          </div>
+                        </a>
+                        <button
+                          className="notif-dismiss-btn"
+                          title="Dismiss notification"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            dismissNotification(n.id);
+                          }}
+                        >
+                          <span className="material-symbols-rounded" style={{ fontSize: 16 }}>close</span>
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             )}
           </div>

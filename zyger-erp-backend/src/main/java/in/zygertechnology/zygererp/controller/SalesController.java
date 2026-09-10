@@ -142,11 +142,14 @@ public class SalesController {
         Map<String, Object> row = svc.getRow(key(type), id);
         String docNo = String.valueOf(row.getOrDefault("docNo", type)).replaceAll("[^A-Za-z0-9_-]", "_");
         String disposition = download ? "attachment" : "inline";
+        byte[] pdf = "sales-invoice".equals(type) ? printer.salesInvoice(row)
+                : "sales-dc".equals(type) ? printer.deliveryChallan(row, type)
+                : printer.salesDoc(row, type);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         disposition + "; filename=\"" + docNo + ".pdf\"")
                 .contentType(MediaType.APPLICATION_PDF)
-                .body(printer.salesDoc(row, type));
+                .body(pdf);
     }
 
     @Operation(summary = "Get sales dashboard statistics")

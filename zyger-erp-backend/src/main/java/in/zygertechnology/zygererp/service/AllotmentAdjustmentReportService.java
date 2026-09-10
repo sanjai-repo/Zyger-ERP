@@ -148,7 +148,7 @@ public class AllotmentAdjustmentReportService {
                 Object v = value(d, extraCol);
                 r.put("referenceNo", v == null ? "" : v);
             }
-            r.put("reasonCode", value(d, "getReasonCode"));
+            r.put("reasonCode", first(d, "getReason", "getReasonCode"));
             r.put("totalQty", sumQty(d, entityToKey(entity)));
             out.add(r);
         }

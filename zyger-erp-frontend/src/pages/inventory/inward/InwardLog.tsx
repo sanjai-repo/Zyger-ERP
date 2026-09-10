@@ -79,6 +79,17 @@ export default function InwardLog() {
     });
   }, [allRows, type, status, fromDate, toDate, search]);
 
+  const getNetAmount = (r: typeof allRows[0]): number => {
+    if (typeof r.netAmount === 'number' && r.netAmount > 0) return r.netAmount;
+    if (Array.isArray(r.lines) && r.lines.length > 0) {
+      const sumNet = r.lines.reduce((sum, l) => sum + (Number(l.netAmount) || 0), 0);
+      if (sumNet > 0) return sumNet;
+    }
+    const base = r.totalAmount ?? 0;
+    const tax = typeof r.taxAmount === 'number' ? r.taxAmount : 0;
+    return base + tax;
+  };
+
   const openView = (row: (typeof allRows)[number]) => {
     const tabId = `inward-view-${row.id}`;
     openTab({
@@ -226,7 +237,7 @@ export default function InwardLog() {
                       <td>{row.party || '—'}</td>
                       <td className="num">{formatNumber(row.qty ?? 0)}</td>
                       <td className="num">
-                        {formatMoney(row.totalAmount ?? 0)}
+                        {formatMoney(getNetAmount(row))}
                       </td>
                       <td>
                         <StatusBadge status={row.status} />

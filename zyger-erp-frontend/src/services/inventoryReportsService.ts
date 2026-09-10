@@ -2,10 +2,12 @@ import apiClient from '../api/axiosClient';
 import type { PageDto } from '../types/api.types';
 import type {
   DrilldownRow,
+  ItemStockRow,
   ReportQueryParams,
   ReportsOverviewDto,
   SimpleReportDto,
   StockSummaryDto,
+  StoreStockRow,
 } from '../types/inventory/reports.types';
 
 const BASE = '/inventory/reports';
@@ -23,6 +25,7 @@ function buildParams(params: ReportQueryParams) {
     itemCode: params.itemCode || undefined,
     location: params.location || undefined,
     category: params.category || undefined,
+    itemType: params.itemType || undefined,
     status: params.status || undefined,
     txType: params.txType || undefined,
     lowStockOnly: params.lowStockOnly || undefined,
@@ -67,6 +70,36 @@ export const inventoryReportsService = {
   ): Promise<PageDto<DrilldownRow>> {
     const response = await apiClient.get<PageDto<DrilldownRow>>(
       `${BASE}/current-stock`,
+      {
+        params: buildParams(params),
+        signal,
+      }
+    );
+
+    return response.data;
+  },
+
+  async getItemStock(
+    params: ReportQueryParams,
+    signal?: AbortSignal
+  ): Promise<PageDto<ItemStockRow>> {
+    const response = await apiClient.get<PageDto<ItemStockRow>>(
+      `${BASE}/item-stock`,
+      {
+        params: buildParams(params),
+        signal,
+      }
+    );
+
+    return response.data;
+  },
+
+  async getStoreStock(
+    params: ReportQueryParams,
+    signal?: AbortSignal
+  ): Promise<PageDto<StoreStockRow>> {
+    const response = await apiClient.get<PageDto<StoreStockRow>>(
+      `${BASE}/store-stock`,
       {
         params: buildParams(params),
         signal,

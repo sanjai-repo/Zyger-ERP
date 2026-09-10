@@ -101,6 +101,17 @@ export default function PoInwardList({
   const totalElements = data?.totalElements ?? 0;
   const totalPages = data?.totalPages ?? 1;
 
+  const getNetAmount = (r: typeof rows[0]): number => {
+    if (typeof r.netAmount === 'number' && r.netAmount > 0) return r.netAmount;
+    if (Array.isArray(r.lines) && r.lines.length > 0) {
+      const sumNet = r.lines.reduce((sum: number, l: any) => sum + (Number(l.netAmount) || 0), 0);
+      if (sumNet > 0) return sumNet;
+    }
+    const base = r.totalAmount ?? 0;
+    const tax = typeof r.taxAmount === 'number' ? r.taxAmount : 0;
+    return base + tax;
+  };
+
   const handleSort = (field: string) => {
     if (sortField === field) {
       setSortDir((previous) => (previous === 'asc' ? 'desc' : 'asc'));
@@ -293,7 +304,7 @@ export default function PoInwardList({
                     <td>{row.firstItemName || '—'}</td>
                     <td>{row.supplier || '—'}</td>
                     <td className="num">{formatMoney(row.firstRate ?? 0)}</td>
-                    <td className="num">{formatMoney(row.totalAmount ?? 0)}</td>
+                    <td className="num">{formatMoney(getNetAmount(row))}</td>
                     <td className="num">{formatNumber(row.totalQty ?? 0)}</td>
                     <td>
                       <StatusBadge status={row.status} />

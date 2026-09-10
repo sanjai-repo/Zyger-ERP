@@ -50,7 +50,7 @@ export default function AccuracyGauge({ value }: AccuracyGaugeProps) {
         }}
       >
         <div style={{ fontSize: '1.4rem', fontWeight: 800 }}>{value}%</div>
-        <div className="mut">Inventory Accuracy</div>
+        <div className="mut">of items above reorder level</div>
       </div>
     </div>
   );

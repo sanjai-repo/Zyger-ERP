@@ -86,10 +86,13 @@ export default function StockIssueRequestForm({
     [items]
   );
 
-  // Item Code should only ever offer Purchasable / Customer-Supplied / Manufacturing items
-  // (the three item screens under Master → Inventory → Items) — this picker previously
-  // showed every item in the system unfiltered.
-  const allowedItems = useMemo(() => filterPurchaseRelevantItems(items), [items]);
+  const allowedItems = useMemo(() => {
+    const filtered = filterPurchaseRelevantItems(items);
+    const selectedCodes = new Set(form.lines.map((l) => l.itemCode).filter(Boolean));
+    const filteredCodes = new Set(filtered.map((i) => i.code));
+    const missingSelected = items.filter((i) => selectedCodes.has(i.code) && !filteredCodes.has(i.code));
+    return missingSelected.length > 0 ? [...filtered, ...missingSelected] : filtered;
+  }, [items, form.lines]);
 
   const status = currentDocument?.status ?? 'DRAFT';
 

@@ -93,7 +93,39 @@ function formFromDto(
         if (field.key === 'amount') {
           const qty = toNumber(line.qty ?? line[config.qtyField]);
           const rate = toNumber(line.rate);
-          state.amount = line.amount !== undefined && line.amount !== null ? String(line.amount) : String(Math.round(qty * rate));
+          const base = qty * rate;
+          state.amount = line.amount !== undefined && line.amount !== null && String(line.amount) !== ''
+            ? String(line.amount)
+            : String(Number(base.toFixed(2)));
+          return;
+        }
+        if (field.key === 'taxAmount') {
+          const qty = toNumber(line.qty ?? line[config.qtyField]);
+          const rate = toNumber(line.rate);
+          const discountPct = toNumber(line.discount);
+          const taxPct = toNumber(line.tax);
+          const base = qty * rate;
+          const discAmt = (base * discountPct) / 100;
+          const taxable = base - discAmt;
+          const taxAmt = (taxable * taxPct) / 100;
+          state.taxAmount = line.taxAmount !== undefined && line.taxAmount !== null && String(line.taxAmount) !== ''
+            ? String(line.taxAmount)
+            : String(Number(taxAmt.toFixed(2)));
+          return;
+        }
+        if (field.key === 'netAmount') {
+          const qty = toNumber(line.qty ?? line[config.qtyField]);
+          const rate = toNumber(line.rate);
+          const discountPct = toNumber(line.discount);
+          const taxPct = toNumber(line.tax);
+          const base = qty * rate;
+          const discAmt = (base * discountPct) / 100;
+          const taxable = base - discAmt;
+          const taxAmt = (taxable * taxPct) / 100;
+          const netAmt = taxable + taxAmt;
+          state.netAmount = line.netAmount !== undefined && line.netAmount !== null && String(line.netAmount) !== ''
+            ? String(line.netAmount)
+            : String(Number(netAmt.toFixed(2)));
           return;
         }
         return;
@@ -860,6 +892,7 @@ export default function InwardForm({
           />
         );
       }
+      const isNumAuto = field.key === 'amount' || field.key === 'taxAmount' || field.key === 'netAmount';
       return (
         <input
           className="in"
@@ -868,7 +901,7 @@ export default function InwardForm({
             padding: '5px 6px',
             fontSize: '.74rem',
             width: '100%',
-textAlign: 'left',
+            textAlign: isNumAuto ? 'right' : 'left',
           }}
           value={value}
           readOnly
@@ -1124,28 +1157,6 @@ textAlign: 'left',
               <span className="material-symbols-rounded">restart_alt</span>
               Reopen
             </button>
-          )}
-
-          {status === 'SUBMITTED' && (
-            <>
-              <button
-                className="btn btn-g"
-                onClick={() => openActionModal('approve')}
-                disabled={isBusy}
-              >
-                <span className="material-symbols-rounded">thumb_up</span>
-                Approve
-              </button>
-
-              <button
-                className="btn btn-d"
-                onClick={() => openActionModal('reject')}
-                disabled={isBusy}
-              >
-                <span className="material-symbols-rounded">thumb_down</span>
-                Reject
-              </button>
-            </>
           )}
 
           {status === 'APPROVED' && (

@@ -44,21 +44,11 @@ public class DataSeeder implements CommandLineRunner {
                 item("FG-SHAFT-101","Spindle Shaft P/N 101","NOS","Finished Goods",8600,10,true,false),
                 item("CONS-CNMG","Turning Insert CNMG 120408","NOS","Consumables",620,40,true,false)));
 
-        if (parties.count() == 0) parties.saveAll(List.of(
-                Party.builder().kind("SUPPLIER").code("SUP-01").name("Nirmal B").build(),
-                Party.builder().kind("SUPPLIER").code("SUP-02").name("Tata Steel Distribution").build(),
-                Party.builder().kind("CUSTOMER").code("CUS-01").name("Ashok Gears").build()));
-
         if (locs.count() == 0) locs.saveAll(List.of(
                 LocationMaster.builder().code("RM-A-12").active(true).build(),
                 LocationMaster.builder().code("RM-A-01").active(true).build(),
                 LocationMaster.builder().code("FG-01").active(true).build(),
                 LocationMaster.builder().code("WIP-01").active(true).build()));
-
-        if (refs.count() == 0) refs.saveAll(List.of(
-                RefDoc.builder().kind("PO").number("PO-24-001").refCode("SUP-01").status("APPROVED").build(),
-                RefDoc.builder().kind("JO").number("JO-24-001").refCode("FG-SHAFT-101").status("APPROVED").build(),
-                RefDoc.builder().kind("LO").number("LO-24-001").refCode("SUP-03").status("APPROVED").build()));
     }
 
     private void seedRbac() {

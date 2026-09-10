@@ -368,6 +368,15 @@ export const NAV_ITEMS: NavTopItem[] = [
     children: [
       {
         type: 'item',
+        id: 'inventory-dashboard',
+        label: 'Dashboard',
+        icon: 'space_dashboard',
+        screenId: 'inventory-dashboard',
+        tabIcon: 'space_dashboard',
+      },
+
+      {
+        type: 'item',
         id: 'inward-entry',
         label: 'Inward Entry',
         icon: 'move_to_inbox',

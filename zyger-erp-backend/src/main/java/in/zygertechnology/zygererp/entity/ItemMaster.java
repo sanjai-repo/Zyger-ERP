@@ -49,6 +49,7 @@ public class ItemMaster {
     @Column(name = "min_stock_level") BigDecimal minStockLevel;
     @Column(name = "max_stock_level") BigDecimal maxStockLevel;
     @Column(name = "reorder_point") BigDecimal reorderPoint;
+    @Column(name = "reorder_qty") BigDecimal reorderQty;
     @Column(name = "hsn_code", length = 30) String hsnCode;
     @Column(name = "supplier_lead_time") Integer supplierLeadTime;
     @Column(name = "avg_daily_consumption", precision = 12, scale = 4) BigDecimal avgDailyConsumption;

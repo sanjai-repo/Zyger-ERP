@@ -18,7 +18,14 @@ export function isPurchaseRelevantItem(item: {
   itemGroupType?: string;
   groupItemType?: string;
   customerOwned?: boolean;
+  active?: boolean;
+  status?: string;
 }): boolean {
+  if (!item || !item.code || !String(item.code).trim()) return false;
+  if (item.active === false || item.status === 'INACTIVE' || item.status === 'DISCONTINUED') {
+    return false;
+  }
+
   const rawType = String(
     item.itemType ||
     item.groupType ||
@@ -28,33 +35,18 @@ export function isPurchaseRelevantItem(item: {
     item.groupItemType ||
     ''
   ).toUpperCase().replace(/[\s_]+/g, '_');
-  const code = String(item.code || '').toUpperCase();
-  if (!rawType && !code) return true;
 
-  const isPurchasable =
-    rawType.includes('PURCHASABLE') ||
-    rawType.includes('RAW_MATERIAL') ||
-    rawType.includes('BUY_ITEM') ||
-    rawType.includes('CONSUMABLE') ||
-    rawType === 'RM' ||
-    code.startsWith('PIT-') ||
-    rawType.includes('PURCHAS');
+  // Filter out non-inventoriable unwanted items (services, labor, overhead, freight)
+  if (
+    rawType.includes('SERVICE') ||
+    rawType.includes('LABOR') ||
+    rawType.includes('OVERHEAD') ||
+    rawType.includes('FREIGHT')
+  ) {
+    return false;
+  }
 
-  const isCustomerSupplied =
-    rawType.includes('CUSTOMER') ||
-    rawType.includes('SUPPLIED') ||
-    item.customerOwned === true ||
-    code.startsWith('CSM-');
-
-  const isManufacturing =
-    rawType.includes('MANUFACTUR') ||
-    rawType.includes('FINISHED') ||
-    rawType === 'FG' ||
-    rawType.includes('SEMI_FG') ||
-    rawType.includes('SFG') ||
-    code.startsWith('MFG-');
-
-  return isPurchasable || isCustomerSupplied || isManufacturing;
+  return true;
 }
 
 /**

@@ -1,9 +1,11 @@
 export interface ReportsOverviewKpis {
   totalOnHand: number;
+  skuCount: number;
   stockValue: number;
   reserved: number;
   available: number;
   lowStockCount: number;
+  outOfStockCount: number;
   pendingInward: number;
   pendingApprovals: number;
   ledgerEntries: number;
@@ -40,6 +42,31 @@ export interface TopItemBar {
   value: number;
 }
 
+export interface AbcTier {
+  tier: 'A' | 'B' | 'C';
+  itemCount: number;
+  value: number;
+  valuePct: number;
+}
+
+export interface AgingBucket {
+  bucket: string;
+  itemCount: number;
+  qty: number;
+  value: number;
+}
+
+export interface MovementSlice {
+  count: number;
+  qty: number;
+}
+
+export interface MovementSummary {
+  count: number;
+  qty: number;
+  byType: Record<string, MovementSlice>;
+}
+
 export interface ReportsOverviewDto {
   kpis: ReportsOverviewKpis;
   monthlyStatus: MonthlyStatusPoint[];
@@ -47,6 +74,13 @@ export interface ReportsOverviewDto {
   locationDistribution: LocationBar[];
   inwardIssueTrend: TrendPoint[];
   topItemsByValue: TopItemBar[];
+  slowMovingItems: TopItemBar[];
+  abcAnalysis: AbcTier[];
+  stockAging: AgingBucket[];
+  received?: MovementSummary;
+  issued?: MovementSummary;
+  receivedToday?: MovementSummary;
+  issuedToday?: MovementSummary;
 }
 
 export interface ReportQueryParams {
@@ -59,6 +93,7 @@ export interface ReportQueryParams {
   itemCode?: string;
   location?: string;
   category?: string;
+  itemType?: string;
   status?: string;
   txType?: string;
   lowStockOnly?: boolean;
@@ -92,6 +127,7 @@ export interface StockSummaryTotals {
 export interface NotAvailableItem {
   itemCode: string;
   itemName: string;
+  specification: string;
   category: string;
   itemType: string;
   itemGroup: string;
@@ -111,4 +147,58 @@ export interface SimpleReportDto {
   totals: StockSummaryTotals;
   groups: ItemGroupSummary[];
   reorderList: DrilldownRow[];
+  reorderSoonList: DrilldownRow[];
+}
+
+export interface ItemStockStore {
+  storeCode: string;
+  storeName: string;
+  onHand: number;
+  available: number;
+}
+
+export interface ItemStockRow {
+  id: string;
+  itemCode: string;
+  itemName: string;
+  specification: string;
+  itemType: string;
+  itemGroup: string;
+  category: string;
+  uom: string;
+  totalOnHand: number;
+  totalReserved: number;
+  totalQcHold: number;
+  totalAvailable: number;
+  totalValue: number;
+  safetyStock: number;
+  reorderPoint: number;
+  maxStockLevel: number;
+  reorderQty: number | null;
+  suggestedOrderQty: number;
+  avgDailyConsumption: number;
+  reorderStatus: string;
+  lowStock: boolean;
+  multiStore: boolean;
+  lastMovementDate: string | null;
+  perStore: ItemStockStore[];
+}
+
+export interface StoreStockRow {
+  id: string;
+  storeCode: string;
+  storeName: string;
+  itemCode: string;
+  itemName: string;
+  specification: string;
+  itemType: string;
+  itemGroup: string;
+  category: string;
+  uom: string;
+  onHand: number;
+  reserved: number;
+  qcHold: number;
+  available: number;
+  value: number;
+  lastMovementDate: string | null;
 }

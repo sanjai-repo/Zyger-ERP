@@ -672,7 +672,7 @@ Header: `allotmentNo` (required, pick-list — **auto-fills item lines, allotted
 already-released qty**), `reason` (Order Cancelled / Excess Reservation / Change of Plan /
 Other). Lines: `itemCode` (**auto**), `releasedQty`.
 
-- BR-INV-SR-1: `allotmentNo` mandatory; referenced allotment must be POSTED.
+- BR-INV-SR-1: `allotmentNo` mandatory.
 - BR-INV-SR-2: `releasedQty` per item ≤ `allottedQty − alreadyReleasedQty`.
 
 ### 11.3 Workflow (WF-INV-ALLOT)
@@ -822,7 +822,7 @@ document genealogy.
 | BR-INV-DCR-2 **[NEW]** | Every return posting increases store stock by the returned qty (mirror of BR-INV-RM-2). |
 | BR-INV-RM-2 **[NEW]** | Every issue posting reduces store stock by the issued qty. |
 | BR-INV-ADJ-1 | Adjustments require reason code. |
-| BR-INV-SR-1 | Release requires POSTED allotment; cannot exceed allotted remaining. |
+| BR-INV-SR-1 | Release requires referenced allotment; cannot exceed allotted remaining. |
 | BR-INV-SIR-1 | SIR is approval-only (no stock effect); RM Issue enforces SIR balance. |
 | BR-INV-BACKDATE-1 | Backdated entries (> 2 h) blocked unless authorized. |
 | BR-INV-EDIT-1 | Only DRAFT/REJECTED documents editable/deletable. |

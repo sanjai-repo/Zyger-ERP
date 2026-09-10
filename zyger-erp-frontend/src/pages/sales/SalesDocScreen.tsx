@@ -10,7 +10,7 @@ import {
   useSalesDocUpdate,
 } from '../../hooks/useSalesDocs';
 import type { SalesDocScreenConfig } from './salesDocConfigs';
-import { formatNumber } from '../../utils/format';
+import { formatNumber, todayISO } from '../../utils/format';
 import { getApiErrorMessage } from '../../utils/apiError';
 import { useToast } from '../../contexts/ToastContext';
 import StatusBadge from '../../components/common/StatusBadge';
@@ -395,7 +395,7 @@ export default function SalesDocScreen({ config, initialDocId, viewOnly = false,
 
   const openForm = (id: string | null, _view: boolean) => {
     setDocumentId(id);
-    const dateToday = new Date().toISOString().split('T')[0];
+    const dateToday = todayISO();
     const initialCode = id ? '' : (nextNumberQuery.data?.nextNumber || '');
     const defaultCust = customerMasters[0] || { name: 'ABC Engineering Ltd', code: 'CUST-001' };
 

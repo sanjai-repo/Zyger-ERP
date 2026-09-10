@@ -100,6 +100,9 @@ export interface PoInwardListRowDto {
   firstRate?: number;
   totalAmount?: number;
   totalQty?: number;
+  taxAmount?: number;
+  netAmount?: number;
+  lines?: PoInwardLineDto[];
   status: DocumentStatus;
 }
 

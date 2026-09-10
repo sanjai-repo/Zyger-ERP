@@ -208,7 +208,14 @@ export default function PoInwardForm({
               const item = itemsMap.get(l.itemCode);
               const qty = String(l.orderQty ?? l.qty ?? '');
               const rate = String(l.unitPrice ?? l.rate ?? item?.defaultRate ?? '');
-              const amount = qty && rate ? String(Math.round(toNumber(qty) * toNumber(rate))) : '';
+              const discount = String(l.discount ?? l.discountPercentage ?? '0');
+              const tax = String(l.tax ?? l.taxPercentage ?? '0');
+
+              const base = toNumber(qty) * toNumber(rate);
+              const discAmt = (base * toNumber(discount)) / 100;
+              const taxable = base - discAmt;
+              const taxAmt = (taxable * toNumber(tax)) / 100;
+              const netAmt = taxable + taxAmt;
 
               return {
                 itemCode: l.itemCode || 'ITEM-001',
@@ -218,7 +225,11 @@ export default function PoInwardForm({
                 acceptedQty: qty,
                 rejectedQty: '0',
                 rate,
-                amount,
+                discount,
+                tax,
+                taxAmount: taxAmt ? String(Number(taxAmt.toFixed(2))) : '0',
+                netAmount: netAmt ? String(Number(netAmt.toFixed(2))) : '0',
+                amount: base ? String(Number(base.toFixed(2))) : '0',
                 batchNo: '',
                 heatNo: '',
                 location: l.location || defaultLoc,
@@ -282,9 +293,9 @@ export default function PoInwardForm({
         const taxAmt = (taxable * taxPct) / 100;
         const netAmt = taxable + taxAmt;
 
-        line.amount = String(Math.round(base));
-        line.taxAmount = String(Math.round(taxAmt));
-        line.netAmount = String(Math.round(netAmt));
+        line.amount = base ? String(Number(base.toFixed(2))) : '0';
+        line.taxAmount = taxAmt ? String(Number(taxAmt.toFixed(2))) : '0';
+        line.netAmount = netAmt ? String(Number(netAmt.toFixed(2))) : '0';
       }
 
       lines[index] = line;
@@ -1209,30 +1220,6 @@ export default function PoInwardForm({
                 <span className="material-symbols-rounded">restart_alt</span>
                 Reopen
               </button>
-            )}
-
-            {status === 'SUBMITTED' && (
-              <>
-                <button
-                  type="button"
-                  className="btn btn-g"
-                  onClick={() => openActionModal('approve')}
-                  disabled={isBusy}
-                >
-                  <span className="material-symbols-rounded">thumb_up</span>
-                  Approve
-                </button>
-
-                <button
-                  type="button"
-                  className="btn btn-d"
-                  onClick={() => openActionModal('reject')}
-                  disabled={isBusy}
-                >
-                  <span className="material-symbols-rounded">thumb_down</span>
-                  Reject
-                </button>
-              </>
             )}
 
             {status === 'APPROVED' && (

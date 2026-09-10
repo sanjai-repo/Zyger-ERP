@@ -124,8 +124,26 @@ public class DocumentFacade {
         r.put("id", e.getId());
         List<? extends LineEntity> L = e.getLines();
         r.put("qty", L.stream().mapToDouble(l -> l.getQty().doubleValue()).sum());
-        r.put("totalAmount", L.stream()
-                .mapToDouble(l -> (l.getRate() == null ? 0 : l.getRate().doubleValue()) * l.getQty().doubleValue()).sum());
+        double totalAmt = L.stream()
+                .mapToDouble(l -> (l.getRate() == null ? 0 : l.getRate().doubleValue()) * l.getQty().doubleValue()).sum();
+        r.put("totalAmount", totalAmt);
+
+        double calcTaxAmt = L.stream()
+                .mapToDouble(l -> l.getTaxAmount() != null ? l.getTaxAmount().doubleValue() : 0.0).sum();
+        double calcNetAmt = L.stream()
+                .mapToDouble(l -> {
+                    if (l.getNetAmount() != null) return l.getNetAmount().doubleValue();
+                    double lineAmt = (l.getRate() == null ? 0.0 : l.getRate().doubleValue()) * l.getQty().doubleValue();
+                    double taxAmt = l.getTaxAmount() != null ? l.getTaxAmount().doubleValue() : 0.0;
+                    return lineAmt + taxAmt;
+                }).sum();
+
+        if (r.get("taxAmount") == null || ((Number) r.get("taxAmount")).doubleValue() == 0.0) {
+            r.put("taxAmount", calcTaxAmt);
+        }
+        if (r.get("netAmount") == null || ((Number) r.get("netAmount")).doubleValue() == 0.0) {
+            r.put("netAmount", calcNetAmt > 0 ? calcNetAmt : totalAmt);
+        }
 
         List<Map<String, Object>> lineRows = new ArrayList<>();
         for (LineEntity l : L) {
@@ -831,6 +849,7 @@ public class DocumentFacade {
         old.setUpdatedAt(Instant.now());
         old.setUpdatedBy(user);
         validateGeneralDcGstin(key, old);
+        validateReleaseBalance(key, old);
         attach(old);
         return old;
     }
@@ -1498,8 +1517,31 @@ public class DocumentFacade {
     private List<LedgerLine> collectLines(DocTypes.DocDef def, DocEntity e) {
         List<LedgerLine> out = new ArrayList<>();
         if (def.hasLines()) {
+            // Stock Release carries no location of its own — it releases stock the
+            // referenced Allotment reserved, so fall back to that allotment line's location
+            // instead of defaulting to MAIN, which may hold none of the item's stock.
+            DocEntity allotmentDoc = null;
+            if ("stock-release".equals(def.key())) {
+                String allotmentNo = headerStr(e, "allotmentNo");
+                if (!allotmentNo.isBlank()) {
+                    try { allotmentDoc = getByNumber("stock-allotment", allotmentNo); } catch (Exception ignored) {}
+                }
+            }
             for (LineEntity l : e.getLines()) {
                 String loc = firstNonEmpty(l.getLocation(), headerStr(e, "sourceLocation"), headerStr(e, "storeLocation"));
+                if (loc.isEmpty() && allotmentDoc != null) {
+                    for (LineEntity aLine : allotmentDoc.getLines()) {
+                        if (l.getItemCode() != null && l.getItemCode().equals(aLine.getItemCode())
+                                && aLine.getLocation() != null && !aLine.getLocation().isBlank()) {
+                            loc = aLine.getLocation();
+                            break;
+                        }
+                    }
+                }
+                if (loc.isBlank()) loc = "MAIN";
+                if (l instanceof BaseLine bl && (bl.getLocation() == null || bl.getLocation().isBlank())) {
+                    bl.setLocation(loc);
+                }
                 out.add(new LedgerLine(l.getItemCode(), loc, l.getBatchNo(), l.getHeatNo(), l.getQty().doubleValue()));
             }
             return out;
@@ -1763,19 +1805,8 @@ public class DocumentFacade {
     }
 
     private void validateBatchHeat(String key, DocEntity e) {
-        if (e.getLines() == null) return;
-        for (LineEntity line : e.getLines()) {
-            String itemCode = line.getItemCode();
-            if (itemCode == null || itemCode.isBlank()) continue;
-            var item = itemCache.findByCode(itemCode).orElse(null);
-            if (item == null) continue;
-            if (Boolean.TRUE.equals(item.getRequiresBatch()) && (line.getBatchNo() == null || line.getBatchNo().isBlank())) {
-                throw new IllegalStateException("Item " + itemCode + " requires batch number");
-            }
-            if (Boolean.TRUE.equals(item.getRequiresHeat()) && (line.getHeatNo() == null || line.getHeatNo().isBlank())) {
-                throw new IllegalStateException("Item " + itemCode + " requires heat number");
-            }
-        }
+        // Completely removed mandatory requires batch/heat number rule
+        return;
     }
 
     private void validateAmendmentReason(String key, DocEntity e) {
@@ -1801,9 +1832,6 @@ public class DocumentFacade {
             throw new IllegalStateException("Stock Release must reference an Allotment number");
         }
         DocEntity allotmentDoc = getByNumber("stock-allotment", allotmentNo);
-        if (!"POSTED".equals(allotmentDoc.getStatus())) {
-            throw new IllegalStateException("Referenced allotment " + allotmentNo + " must be POSTED");
-        }
         for (LineEntity line : e.getLines()) {
             String itemCode = line.getItemCode();
             double releaseQty = line.getQty() != null ? line.getQty().doubleValue() : 0;
@@ -1936,11 +1964,6 @@ public class DocumentFacade {
 
             String checkLoc = isJoReceiving ? "Goods with Job Worker" : sourceLoc;
             String batchNo = line.getBatchNo() != null ? line.getBatchNo() : "";
-
-            var item = itemCache.findByCode(itemCode).orElse(null);
-            if (item != null && Boolean.TRUE.equals(item.getRequiresBatch()) && batchNo.isBlank()) {
-                throw new IllegalArgumentException("Item " + itemCode + " is batch-tracked and requires a Batch/Lot No");
-            }
 
             double available = stockService.available(itemCode, checkLoc);
             if (available < qty.doubleValue()) {

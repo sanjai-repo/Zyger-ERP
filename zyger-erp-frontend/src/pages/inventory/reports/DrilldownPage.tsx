@@ -29,9 +29,21 @@ const STATUS_OPTIONS = [
   'CANCELLED',
 ];
 
+/** Direction icon for a stock-ledger transaction type, keyword-matched since
+ * txType values are free-form business codes (RECEIPT, RM_ISSUE, DC_RETURN, …)
+ * rather than a fixed enum. */
+function txTypeIcon(txType: string): string {
+  const t = txType.toUpperCase();
+  if (t.includes('TRANSFER')) return '🔄';
+  if (t.includes('RETURN')) return '↩';
+  if (t.includes('ISSUE') || t.includes('DISPATCH') || t.includes('OUT')) return '⬆';
+  if (t.includes('RECEIPT') || t.includes('INWARD') || t.includes('RELEASE')) return '⬇';
+  return '•';
+}
+
 interface DrilldownPageProps {
   drilldownType: string;
-  initialFilters?: { location?: string };
+  initialFilters?: { location?: string; fromDate?: string; toDate?: string };
 }
 
 export default function DrilldownPage({ drilldownType, initialFilters }: DrilldownPageProps) {
@@ -103,8 +115,8 @@ export default function DrilldownPage({ drilldownType, initialFilters }: Drilldo
 
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
+  const [fromDate, setFromDate] = useState(initialFilters?.fromDate ?? '');
+  const [toDate, setToDate] = useState(initialFilters?.toDate ?? '');
   const [itemCode, setItemCode] = useState('');
   const [location, setLocation] = useState(initialFilters?.location ?? '');
   const [category, setCategory] = useState('');
@@ -194,8 +206,23 @@ export default function DrilldownPage({ drilldownType, initialFilters }: Drilldo
       return <StatusBadge status={String(value ?? '')} />;
     }
 
+    if (column.key === 'txType') {
+      return `${txTypeIcon(String(value ?? ''))} ${String(value ?? '') || '—'}`;
+    }
+
     if (column.date) {
       return formatDate(String(value ?? ''));
+    }
+
+    if (column.key === 'location') {
+      return String(row.storeName || row.location || '—');
+    }
+
+    if (column.key === 'value') {
+      const val = typeof value === 'number' && !Number.isNaN(value)
+        ? value
+        : ((Number(row.onHand) || 0) * (Number(row.rate) || 0));
+      return formatCurrency(val);
     }
 
     if (column.money) {

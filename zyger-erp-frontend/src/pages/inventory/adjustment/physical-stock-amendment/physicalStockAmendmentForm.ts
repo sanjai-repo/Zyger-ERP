@@ -179,15 +179,6 @@ export function validatePhysicalStockAmendmentForm(
       );
     }
 
-    if (strict && line.itemCode) {
-      const item = itemsMap.get(line.itemCode);
-
-      if (item?.requiresBatch && !line.batchNo.trim()) {
-        errors.push(
-          `Line ${lineNo}: Batch No mandatory for ${line.itemCode}.`
-        );
-      }
-    }
   });
 
   return [...new Set(errors)];

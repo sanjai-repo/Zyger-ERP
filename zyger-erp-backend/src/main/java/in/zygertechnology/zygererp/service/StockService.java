@@ -91,21 +91,42 @@ public class StockService {
     private Map<String, Double> reservations() {
         Map<String, Double> r = new LinkedHashMap<>();
         for (DocEntity a : docs.findAll("stock-allotment")) {
-            if (!"APPROVED".equals(a.getStatus())) continue;
+            if (!Set.of("APPROVED", "POSTED").contains(a.getStatus())) continue;
             for (LineEntity l : a.getLines()) {
-                r.merge(key(l.getItemCode(), l.getLocation(), l.getBatchNo(), l.getHeatNo()),
+                String loc = (l.getLocation() != null && !l.getLocation().isBlank()) ? l.getLocation() : "MAIN";
+                r.merge(key(l.getItemCode(), loc, l.getBatchNo(), l.getHeatNo()),
                         bd(l.getQty()), Double::sum);
             }
         }
         for (DocEntity x : docs.findAll("stock-release")) {
             if (!"POSTED".equals(x.getStatus())) continue;
+            // A release line often carries no location of its own (it releases
+            // whatever the referenced Allotment reserved), so resolve the location
+            // from that allotment instead of draining whichever same-item reservation
+            // happens to be first in map order — otherwise a release at one store can
+            // wrongly cancel out another store's reservation of the same item.
+            Map<String, String> locByItem = new HashMap<>();
+            if (x instanceof in.zygertechnology.zygererp.entity.StockRelease sr
+                    && sr.getAllotmentNo() != null && !sr.getAllotmentNo().isBlank()) {
+                try {
+                    DocEntity allotmentDoc = docs.getByNumber("stock-allotment", sr.getAllotmentNo());
+                    for (LineEntity aLine : allotmentDoc.getLines()) {
+                        if (aLine.getLocation() != null && !aLine.getLocation().isBlank()) {
+                            locByItem.putIfAbsent(str(aLine.getItemCode()), aLine.getLocation());
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }
             for (LineEntity l : x.getLines()) {
                 double left = bd(l.getQty());
                 String item = str(l.getItemCode()), batch = str(l.getBatchNo());
+                String resolvedLoc = (l.getLocation() != null && !l.getLocation().isBlank())
+                        ? l.getLocation() : locByItem.get(item);
                 for (Map.Entry<String, Double> e : r.entrySet()) {
                     if (left <= 0) break;
                     String[] p = e.getKey().split("\\|", -1);
-                    if (p[0].equals(item) && (batch.isEmpty() || p[2].equals(batch))) {
+                    if (p[0].equals(item) && (batch.isEmpty() || p[2].equals(batch))
+                            && (resolvedLoc == null || p[1].equals(resolvedLoc))) {
                         double take = Math.min(e.getValue(), left);
                         e.setValue(e.getValue() - take);
                         left -= take;
@@ -147,7 +168,7 @@ public class StockService {
             throw new IllegalArgumentException("Stock receipt quantity must be greater than zero. Received: " + inQty);
         }
         if (stockStatus == null || stockStatus.isBlank()) stockStatus = "FREE";
-        String loc = location != null ? location : "MAIN";
+        String loc = (location != null && !location.isBlank()) ? location : "MAIN";
         String batch = batchNo != null ? batchNo : "";
         String heat = heatNo != null ? heatNo : "";
         BigDecimal qty = inQty;
@@ -180,7 +201,7 @@ public class StockService {
                                String location, String batchNo, String heatNo,
                                BigDecimal outQty, LocalDate txDate, String user,
                                boolean allowNegativeOverride) {
-        String loc = location != null ? location : "MAIN";
+        String loc = (location != null && !location.isBlank()) ? location : "MAIN";
         String batch = batchNo != null ? batchNo : "";
         String heat = heatNo != null ? heatNo : "";
         BigDecimal qty = outQty != null ? outQty : BigDecimal.ZERO;
@@ -191,7 +212,11 @@ public class StockService {
             return;
         }
 
-        verifyStockAvailability(itemCode, loc, qty, allowNegativeOverride);
+        if ("stock-release".equals(docType)) {
+            verifyPhysicalStockAvailability(itemCode, loc, qty, allowNegativeOverride);
+        } else {
+            verifyStockAvailability(itemCode, loc, qty, allowNegativeOverride);
+        }
 
         StockLedger entry = StockLedger.builder()
                 .docNo(docNo).docType(docType).txType(txType)
@@ -216,7 +241,7 @@ public class StockService {
                                       String location, String batchNo, String heatNo,
                                       BigDecimal deltaQty, LocalDate txDate, String user,
                                       boolean allowNegativeOverride) {
-        String loc = location != null ? location : "MAIN";
+        String loc = (location != null && !location.isBlank()) ? location : "MAIN";
         String batch = batchNo != null ? batchNo : "";
         String heat = heatNo != null ? heatNo : "";
         if (deltaQty.compareTo(BigDecimal.ZERO) == 0) return;
@@ -246,7 +271,7 @@ public class StockService {
     public void releaseQcHold(String docNo, String docType, String txType, String itemCode,
                               String location, String batchNo, String heatNo,
                               BigDecimal qty, LocalDate txDate, String user) {
-        String loc = location != null ? location : "MAIN";
+        String loc = (location != null && !location.isBlank()) ? location : "MAIN";
         String batch = batchNo != null ? batchNo : "";
         String heat = heatNo != null ? heatNo : "";
         BigDecimal toRelease = qty != null ? qty : BigDecimal.ZERO;
@@ -302,7 +327,7 @@ public class StockService {
                                  String location, String batchNo, String heatNo,
                                  BigDecimal qty, String disposition, LocalDate txDate, String user) {
         String status = disposition == null || disposition.isBlank() ? "REJECTED" : disposition.toUpperCase();
-        String loc = location != null ? location : "MAIN";
+        String loc = (location != null && !location.isBlank()) ? location : "MAIN";
         String batch = batchNo != null ? batchNo : "";
         String heat = heatNo != null ? heatNo : "";
         BigDecimal toDispose = qty != null ? qty : BigDecimal.ZERO;
@@ -394,6 +419,26 @@ public class StockService {
                     BigDecimal.valueOf(requiredQty.doubleValue() - avail));
             throw new IllegalArgumentException("Insufficient stock for " + itemCode +
                     " at " + loc + ": available " + avail + ", requested " + requiredQty);
+        }
+    }
+
+    public void verifyPhysicalStockAvailability(String itemCode, String location, BigDecimal requiredQty,
+                                                 boolean allowNegativeOverride) {
+        if (requiredQty == null || requiredQty.compareTo(BigDecimal.ZERO) <= 0) return;
+        String loc = location == null || location.isEmpty() ? "MAIN" : location;
+        double usableOnHand = onHand(itemCode, loc, null) - qcHold(itemCode, loc);
+        if (usableOnHand - requiredQty.doubleValue() < 0) {
+            if (allowNegativeOverride
+                    && CurrentUserRoles.hasAnyRole("ADMIN", "STORE_MANAGER", "STORES_MANAGER")) {
+                log.warn("NEGATIVE STOCK OVERRIDE: item={}, location={}, requested={}, available={} — authorized by {}",
+                        itemCode, loc, requiredQty, usableOnHand, CurrentUserRoles.username());
+                return;
+            }
+            log.warn("NEGATIVE STOCK ATTEMPT BLOCKED: item={}, location={}, requested={}, available={}, deficit={}",
+                    itemCode, loc, requiredQty, usableOnHand,
+                    BigDecimal.valueOf(requiredQty.doubleValue() - usableOnHand));
+            throw new IllegalArgumentException("Insufficient stock for " + itemCode +
+                    " at " + loc + ": available " + usableOnHand + ", requested " + requiredQty);
         }
     }
 }

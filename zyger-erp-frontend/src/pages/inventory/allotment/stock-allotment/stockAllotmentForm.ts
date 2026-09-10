@@ -164,21 +164,6 @@ export function validateStockAllotmentForm(
       errors.push(`Line ${lineNo}: Location is required.`);
     }
 
-    if (strict && line.itemCode) {
-      const item = itemsMap.get(line.itemCode);
-
-      if (item?.requiresBatch && !line.batchNo.trim()) {
-        errors.push(
-          `Line ${lineNo}: Batch No mandatory for ${line.itemCode}.`
-        );
-      }
-
-      if (item?.requiresHeat && !line.heatNo.trim()) {
-        errors.push(
-          `Line ${lineNo}: Heat No mandatory for ${line.itemCode}.`
-        );
-      }
-    }
   });
 
   return [...new Set(errors)];

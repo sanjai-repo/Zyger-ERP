@@ -191,16 +191,22 @@ export function TabsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const closeTab = useCallback((id: string) => {
-    let newActive: string | null = activeTabId;
+    // Callers (e.g. a "View" tab's onBack) capture this closure once, at the
+    // moment the tab is opened — by the time Back is actually clicked, the
+    // active tab has since changed to that view tab, so a stale outer
+    // `activeTabId` would no longer match and the active tab would never get
+    // reassigned away from the just-removed tab (leaving nothing rendered,
+    // since no tab in the array matches the stale activeTabId anymore).
+    // Functional updates read live state instead, so this stays correct
+    // regardless of when the closure was created.
     setTabs(prev => {
       const next = prev.filter(t => t.id !== id);
-      if (activeTabId === id) {
-        newActive = next.length > 0 ? next[next.length - 1].id : null;
-      }
+      setActiveTabId(prevActive =>
+        prevActive === id ? (next.length > 0 ? next[next.length - 1].id : null) : prevActive
+      );
       return next;
     });
-    if (newActive !== activeTabId) setActiveTabId(newActive);
-  }, [activeTabId]);
+  }, []);
 
   const setActiveTab = useCallback((id: string) => {
     setActiveTabId(id);

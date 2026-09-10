@@ -36,6 +36,7 @@ export interface DocScreenConfig {
   statusOptions: string[];
   disableApprovalWorkflow?: boolean;
   hideTopSave?: boolean;
+  hideBottomSave?: boolean;
   typeFilter?: { field: string; label: string; options: string[] };
   fields: FieldDef[];
   lines?: { title: string; fields: LineFieldDef[] };
@@ -80,7 +81,6 @@ export const PURCHASE_REQUEST_CONFIG: DocScreenConfig = {
   lines: {
     title: 'Purchase Request Items',
     fields: [
-      { colNo: 1, key: 'lineNo', label: 'Line #', readOnly: true, width: '55px' },
       { colNo: 2, key: 'itemCode', label: 'Item Code *', type: 'lookup', required: true, width: '180px' },
       { colNo: 3, key: 'itemName', label: 'Item Name *', required: true, width: '170px' },
       { colNo: 4, key: 'itemType', label: 'Item Type', type: 'select', options: ['Raw Material', 'Consumable', 'Tooling', 'Spare', 'Service'], width: '115px' },
@@ -104,9 +104,8 @@ export const SUPPLIER_ENQUIRY_CONFIG: DocScreenConfig = {
   docType: 'supplier-enquiry',
   title: 'Supplier Enquiry',
   subtitle: 'Send RFQ to multiple suppliers and compare responses',
-  // FRS §13 [ASSUMPTION]: re-enabled. Send Mail remains independent of Approve/Reject —
-  // an enquiry can be approved before or after it's emailed to suppliers.
-  disableApprovalWorkflow: false,
+  disableApprovalWorkflow: true,
+  hideTopSave: true,
   columns: [
     { label: 'Enquiry No', field: 'docNo' },
     { label: 'PR Reference', field: 'purchaseRequestNumber' },
@@ -117,7 +116,7 @@ export const SUPPLIER_ENQUIRY_CONFIG: DocScreenConfig = {
     { label: 'Status', field: 'status', badge: true },
   ],
   statusField: 'status',
-  statusOptions: [...GENERIC_STATUSES, 'SENT', 'QUOTED', 'SUBMITTED'],
+  statusOptions: ['DRAFT', 'SENT'],
   fields: [
     { key: 'docNo', label: 'Enquiry Number (Auto)', readOnly: true },
     { key: 'purchaseRequestNumber', label: 'PR Reference' },
@@ -133,7 +132,6 @@ export const SUPPLIER_ENQUIRY_CONFIG: DocScreenConfig = {
   lines: {
     title: 'Enquiry Items',
     fields: [
-      { colNo: 1, key: 'lineNo', label: 'Line #', readOnly: true },
       { colNo: 2, key: 'itemCode', label: 'Item Code / Name *', type: 'lookup', required: true },
       { colNo: 3, key: 'itemName', label: 'Item Name *', required: true },
       { colNo: 4, key: 'description', label: 'Description' },
@@ -156,16 +154,14 @@ export const SUPPLIER_QUOTATION_CONFIG: DocScreenConfig = {
   docType: 'supplier-quotation',
   title: 'Supplier Quotation',
   subtitle: 'Record supplier quotations for comparison and PO selection',
-  // FRS §13 [ASSUMPTION]: re-enabled. Approving a quotation now writes purchase price
-  // history through the normal UI action instead of only via a raw API call.
-  disableApprovalWorkflow: false,
+  disableApprovalWorkflow: true,
+  hideTopSave: true,
   columns: [
     { label: 'Quotation No', field: 'docNo' },
     { label: 'Enquiry Ref', field: 'enquiryNumber' },
     { label: 'Supplier', field: 'supplier' },
     { label: 'Quotation Date', field: 'date' },
     { label: 'Valid Until', field: 'validUntil' },
-    { label: 'Status', field: 'status', badge: true },
   ],
   statusField: 'status',
   statusOptions: [...GENERIC_STATUSES, 'SELECTED', 'SUBMITTED'],
@@ -183,7 +179,6 @@ export const SUPPLIER_QUOTATION_CONFIG: DocScreenConfig = {
   lines: {
     title: 'Quotation Items',
     fields: [
-      { colNo: 1, key: 'lineNo', label: 'Line #', readOnly: true },
       { colNo: 2, key: 'itemCode', label: 'Item Code (Lookup)', type: 'lookup', required: true },
       { colNo: 3, key: 'itemName', label: 'Item Name' },
       { colNo: 4, key: 'description', label: 'Description' },
@@ -215,11 +210,7 @@ export const PURCHASE_ORDER_CONFIG: DocScreenConfig = {
   docType: 'purchase-order',
   title: 'Purchase Order',
   subtitle: 'Official commercial document issued to supplier with item, quantity, price and delivery terms',
-  // FRS §13 [ASSUMPTION]: re-enabled. A PO can now be formally Approved before the
-  // Send Email step, in addition to (or instead of) the existing RELEASED-by-email path;
-  // both remain available. Approve is also blocked without a supplier + valid item lines
-  // (BR-PUR-GUARD-1, backend/service/DocumentFacade.java), which was previously untestable.
-  disableApprovalWorkflow: false,
+  disableApprovalWorkflow: true,
   hideTopSave: true,
   columns: [
     { label: 'PO Number', field: 'docNo' },
@@ -230,7 +221,7 @@ export const PURCHASE_ORDER_CONFIG: DocScreenConfig = {
     { label: 'Status', field: 'status', badge: true },
   ],
   statusField: 'status',
-  statusOptions: [...GENERIC_STATUSES, 'RELEASED', 'PARTIALLY_RECEIVED', 'FULLY_RECEIVED', 'ON_HOLD', 'SUBMITTED'],
+  statusOptions: ['DRAFT', 'SENT'],
   fields: [
     { key: 'docNo', label: 'PO Number (Auto)', readOnly: true },
     { key: 'quotationNumber', label: 'Reference Quotation (Select Option) *', required: true },
@@ -245,9 +236,8 @@ export const PURCHASE_ORDER_CONFIG: DocScreenConfig = {
     { key: 'remarks', label: 'Remarks', type: 'textarea' },
   ],
   lines: {
-    title: 'Purchase Order Line Items',
+    title: 'Purchase Order Items',
     fields: [
-      { colNo: 1, key: 'lineNo', label: 'Line #', readOnly: true },
       { colNo: 2, key: 'itemCode', label: 'Item Code (Lookup)', type: 'lookup', required: true },
       { colNo: 3, key: 'itemName', label: 'Item Name' },
       { colNo: 4, key: 'specification', label: 'Specification' },
@@ -304,7 +294,6 @@ export const JOB_ORDER_CONFIG: DocScreenConfig = {
   lines: {
     title: 'Job Order Line Items',
     fields: [
-      { colNo: 1, key: 'lineNo', label: 'Line #', readOnly: true },
       { colNo: 2, key: 'itemCode', label: 'Item Code (Lookup)', type: 'lookup', required: true },
       { colNo: 3, key: 'itemName', label: 'Item Name' },
       { colNo: 4, key: 'description', label: 'Description' },
@@ -485,7 +474,6 @@ export const PURCHASE_RETURN_CONFIG: DocScreenConfig = {
   lines: {
     title: 'Returned Items',
     fields: [
-      { colNo: 1, key: 'lineNo', label: 'Line #', readOnly: true, width: '55px' },
       { colNo: 2, key: 'itemCode', label: 'Item Code *', type: 'lookup', required: true, width: '150px' },
       { colNo: 3, key: 'itemDesc', label: 'Description', width: '170px' },
       { colNo: 4, key: 'uom', label: 'UOM', width: '80px' },

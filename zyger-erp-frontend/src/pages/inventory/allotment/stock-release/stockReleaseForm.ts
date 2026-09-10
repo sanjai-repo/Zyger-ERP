@@ -12,6 +12,7 @@ export interface StockReleaseLineFormState {
   reservedQty: string;
   releasedQty: string;
   batchNo: string;
+  location?: string;
 }
 
 export interface StockReleaseFormState {
@@ -35,6 +36,7 @@ export function createEmptyLine(): StockReleaseLineFormState {
     reservedQty: '',
     releasedQty: '',
     batchNo: '',
+    location: '',
   };
 }
 
@@ -68,6 +70,7 @@ function lineFromDto(
     reservedQty: '',
     releasedQty: line.releasedQty?.toString() ?? '',
     batchNo: line.batchNo ?? '',
+    location: line.location ?? '',
   };
 }
 
@@ -103,6 +106,7 @@ export function buildPayload(
       itemCode: line.itemCode.trim(),
       releasedQty: toNumber(line.releasedQty),
       batchNo: line.batchNo.trim() || undefined,
+      location: line.location?.trim() || undefined,
     })),
   };
 }

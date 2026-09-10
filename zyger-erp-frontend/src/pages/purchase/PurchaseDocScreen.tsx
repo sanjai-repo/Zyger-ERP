@@ -14,7 +14,7 @@ import {
   useSendJoEmail,
 } from '../../hooks/usePurchaseDocs';
 import type { DocScreenConfig } from './purchaseDocConfigs';
-import { formatNumber } from '../../utils/format';
+import { formatNumber, todayISO } from '../../utils/format';
 import { getApiErrorMessage } from '../../utils/apiError';
 import { useToast } from '../../contexts/ToastContext';
 import StatusBadge from '../../components/common/StatusBadge';
@@ -482,7 +482,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
           id: i.id,
           code: i.code || '',
           name: i.name || i.description || i.code || '',
-          description: i.description || i.name || '',
+          description: i.description && i.description !== i.name ? i.description : '',
           uom: i.uom || i.purchaseUom || 'PCS',
           price: Number(i.defaultRate || i.price || 0)
         })));
@@ -732,7 +732,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
     if (prefill) {
       const p = prefill as any;
       setMode('form');
-      const dateToday = new Date().toISOString().split('T')[0];
+      const dateToday = todayISO();
       const initialCode = nextNumberQuery.data?.nextNumber || '';
       const selectedSuppName = p.supplier || 'Tata Steel Ltd';
       const foundSupp = supplierMasters.find(s => s.name === selectedSuppName || s.code === selectedSuppName);
@@ -747,7 +747,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
         email: foundSupp?.email || 'sales@supplier.com',
         buyer: p.buyer || '',
         requestingDepartment: 'Production',
-        requestBy: 'Sanjay Kumar',
+        requestBy: '',
         requiredDate: p.scheduledDate || dateToday,
         closingDate: dateToday,
         quotationValidityDate: dateToday,
@@ -871,7 +871,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
       email: '',
       buyer: '',
       requestingDepartment: 'Production',
-      requestBy: 'Sanjay Kumar',
+      requestBy: '',
       requiredDate: dateToday,
       closingDate: dateToday,
       quotationValidityDate: dateToday,
@@ -981,7 +981,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
           lineNo: i + 1,
           itemCode: l.itemCode || 'ITEM-001',
           itemName: l.itemName || l.description || l.itemCode || '',
-          description: l.description || l.itemName || '',
+          description: (l.description && l.description !== l.itemName && l.description !== l.itemCode) ? l.description : '',
           specification: l.specification || '',
           requiredQty: Number(l.requiredQty ?? l.qty ?? 1),
           orderQty: Number(l.requiredQty ?? l.qty ?? 1),
@@ -1233,7 +1233,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
           if (item) {
             row.itemCode = item.code;
             row.itemName = item.name || item.description || item.code;
-            row.description = item.description || '';
+            row.description = docType === 'supplier-quotation' ? '' : (item.description && item.description !== item.name ? item.description : '');
             if (item.uom) row.uom = item.uom;
             if (item.price) row.unitPrice = item.price;
           }
@@ -1347,7 +1347,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
         refNo: savedRes?.docNo || form.docNo || '',
         party: String(form.supplier || form.party || 'Supplier'),
         user: user?.username || 'Unknown',
-        status: savedRes?.status || 'RELEASED',
+        status: savedRes?.status || (docType === 'purchase-order' ? 'DRAFT' : 'RELEASED'),
       });
     } catch (err: any) {
       toast(getApiErrorMessage(err, 'Failed to save purchase document'), 'error');
@@ -1377,6 +1377,24 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
     }
   };
 
+  // What the backend's send-email endpoint actually persists to the generic
+  // `status` field per doc type — must match service/PurchaseService.java
+  // - supplier-enquiry: sets status to SENT
+  // - purchase-order: sets status to SENT
+  // - job-order: doesn't touch status at all — only emailStatus, so leave it
+  const isPoMailSent = (r: any): boolean => {
+    const st = String(r?.status || '');
+    const emailSt = String(r?.emailStatus || '');
+    return st === 'SENT' || st === 'MAIL SENT' || st === 'MAIL_SENT' || emailSt === 'SENT' || Boolean(r?.emailSent);
+  };
+
+  const getEffectiveStatus = (r: any, dType: string): string => {
+    if (dType === 'purchase-order') {
+      return isPoMailSent(r) ? 'SENT' : 'DRAFT';
+    }
+    return String(r?.status || 'DRAFT');
+  };
+
   const handleSendEmail = async () => {
     if (!documentId) return;
     const mutation = mutationForSend();
@@ -1384,7 +1402,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
     try {
       const res = await mutation.mutateAsync(documentId);
       toast((res as any)?.message || 'Mail sent successfully!', 'success');
-      setForm(prev => ({ ...prev, status: 'SENT', emailSent: true }));
+      setForm(prev => ({ ...prev, status: 'SENT', emailStatus: 'SENT', emailSent: true }));
     } catch (err: any) {
       toast(getApiErrorMessage(err, 'Failed to send email'), 'error');
     }
@@ -1398,7 +1416,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
   };
 
   const canSendEmail = ['supplier-enquiry', 'purchase-order', 'job-order'].includes(docType);
-  const isMailSent = String(form.status) === 'SENT' || Boolean(form.emailSent);
+  const isMailSent = docType === 'purchase-order' ? isPoMailSent(form) : (String(form.status) === 'SENT' || Boolean(form.emailSent));
 
   // Header Renderers
   if (mode === 'list') {
@@ -1502,7 +1520,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
                         if (col.badge) {
                           return (
                             <td key={col.field}>
-                              <StatusBadge status={String(val || 'DRAFT')} />
+                              <StatusBadge status={getEffectiveStatus(row, docType)} />
                             </td>
                           );
                         }
@@ -1626,7 +1644,9 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
           <div>
             <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               {documentId ? `Edit ${config.title}` : `New ${config.title}`}
-              {form.status ? <StatusBadge status={String(form.status)} /> : null}
+              {form.status ? (
+                <StatusBadge status={getEffectiveStatus(form, docType)} />
+              ) : null}
             </h1>
             <p>{config.subtitle}</p>
           </div>
@@ -1643,7 +1663,7 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
               Audit
             </button>
           )}
-          {editable && docType !== 'supplier-enquiry' && !config.hideTopSave && (
+          {editable && !config.hideTopSave && (
             <button
               onClick={() => handleSave()}
               disabled={isBusy}
@@ -1700,10 +1720,10 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
               Cancel
             </button>
           )}
-          {documentId && canSendEmail && (
+          {canSendEmail && documentId && (
             <button
               onClick={() => handleSendEmail()}
-              disabled={isMailSent || sendEnquiryMutation.isPending || sendPoMutation.isPending || sendJoMutation.isPending}
+              disabled={isMailSent || sendEnquiryMutation.isPending || sendPoMutation.isPending || sendJoMutation.isPending || isBusy}
               className={`btn ${isMailSent ? '' : 'btn-p'}`}
               style={isMailSent ? { backgroundColor: '#e2e8f0', color: '#64748b', cursor: 'not-allowed', borderColor: '#cbd5e1' } : undefined}
               title={isMailSent ? 'Mail has been sent' : 'Send document via email'}
@@ -2044,12 +2064,13 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
           Cancel
         </button>
 
-        {editable && (
+        {editable && !config.hideBottomSave && (
           <button type="button" onClick={() => handleSave()} disabled={isBusy} className="btn btn-p">
             <span className="material-symbols-rounded">save</span>
             {isBusy ? 'Saving...' : 'Save Document'}
           </button>
         )}
+
       </div>
 
       {actionModal && (

@@ -25,6 +25,7 @@ public class StoreMaster {
     @Column(name = "is_dispatch") @Builder.Default Boolean isDispatch = Boolean.FALSE;
     @Column(name = "bin_location", length = 100) String binLocation;
     @Column(precision = 12, scale = 2) BigDecimal capacity;
+    @Column(name = "reorder_buffer_pct", precision = 5, scale = 2) BigDecimal reorderBufferPct;
     @Column(length = 500) String remarks;
     @Builder.Default Boolean active = Boolean.TRUE;
     String createdBy;

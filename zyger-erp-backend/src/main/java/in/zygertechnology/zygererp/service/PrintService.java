@@ -96,12 +96,16 @@ public class PrintService {
             pdf.add(spacer(8));
             pdf.add(dcFooterNotice(doc, type));
 
+            pdf.add(spacer(8));
+            pdf.add(dcComplianceFooter(doc));
+
             pdf.add(spacer(14));
             pdf.add(dcThreeSignatures(doc));
             pdf.add(spacer(6));
             pdf.add(printFooter(doc, copyNumber));
 
-            boolean isPosted = "POSTED".equalsIgnoreCase(str(doc.get("status"))) || "CONFIRMED".equalsIgnoreCase(str(doc.get("status"))) || "RECEIVED".equalsIgnoreCase(str(doc.get("status")));
+            boolean isPosted = Set.of("POSTED", "CONFIRMED", "RECEIVED", "APPROVED", "READY_FOR_DISPATCH",
+                    "DISPATCHED", "DELIVERED", "PARTIALLY_DISPATCHED").contains(str(doc.get("status")).toUpperCase());
             if (!isPosted) {
                 drawDraftWatermark(writer);
             }
@@ -132,13 +136,15 @@ public class PrintService {
         t.setWidthPercentage(100);
         t.setWidths(new float[]{20, 30, 20, 30});
         kv(t, "DC No.", str(doc.get("docNo")));
-        kv(t, "DC Date", str(doc.get("docDate")));
-        kv(t, "Ref No.", firstNonEmpty(str(doc.get("referenceNo")), str(doc.get("jobOrderNo")), str(doc.get("salesOrderNo")), str(doc.get("transferRequestNo")), str(doc.get("linkedDocumentNo"))));
-        kv(t, "Ref Date", str(doc.get("referenceDate")));
+        kv(t, "DC Date", formatDate(doc.get("docDate")));
+        kv(t, "Ref PO No.", firstNonEmpty(str(doc.get("referenceNo")), str(doc.get("jobOrderNo")), str(doc.get("salesOrderNo")), str(doc.get("transferRequestNo")), str(doc.get("linkedDocumentNo"))));
+        kv(t, "Ref PO Date", formatDate(doc.get("referenceDate")));
         kv(t, "Vehicle No.", str(doc.get("vehicleNo")));
         kv(t, "Mode of Transport", str(doc.getOrDefault("modeOfTransport", "Road")));
         kv(t, "Transporter", str(doc.get("transporter")));
         kv(t, "LR / Docket No.", str(doc.get("lrNo")));
+        kv(t, "e-Way Bill No.", firstNonEmpty(str(doc.get("ewayBillNo")), str(doc.get("ewayBillReference"))));
+        kv(t, "", "");
         return t;
     }
 
@@ -153,8 +159,9 @@ public class PrintService {
 
         String partyHeading = "jo-dc".equals(type) ? "Job Worker / Vendor:" : "transfer-dc".equals(type) ? "Transfer To (Destination):" : "Consignee / Customer:";
         left.addElement(new Paragraph(partyHeading, FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9)));
-        left.addElement(new Paragraph(str(doc.get("party")), FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10)));
-        if (!isEmpty(doc.get("billingAddress"))) left.addElement(new Paragraph(str(doc.get("billingAddress")), FontFactory.getFont(FontFactory.HELVETICA, 8)));
+        left.addElement(new Paragraph(firstNonEmpty(str(doc.get("party")), str(doc.get("customer"))), FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10)));
+        String address = firstNonEmpty(str(doc.get("billingAddress")), str(doc.get("shippingAddress")), str(doc.get("deliveryAddress")));
+        if (!address.isBlank()) left.addElement(new Paragraph(address, FontFactory.getFont(FontFactory.HELVETICA, 8)));
         if (!isEmpty(doc.get("gstin"))) left.addElement(new Paragraph("GSTIN: " + str(doc.get("gstin")), FontFactory.getFont(FontFactory.HELVETICA, 8)));
 
         PdfPCell right = new PdfPCell();
@@ -162,7 +169,7 @@ public class PrintService {
         right.setBackgroundColor(LIGHT);
         right.addElement(new Paragraph("From Location:", FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9)));
         right.addElement(new Paragraph(str(doc.get("sourceLocation")), FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10)));
-        String purposeText = "jo-dc".equals(type) ? str(doc.getOrDefault("challanPurpose", "Job Work")) : "transfer-dc".equals(type) ? "Stock Transfer (" + str(doc.getOrDefault("transferType", "Internal")) + ")" : str(doc.getOrDefault("dcAgainst", "Dispatch / Sale"));
+        String purposeText = "jo-dc".equals(type) ? str(doc.getOrDefault("challanPurpose", "Job Work")) : "transfer-dc".equals(type) ? "Stock Transfer (" + str(doc.getOrDefault("transferType", "Internal")) + ")" : "sales-dc".equals(type) ? "Dispatch against Sales Order" : str(doc.getOrDefault("dcAgainst", "Dispatch / Sale"));
         right.addElement(new Paragraph("Purpose: " + purposeText, FontFactory.getFont(FontFactory.HELVETICA, 8)));
 
         t.addCell(left);
@@ -249,6 +256,20 @@ public class PrintService {
         Paragraph p = new Paragraph();
         p.add(new Paragraph("Total Quantity in Words: " + words, FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9)));
         p.add(new Paragraph(note, FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 8, DARK)));
+        return p;
+    }
+
+    private Paragraph dcComplianceFooter(Map<String, Object> doc) {
+        var ci = companyInfos.findById(1L).orElse(null);
+        String ourGstin = ci != null ? firstNonEmpty(ci.getGstin(), ci.getGstNumber()) : "";
+        String ourPan = ci != null ? firstNonEmpty(ci.getPan(), ci.getPanNumber()) : "";
+        String partyGstin = str(doc.get("gstin"));
+
+        Paragraph p = new Paragraph();
+        Font f = FontFactory.getFont(FontFactory.HELVETICA, 8);
+        p.add(new Paragraph("OUR GSTIN: " + (ourGstin.isBlank() ? "-" : ourGstin)
+                + "   OUR PAN: " + (ourPan.isBlank() ? "-" : ourPan)
+                + "   PARTY'S GSTIN: " + (partyGstin.isBlank() ? "-" : partyGstin), f));
         return p;
     }
 
@@ -375,7 +396,7 @@ public class PrintService {
         right.setHorizontalAlignment(Element.ALIGN_RIGHT);
         right.addElement(new Paragraph("Doc No: " + str(doc.get("docNo")),
                 FontFactory.getFont(FontFactory.HELVETICA_BOLD, 12, Color.WHITE)));
-        right.addElement(new Paragraph("Date: " + str(doc.get("date")),
+        right.addElement(new Paragraph("Date: " + formatDate(doc.get("date")),
                 FontFactory.getFont(FontFactory.HELVETICA, 9, MUTED_ON_DARK)));
 
         t.addCell(left);
@@ -674,6 +695,20 @@ public class PrintService {
         if (v == null) return "";
         String s = String.valueOf(v);
         return s.replace("null", "");
+    }
+
+    /** Prints stored dates (ISO "yyyy-MM-dd", optionally with a time suffix) as "dd-MM-yyyy" —
+     * the raw ISO string was printed unformatted before this. Non-date values pass through. */
+    private String formatDate(Object v) {
+        String s = str(v);
+        if (s.isBlank()) return "";
+        try {
+            String datePart = s.length() > 10 ? s.substring(0, 10) : s;
+            return java.time.LocalDate.parse(datePart)
+                    .format(java.time.format.DateTimeFormatter.ofPattern("dd-MM-yyyy"));
+        } catch (Exception e) {
+            return s;
+        }
     }
 
     private String num(Object v) {
@@ -1020,7 +1055,7 @@ public class PrintService {
                 FontFactory.getFont(FontFactory.HELVETICA_BOLD, 16, Color.WHITE)));
         right.addElement(new Paragraph("PO No: " + str(doc.get("docNo")),
                 FontFactory.getFont(FontFactory.HELVETICA_BOLD, 11, Color.WHITE)));
-        right.addElement(new Paragraph("Date: " + str(doc.get("date")),
+        right.addElement(new Paragraph("Date: " + formatDate(doc.get("date")),
                 FontFactory.getFont(FontFactory.HELVETICA, 9, MUTED_ON_DARK)));
         right.addElement(new Paragraph("Status: " + str(doc.get("status")),
                 FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, MUTED_ON_DARK)));
@@ -1334,7 +1369,7 @@ public class PrintService {
         right.setHorizontalAlignment(Element.ALIGN_RIGHT);
         right.addElement(new Paragraph("Doc No: " + str(doc.get("docNo")),
                 FontFactory.getFont(FontFactory.HELVETICA_BOLD, 12, Color.WHITE)));
-        right.addElement(new Paragraph("Date: " + str(doc.get("date")),
+        right.addElement(new Paragraph("Date: " + formatDate(doc.get("date")),
                 FontFactory.getFont(FontFactory.HELVETICA, 9, MUTED_ON_DARK)));
 
         t.addCell(left);
@@ -1349,7 +1384,7 @@ public class PrintService {
 
         field(t, "Customer", str(doc.get("customer")));
         field(t, "Customer Code", str(doc.get("customerCode")));
-        field(t, "Doc Date", str(doc.get("docDate")));
+        field(t, "Doc Date", formatDate(doc.get("docDate")));
         field(t, "Status", str(doc.get("status")));
         field(t, "SO Reference", str(doc.get("salesOrderNumber")));
         field(t, "PI Number", str(doc.get("piNumber")));
@@ -1426,6 +1461,260 @@ public class PrintService {
         total.setPadding(6);
         total.setBackgroundColor(LIGHT);
         t.addCell(total);
+        return t;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Sales Invoice print — dedicated tax-invoice layout (company header
+    // w/ GSTIN/PAN, Billed To/Shipped To, HSN + tax breakdown, amount in
+    // words, bank details). Replaces the bare generic salesDoc() table
+    // that sales-invoice used to share with 5 other doc types.
+    // ═══════════════════════════════════════════════════════════════
+
+    public byte[] salesInvoice(Map<String, Object> doc) {
+        return salesInvoice(doc, 1);
+    }
+
+    public byte[] salesInvoice(Map<String, Object> doc, int copyNumber) {
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            Document pdf = new Document(PageSize.A4, 36, 36, 44, 44);
+            PdfWriter writer = PdfWriter.getInstance(pdf, baos);
+            pdf.open();
+
+            pdf.add(invoiceTitleBar(doc));
+            pdf.add(spacer(6));
+            pdf.add(invoiceMetaTable(doc));
+            pdf.add(spacer(6));
+            pdf.add(invoicePartyTable(doc));
+            pdf.add(spacer(10));
+
+            pdf.add(section("Items", doc));
+            pdf.add(spacer(4));
+            BigDecimal[] totals = new BigDecimal[3];
+            pdf.add(invoiceItemsTable(doc, totals));
+            pdf.add(spacer(6));
+            pdf.add(poTotalsBlock(totals[0], totals[1], totals[2]));
+
+            pdf.add(spacer(8));
+            pdf.add(invoiceBankAndTerms());
+
+            pdf.add(spacer(16));
+            pdf.add(poSignatures());
+            pdf.add(spacer(6));
+            pdf.add(printFooter(doc, copyNumber));
+
+            String status = str(doc.get("status"));
+            if (!Set.of("POSTED", "PAID", "PARTIALLY_PAID").contains(status.toUpperCase())) {
+                drawDraftWatermark(writer);
+            }
+            pdf.close();
+            return baos.toByteArray();
+        } catch (Exception e) {
+            log.error("Invoice PDF print failed for {}", doc.get("docNo"), e);
+            throw new IllegalStateException("PDF print failed", e);
+        }
+    }
+
+    private PdfPTable invoiceTitleBar(Map<String, Object> doc) {
+        var ci = companyInfos.findById(1L).orElse(null);
+        PdfPTable t = new PdfPTable(2);
+        t.setWidthPercentage(100);
+        t.setWidths(new float[]{68, 32});
+
+        PdfPCell left = new PdfPCell();
+        left.setBackgroundColor(DARK);
+        left.setBorder(PdfPCell.NO_BORDER);
+        left.setPadding(12);
+
+        com.lowagie.text.Image logo = loadCompanyLogo();
+        if (logo != null) {
+            left.addElement(logo);
+            left.addElement(spacer(4));
+        }
+        left.addElement(new Paragraph(ci != null && !isEmpty(ci.getCompanyName()) ? ci.getCompanyName() : "Company",
+                FontFactory.getFont(FontFactory.HELVETICA_BOLD, 15, Color.WHITE)));
+        if (ci != null) {
+            String addr = firstNonEmpty(ci.getAddressLine1(), ci.getRegisteredAddress());
+            if (!isEmpty(addr)) {
+                left.addElement(new Paragraph(addr, FontFactory.getFont(FontFactory.HELVETICA, 8, MUTED_ON_DARK)));
+            }
+            String cityLine = String.join(", ", nonEmpty(ci.getCity(), ci.getState(), ci.getPincode()));
+            if (!cityLine.isEmpty()) {
+                left.addElement(new Paragraph(cityLine, FontFactory.getFont(FontFactory.HELVETICA, 8, MUTED_ON_DARK)));
+            }
+            String gstin = firstNonEmpty(ci.getGstin(), ci.getGstNumber());
+            String pan = firstNonEmpty(ci.getPan(), ci.getPanNumber());
+            if (!isEmpty(gstin) || !isEmpty(pan)) {
+                left.addElement(new Paragraph(
+                        (isEmpty(gstin) ? "" : "GSTIN: " + gstin) + (isEmpty(pan) ? "" : "   PAN: " + pan),
+                        FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8, Color.WHITE)));
+            }
+        }
+
+        PdfPCell right = new PdfPCell();
+        right.setBackgroundColor(DARK);
+        right.setBorder(PdfPCell.NO_BORDER);
+        right.setPadding(12);
+        right.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        right.addElement(new Paragraph("TAX INVOICE",
+                FontFactory.getFont(FontFactory.HELVETICA_BOLD, 16, Color.WHITE)));
+        right.addElement(new Paragraph("Invoice No: " + str(doc.get("docNo")),
+                FontFactory.getFont(FontFactory.HELVETICA_BOLD, 11, Color.WHITE)));
+        right.addElement(new Paragraph("Date: " + formatDate(doc.get("date")),
+                FontFactory.getFont(FontFactory.HELVETICA, 9, MUTED_ON_DARK)));
+        right.addElement(new Paragraph("Status: " + str(doc.get("status")),
+                FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, MUTED_ON_DARK)));
+
+        t.addCell(left);
+        t.addCell(right);
+        return t;
+    }
+
+    private PdfPTable invoiceMetaTable(Map<String, Object> doc) {
+        PdfPTable t = new PdfPTable(4);
+        t.setWidthPercentage(100);
+        t.setWidths(new float[]{18, 32, 18, 32});
+
+        field(t, "DC No", firstNonEmpty(str(doc.get("dcNo")), str(doc.get("salesDcNumber"))));
+        field(t, "DC Date", formatDate(doc.get("dcDate")));
+        field(t, "SO Reference", str(doc.get("salesOrderNo") != null ? doc.get("salesOrderNo") : doc.get("salesOrderNumber")));
+        field(t, "Customer PO", str(doc.get("customerPoNumber")));
+        field(t, "Transport Mode", str(doc.get("transportDetails")));
+        field(t, "Vehicle No", str(doc.get("vehicleNo")));
+        field(t, "e-Way Bill No", str(doc.get("ewayBillReference")));
+        field(t, "Payment Terms", str(doc.get("paymentTerms")));
+
+        if (!isEmpty(doc.get("remarks"))) {
+            PdfPCell cell = new PdfPCell(new Phrase("Remarks: " + str(doc.get("remarks")),
+                    FontFactory.getFont(FontFactory.HELVETICA, 9)));
+            cell.setColspan(4);
+            cell.setPadding(6);
+            cell.setBackgroundColor(LIGHT);
+            t.addCell(cell);
+        }
+        return t;
+    }
+
+    private PdfPTable invoicePartyTable(Map<String, Object> doc) {
+        PdfPTable t = new PdfPTable(2);
+        t.setWidthPercentage(100);
+        t.setWidths(new float[]{50, 50});
+        t.setSpacingBefore(2);
+
+        PdfPCell billed = new PdfPCell();
+        billed.setPadding(8);
+        billed.setBackgroundColor(LIGHT);
+        billed.addElement(new Paragraph("BILLED TO", FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8, MUTED)));
+        billed.addElement(new Paragraph(str(doc.get("customer")), FontFactory.getFont(FontFactory.HELVETICA_BOLD, 11)));
+        if (!isEmpty(doc.get("customerCode"))) {
+            billed.addElement(new Paragraph("Code: " + str(doc.get("customerCode")), FontFactory.getFont(FontFactory.HELVETICA, 8, MUTED)));
+        }
+        if (!isEmpty(doc.get("billingAddress"))) {
+            billed.addElement(new Paragraph(str(doc.get("billingAddress")), FontFactory.getFont(FontFactory.HELVETICA, 8)));
+        }
+        if (!isEmpty(doc.get("gstin"))) {
+            billed.addElement(new Paragraph("GSTIN: " + str(doc.get("gstin")), FontFactory.getFont(FontFactory.HELVETICA, 8)));
+        }
+
+        PdfPCell shipped = new PdfPCell();
+        shipped.setPadding(8);
+        shipped.addElement(new Paragraph("SHIPPED TO", FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8, MUTED)));
+        String shipTo = firstNonEmpty(str(doc.get("shippingAddress")), str(doc.get("billingAddress")));
+        shipped.addElement(new Paragraph(str(doc.get("customer")), FontFactory.getFont(FontFactory.HELVETICA_BOLD, 11)));
+        if (!isEmpty(shipTo)) {
+            shipped.addElement(new Paragraph(shipTo, FontFactory.getFont(FontFactory.HELVETICA, 8)));
+        }
+
+        t.addCell(billed);
+        t.addCell(shipped);
+        return t;
+    }
+
+    /** HSN is looked up per line from the Item Master (not stored on the invoice line itself),
+     * exactly as poItemsTable already does for Purchase Orders. */
+    private PdfPTable invoiceItemsTable(Map<String, Object> doc, BigDecimal[] totals) {
+        PdfPTable t = new PdfPTable(9);
+        t.setWidthPercentage(100);
+        t.setWidths(new float[]{4, 11, 24, 8, 8, 9, 9, 9, 12});
+        t.setSpacingBefore(0);
+        t.setHeaderRows(1);
+
+        header(t, "#");
+        header(t, "Item Code");
+        header(t, "Description");
+        header(t, "HSN");
+        header(t, "Qty");
+        header(t, "UOM");
+        header(t, "Rate");
+        header(t, "Tax");
+        header(t, "Amount");
+
+        BigDecimal taxableTotal = BigDecimal.ZERO;
+        BigDecimal taxTotal = BigDecimal.ZERO;
+        BigDecimal grandTotal = BigDecimal.ZERO;
+
+        int n = 0;
+        for (Object o : lines(doc)) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> line = (Map<String, Object>) o;
+            n++;
+            BigDecimal qty = bd(line.get("billedQty"));
+            BigDecimal rate = bd(line.get("unitPrice"));
+            BigDecimal taxAmt = bd(line.get("taxAmount"));
+            BigDecimal net = line.get("netAmount") != null ? bd(line.get("netAmount")) : qty.multiply(rate).add(taxAmt);
+            BigDecimal taxable = net.subtract(taxAmt);
+
+            taxableTotal = taxableTotal.add(taxable);
+            taxTotal = taxTotal.add(taxAmt);
+            grandTotal = grandTotal.add(net);
+
+            String itemCode = str(line.get("itemCode"));
+            String hsn = items.findByCode(itemCode).map(ItemMaster::getHsnCode).filter(s -> !s.isBlank()).orElse("");
+
+            cell(t, String.valueOf(n), false);
+            cell(t, itemCode, false);
+            String desc = firstNonEmpty(str(line.get("description")), str(line.get("itemName")));
+            cell(t, desc, false);
+            cell(t, hsn, false);
+            cell(t, num(qty), true);
+            cell(t, str(line.get("uom")), false);
+            cell(t, num(rate), true);
+            cell(t, str(line.get("taxCode")), false);
+            cell(t, num(net), true);
+        }
+
+        totals[0] = taxableTotal;
+        totals[1] = taxTotal;
+        totals[2] = grandTotal;
+        return t;
+    }
+
+    private PdfPTable invoiceBankAndTerms() {
+        var ci = companyInfos.findById(1L).orElse(null);
+        PdfPTable t = new PdfPTable(2);
+        t.setWidthPercentage(100);
+        t.setWidths(new float[]{50, 50});
+
+        PdfPCell bank = new PdfPCell();
+        bank.setPadding(6);
+        bank.addElement(new Paragraph("Bank Details", FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8, MUTED)));
+        if (ci != null && !isEmpty(ci.getBankName())) {
+            bank.addElement(new Paragraph("Bank: " + ci.getBankName(), FontFactory.getFont(FontFactory.HELVETICA, 8)));
+            if (!isEmpty(ci.getBankBranch())) bank.addElement(new Paragraph("Branch: " + ci.getBankBranch(), FontFactory.getFont(FontFactory.HELVETICA, 8)));
+            if (!isEmpty(ci.getBankAccount())) bank.addElement(new Paragraph("A/c No: " + ci.getBankAccount(), FontFactory.getFont(FontFactory.HELVETICA, 8)));
+            if (!isEmpty(ci.getBankIfsc())) bank.addElement(new Paragraph("IFSC: " + ci.getBankIfsc(), FontFactory.getFont(FontFactory.HELVETICA, 8)));
+        } else {
+            bank.addElement(new Paragraph("-", FontFactory.getFont(FontFactory.HELVETICA, 8, MUTED)));
+        }
+
+        PdfPCell terms = new PdfPCell();
+        terms.setPadding(6);
+        terms.addElement(new Paragraph("Terms & Conditions", FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8, MUTED)));
+        terms.addElement(new Paragraph("Goods once sold will not be taken back or exchanged. Interest will be charged on overdue payments.",
+                FontFactory.getFont(FontFactory.HELVETICA, 8)));
+
+        t.addCell(bank);
+        t.addCell(terms);
         return t;
     }
 

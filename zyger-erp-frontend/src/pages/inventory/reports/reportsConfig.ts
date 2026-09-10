@@ -1,3 +1,5 @@
+import { IN_TX_TYPES, OUT_TX_TYPES } from './movementLabels';
+
 export interface KpiCardConfig {
   key: string;
   label: string;
@@ -11,8 +13,16 @@ export interface KpiCardConfig {
 export const KPI_CARDS: KpiCardConfig[] = [
   {
     key: 'totalOnHand',
-    label: 'Total Inventories',
+    label: 'Total Qty On Hand',
     icon: 'inventory_2',
+    color: 'var(--blue)',
+    format: 'number',
+    screenId: 'current-stock',
+  },
+  {
+    key: 'skuCount',
+    label: 'Total SKUs',
+    icon: 'category',
     color: 'var(--blue)',
     format: 'number',
     screenId: 'current-stock',
@@ -50,20 +60,12 @@ export const KPI_CARDS: KpiCardConfig[] = [
     drilldown: 'low-stock',
   },
   {
-    key: 'pendingInward',
-    label: 'Pending Inward',
-    icon: 'hourglass_top',
-    color: 'var(--yellow)',
+    key: 'outOfStockCount',
+    label: 'Out of Stock',
+    icon: 'block',
+    color: 'var(--red)',
     format: 'number',
-    drilldown: 'pending-inward',
-  },
-  {
-    key: 'pendingApprovals',
-    label: 'Pending Approvals',
-    icon: 'task_alt',
-    color: 'var(--yellow)',
-    format: 'number',
-    drilldown: 'pending-approvals',
+    drilldown: 'low-stock',
   },
   {
     key: 'ledgerEntries',
@@ -116,7 +118,7 @@ export const DRILLDOWN_CONFIGS: Record<string, DrilldownConfig> = {
   'current-stock': {
     type: 'current-stock',
     title: 'Current Stock',
-    subtitle: 'On hand / reserved / available by item and location',
+    subtitle: 'On hand / reserved / available by item, summed across all stores',
     icon: 'inventory',
     columns: [
       { key: 'itemCode', label: 'Item' },
@@ -124,7 +126,6 @@ export const DRILLDOWN_CONFIGS: Record<string, DrilldownConfig> = {
       { key: 'category', label: 'Category' },
       { key: 'itemType', label: 'Type' },
       { key: 'itemGroup', label: 'Group' },
-      { key: 'location', label: 'Location' },
       { key: 'batchNo', label: 'Batch' },
       { key: 'heatNo', label: 'Heat' },
       { key: 'safetyStock', label: 'Safety', numeric: true },
@@ -266,19 +267,8 @@ export const DRILLDOWN_CONFIGS: Record<string, DrilldownConfig> = {
 };
 
 export const TX_TYPE_OPTIONS = [
-  'RECEIPT',
-  'RM_ISSUE',
-  'GENERAL_ISSUE',
-  'JO_ISSUE',
-  'INTERNAL_ISSUE',
-  'ISSUE_AGAINST_RECEIPT',
-  'DC_DISPATCH',
-  'DC_RETURN',
-  'SALES_RETURN',
-  'STOCK_RETURN',
-  'ISSUE_RETURN',
-  'RECEIPT_RETURN',
-  'TRANSFER_OUT',
-  'STOCK_ADJUSTMENT',
-  'PHYSICAL_ADJUSTMENT',
+  ...IN_TX_TYPES,
+  ...OUT_TX_TYPES,
+  'QC_RELEASE',
+  'QIC_ISSUE',
 ];
