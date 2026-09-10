@@ -35,6 +35,7 @@ export interface InspectionCreatePayload {
   directInventoryUpdate?: boolean;
   itemCode: string;
   itemDescription?: string;
+  location?: string;
   receivedQuantity: number;
   inspectionQuantity: number;
   referenceDocNo?: string;
@@ -100,6 +101,7 @@ export interface InspectionDto {
   itemCode: string;
   itemName?: string;
   itemDescription?: string;
+  location?: string;
   inspectionQuantity: number;
   receivedQuantity: number;
   sourceType?: string;

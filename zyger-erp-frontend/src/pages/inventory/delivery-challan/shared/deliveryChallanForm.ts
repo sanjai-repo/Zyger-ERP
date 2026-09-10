@@ -298,7 +298,7 @@ export function validateDeliveryChallanForm(
   config: DeliveryChallanTypeConfig,
   form: DeliveryChallanFormState,
   itemsMap: Map<string, ItemMasterDto>,
-  strict: boolean
+  _strict: boolean
 ): string[] {
   const errors: string[] = [];
 
@@ -350,6 +350,10 @@ export function validateDeliveryChallanForm(
 
     if (!line.itemCode.trim()) {
       errors.push(`Line ${lineNo}: Item Code is required.`);
+    } else if (!itemsMap.has(line.itemCode.trim())) {
+      errors.push(
+        `Line ${lineNo}: Item code "${line.itemCode.trim()}" is not valid.`
+      );
     }
 
     const qty = toNumber(line.qty);

@@ -63,6 +63,7 @@ export interface StockReleaseLinePayload {
   itemCode: string;
   releasedQty: number;
   batchNo?: string;
+  location?: string;
 }
 
 export interface StockReleasePayload {
@@ -78,6 +79,7 @@ export interface StockReleaseLineDto {
   itemDesc?: string;
   releasedQty?: number;
   batchNo?: string;
+  location?: string;
 }
 
 export interface StockReleaseDto {
