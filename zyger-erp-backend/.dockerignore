@@ -1,0 +1,20 @@
+# Build outputs
+build/
+bin/
+out/
+.gradle/
+
+# IDE
+.idea/
+.vscode/
+
+# Runtime uploads (should not be baked into the image)
+uploads/
+
+# Logs
+*.log
+
+# Secrets (never baked into the image)
+.env
+.env.*
+secrets/

@@ -1,0 +1,64 @@
+import { useEffect, useState } from 'react';
+import StockIssueRequestList from './StockIssueRequestList';
+import StockIssueRequestForm from './StockIssueRequestForm';
+
+export default function StockIssueRequestPage({ initialDocId, viewOnly: viewOnlyProp }: { initialDocId?: string; viewOnly?: boolean } = {}) {
+  const [mode, setMode] = useState<'list' | 'form'>('list');
+  const [documentId, setDocumentId] = useState<string | null>(null);
+  const [viewOnly, setViewOnly] = useState(false);
+  const [formKey, setFormKey] = useState(0);
+  useEffect(() => {
+    if (!initialDocId) return;
+    setDocumentId(initialDocId);
+    setViewOnly(viewOnlyProp ?? false);
+    setFormKey((previous) => previous + 1);
+    setMode('form');
+  }, [initialDocId, viewOnlyProp]);
+
+
+  const openAdd = () => {
+    setDocumentId(null);
+    setViewOnly(false);
+    setFormKey((previous) => previous + 1);
+    setMode('form');
+  };
+
+  const openEdit = (id: string) => {
+    setDocumentId(id);
+    setViewOnly(false);
+    setFormKey((previous) => previous + 1);
+    setMode('form');
+  };
+
+  const openView = (id: string) => {
+    setDocumentId(id);
+    setViewOnly(true);
+    setFormKey((previous) => previous + 1);
+    setMode('form');
+  };
+
+  const handleBack = () => {
+    setMode('list');
+    setDocumentId(null);
+  };
+
+  const handleSaved = (id: string) => {
+    setDocumentId(id);
+  };
+
+  if (mode === 'form') {
+    return (
+      <StockIssueRequestForm
+        key={formKey}
+        documentId={documentId}
+        viewOnly={viewOnly}
+        onBack={handleBack}
+        onSaved={handleSaved}
+      />
+    );
+  }
+
+  return (
+    <StockIssueRequestList onAdd={openAdd} onEdit={openEdit} onView={openView} />
+  );
+}

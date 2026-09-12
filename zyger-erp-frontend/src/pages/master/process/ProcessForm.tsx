@@ -1,0 +1,182 @@
+import { useEffect, useState } from 'react';
+import apiClient from '../../../api/axiosClient';
+import { useToast } from '../../../contexts/ToastContext';
+import { getApiErrorMessage } from '../../../utils/apiError';
+import { defaultForm } from './processTypes';
+
+interface Resource { id: number; resourceName: string; resourceCode: string; resourceType: string; active?: boolean; }
+
+interface Props {
+  processId: number | null;
+  viewOnly?: boolean;
+  onBack: () => void;
+  onSaved?: (id: number) => void;
+}
+
+export default function ProcessForm({ processId, viewOnly = false, onBack, onSaved }: Props) {
+  const { toast } = useToast();
+  const [form, setForm] = useState<Record<string, unknown>>(defaultForm());
+  const [editId, setEditId] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [resources, setResources] = useState<Resource[]>([]);
+
+  const fetchNextCode = async () => {
+    try {
+      const { data } = await apiClient.get('/master/processes/next-code');
+      setForm((c) => ({ ...c, code: data.code }));
+    } catch { /* code field will remain empty if fetch fails */ }
+  };
+
+  useEffect(() => {
+    apiClient.get('/master/resources').then(r => setResources(Array.isArray(r.data) ? r.data : [])).catch(() => {});
+    if (!processId) {
+      setForm(defaultForm());
+      setEditId(null);
+      fetchNextCode();
+      return;
+    }
+    setLoading(true);
+    apiClient.get('/master/processes').then(({ data }) => {
+      const list = data.content ?? data ?? [];
+      const found = list.find((r: { id: number }) => r.id === processId);
+      if (found) {
+        setForm(found);
+        setEditId(found.id);
+      } else {
+        toast('Process not found.', 'error');
+        onBack();
+      }
+    }).catch((e) => {
+      toast(getApiErrorMessage(e, 'Failed to load process.'), 'error');
+      onBack();
+    }).finally(() => setLoading(false));
+  }, [processId]);
+
+  const updateForm = (key: string, value: unknown) => setForm((c) => ({ ...c, [key]: value }));
+
+  const onResourceChange = (resourceId: string) => {
+    const id = resourceId ? Number(resourceId) : null;
+    if (id) {
+      const res = resources.find((r) => r.id === id);
+      if (res) {
+        const updates: Record<string, unknown> = { requiredResource: id, resourceName: res.resourceName, resourceType: res.resourceType };
+        const currentType = String(form.processType ?? '');
+        if (!currentType || currentType === 'Insource' || currentType === 'Outsource') {
+          updates.processType = res.resourceType === 'Vendor' ? 'Outsource' : 'Insource';
+        }
+        if (currentType === 'Outsource' && res.resourceType !== 'Vendor') {
+          toast('Note: Outsource process type is typically assigned to Vendor resources.', 'error');
+        }
+        setForm((c) => ({ ...c, ...updates }));
+        return;
+      }
+    }
+    setForm((c) => ({ ...c, requiredResource: null, resourceName: '', resourceType: '' }));
+  };
+
+  const save = async () => {
+    if (!String(form.code ?? '').trim()) { toast('Process Code is required.', 'error'); return; }
+    if (!String(form.name ?? '').trim()) { toast('Process Name is required.', 'error'); return; }
+    if (!form.requiredResource) { toast('Required Resource is mandatory.', 'error'); return; }
+    setBusy(true);
+    try {
+      if (editId) {
+        await apiClient.put(`/master/processes/${editId}`, form);
+        toast('Process updated.');
+        onSaved?.(editId);
+      } else {
+        const { data } = await apiClient.post('/master/processes', form);
+        toast('Process created.');
+        onSaved?.(data.id);
+      }
+      onBack();
+    } catch (e) { toast(getApiErrorMessage(e, 'Save failed.'), 'error'); }
+    setBusy(false);
+  };
+
+  if (loading) {
+    return (
+      <div className="panel">
+        <div className="empty">
+          <span className="material-symbols-rounded">hourglass_empty</span> Loading process...
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="pg-head">
+        <h1>{viewOnly ? 'View' : editId ? 'Edit' : 'Add'} Process</h1>
+        <p>{viewOnly ? 'View process details' : editId ? 'Update process information' : 'Create a new process'}</p>
+      </div>
+
+      <div className="panel">
+        <div style={{ overflowY: 'auto', maxHeight: 'calc(100vh - 250px)', paddingRight: '10px' }}>
+          <div className="sec-head">
+            <span className="material-symbols-rounded" style={{ fontSize: '1.2rem' }}>settings</span>
+            Process Information
+          </div>
+          <div className="fgrid sec-body">
+            <label className="fld">
+              <span>Process Code *</span>
+              <input className="in" value={String(form.code ?? '')} readOnly
+                onChange={(e) => updateForm('code', e.target.value)} disabled={viewOnly} />
+            </label>
+            <label className="fld">
+              <span>Process Name *</span>
+              <input className="in" value={String(form.name ?? '')}
+                onChange={(e) => updateForm('name', e.target.value)} disabled={viewOnly} />
+            </label>
+            <label className="fld">
+              <span>Process Type</span>
+              <select className="in" value={String(form.processType ?? '')}
+                onChange={(e) => updateForm('processType', e.target.value)} disabled={viewOnly}>
+                <option value="Insource">Insource</option>
+                <option value="Outsource">Outsource</option>
+              </select>
+            </label>
+            <label className="fld">
+              <span>Required Resource *</span>
+              <select className="in" value={String(form.requiredResource ?? '')}
+                onChange={(e) => onResourceChange(e.target.value)} disabled={viewOnly}>
+                <option value="">— None —</option>
+                {resources.filter((r) => r.active !== false).map((r) => <option key={r.id} value={r.id}>{r.resourceCode} — {r.resourceName} ({r.resourceType})</option>)}
+              </select>
+            </label>
+            <label className="fld">
+              <span>Resource Name</span>
+              <input className="in" value={String(form.resourceName ?? '')} disabled />
+            </label>
+            <label className="fld">
+              <span>Resource Type</span>
+              <input className="in" value={String(form.resourceType ?? '')} disabled />
+            </label>
+            <label className="fld">
+              <span>Description</span>
+              <input className="in" value={String(form.description ?? '')}
+                onChange={(e) => updateForm('description', e.target.value)} disabled={viewOnly} />
+            </label>
+            <label className="fld chk">
+              <input type="checkbox" checked={Boolean(form.active ?? true)}
+                onChange={(e) => updateForm('active', e.target.checked)} disabled={viewOnly} />
+              <span>Active</span>
+            </label>
+          </div>
+        </div>
+
+        <div className="actbar">
+          <button className="btn" onClick={onBack}>
+            <span className="material-symbols-rounded">arrow_back</span> Back
+          </button>
+          {!viewOnly && (
+            <button className="btn btn-p" onClick={save} disabled={busy}>
+              <span className="material-symbols-rounded">save</span> {editId ? 'Update' : 'Create'}
+            </button>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}

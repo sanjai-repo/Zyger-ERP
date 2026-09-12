@@ -1,0 +1,30 @@
+package in.zygertechnology.zygererp.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+import java.time.LocalDate;
+import java.math.BigDecimal;
+
+@Entity @Table(name="proforma_invoice_item") @Getter @Setter
+public class ProformaInvoiceItem extends BaseLine implements LineEntity {
+
+    @ManyToOne(fetch=FetchType.LAZY) @JoinColumn(name="doc_id") @com.fasterxml.jackson.annotation.JsonIgnore
+    ProformaInvoice doc;
+
+    @Column(name="item_name", length=200) String itemName;
+    @Column(name="customer_part_number", length=60) String customerPartNumber;
+    @Column(name="drawing_number", length=60) String drawingNumber;
+    @Column(name="drawing_revision", length=30) String drawingRevision;
+    String description;
+    BigDecimal qty;
+    @Column(length=30) String uom;
+    @Column(name="unit_price") BigDecimal unitPrice;
+    BigDecimal discount;
+    BigDecimal tax;
+    @Column(name="tax_amount") BigDecimal taxAmount;
+    @Column(name="net_amount") BigDecimal netAmount;
+    @Column(name="delivery_date") LocalDate deliveryDate;
+
+    @Override public BigDecimal getQty() { return qty == null ? BigDecimal.ZERO : qty; }
+    @Override public BigDecimal getRate() { return unitPrice; }
+}

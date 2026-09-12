@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+dist-ssr/
+build/
+bin/
+out/
+target/
+.gradle/
+.vite/
+
+# Environment files (real secrets — never commit)
+.env
+.env.local
+.env.staging
+.env.production
+.env.*.local
+
+# TLS / secrets
+*.pem
+*.key
+secrets/
+
+# IDE & OS
+.idea/
+.vscode/
+.DS_Store
+*.suo
+*.user
+
+# Graphify / Temp
+graphify-out/
+*.log
+
+# Runtime user uploads (company logos, documents, etc.)
+zygererp/uploads/
+zyger-erp-backend/uploads/
+uploads/
+
+# Database backups (contain data — never commit)
+backups/
+*.dump
+*.dump.gz
+

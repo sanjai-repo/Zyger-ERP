@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>{{title}}</title>
+    <style>
+        /* ── Shared print base (print/print.css) ── */
+{{printCss}}
+
+        /* ── Tax Invoice specific ── */
+        .invoice-box {
+            width: 100%;
+            max-width: 194mm;
+            margin: 0 auto;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            overflow: hidden;
+            background: #ffffff;
+        }
+
+        td, th {
+            padding: 4px 6px;
+            vertical-align: top;
+        }
+
+        /* Document state strip (COPY N / DRAFT) */
+        .doc-state {
+            background-color: #fef3c7 !important;
+            color: #92400e !important;
+            text-align: center;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            padding: 3px;
+            border-bottom: 1px solid #cbd5e1;
+            text-transform: uppercase;
+        }
+
+        .accent-bg {
+            background-color: #f8fafc;
+        }
+        .banner-title {
+            background-color: #0f172a;
+            color: #ffffff;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            padding: 4px;
+            text-align: center;
+        }
+
+        /* Key-Value Alignment Tables */
+        .kv-table td {
+            padding: 2px 4px;
+            font-size: 9px;
+        }
+        .kv-label {
+            color: #475569;
+            font-weight: 600;
+        }
+
+        /* Item Grid */
+        .items-table th {
+            background-color: #f1f5f9;
+            color: #0f172a;
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: uppercase;
+            border-bottom: 2px solid #cbd5e1;
+            border-right: 1px solid #cbd5e1;
+            padding: 5px;
+        }
+        .items-table th:last-child {
+            border-right: none;
+        }
+        .items-table td {
+            border-bottom: 1px solid #f1f5f9;
+            border-right: 1px solid #f1f5f9;
+            font-size: 9px;
+            padding: 5px;
+            vertical-align: middle;
+        }
+        .items-table td:last-child {
+            border-right: none;
+        }
+        .items-table tbody tr:nth-child(even) {
+            background-color: #fafafa;
+        }
+
+        /* Total Highlight */
+        .grand-total-row {
+            background-color: #f1f5f9;
+            border-top: 2px solid #cbd5e1;
+            border-bottom: 2px solid #cbd5e1;
+        }
+
+        /* Footer & Signatures */
+        .terms-text {
+            font-size: 8.5px;
+            color: #475569;
+            line-height: 1.3;
+        }
+        .signature-box {
+            height: 45px;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+
+<div class="invoice-box">
+
+    <!-- 1. HEADER SECTION -->
+    <table class="border-bottom">
+        <tr>
+            <!-- Company Logo -->
+            <td style="width: 20%; vertical-align: middle;" class="text-center">
+{{companyLogo}}
+            </td>
+
+            <!-- Company Info -->
+            <td style="width: 60%;" class="text-center">
+                <div style="font-size: 15px; font-weight: 800; color: #0f172a; letter-spacing: -0.2px;">
+                    {{companyName}}
+                </div>
+                <div style="font-size: 9px; color: #475569; margin-top: 2px; line-height: 1.3;">
+                    {{companyAddress}}
+                </div>
+                <div style="font-size: 9px; margin-top: 2px;">
+                    {{companyGstinPan}}
+                </div>
+                <div style="font-size: 9px; color: #475569; margin-top: 1px;">
+                    {{companyContact}}
+                </div>
+            </td>
+
+            <!-- QR Code Placeholder -->
+            <td style="width: 20%; vertical-align: middle;" class="text-center">
+                {{qrCode}}
+            </td>
+        </tr>
+    </table>
+
+    <!-- 1b. DOCUMENT STATE (COPY / DRAFT) -->
+    {{docState}}
+
+    <!-- 2. DOCUMENT TITLE BANNER -->
+    <div class="banner-title">{{invoiceTitle}}</div>
+
+    <!-- 3. INVOICE META & TRANSPORTATION DETAILS -->
+    <table class="border-bottom">
+        <tr>
+            <!-- Left Metadata Block -->
+            <td style="width: 50%;" class="border-right">
+                <table class="kv-table">
+                    <tr>
+                        <td style="width: 40%;" class="kv-label">Invoice No</td>
+                        <td style="width: 4%;">:</td>
+                        <td style="width: 56%; color: #2563eb;" class="bold">{{invoiceNo}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">Invoice Date</td>
+                        <td>:</td>
+                        <td class="bold">{{invoiceDate}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">DC NO</td>
+                        <td>:</td>
+                        <td>{{dcNo}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">DC Date</td>
+                        <td>:</td>
+                        <td>{{dcDate}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">Vendor Code</td>
+                        <td>:</td>
+                        <td>{{vendorCode}}</td>
+                    </tr>
+                </table>
+            </td>
+
+            <!-- Right Metadata Block -->
+            <td style="width: 50%;">
+                <table class="kv-table">
+                    <tr>
+                        <td style="width: 40%;" class="kv-label">Transport Mode</td>
+                        <td style="width: 4%;">:</td>
+                        <td style="width: 56%;">{{transportMode}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">Vehicle Number</td>
+                        <td>:</td>
+                        <td class="bold">{{vehicleNumber}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">Date & Time of Supply</td>
+                        <td>:</td>
+                        <td class="bold">{{supplyDateTime}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">Place of Supply</td>
+                        <td>:</td>
+                        <td>{{placeOfSupply}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">Payment Terms</td>
+                        <td>:</td>
+                        <td>{{paymentTerms}}</td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <!-- 4. E-INVOICE / IRN & E-WAY BILL BLOCK -->
+    <table class="border-bottom accent-bg">
+        <tr>
+            <td style="padding: 3px 6px;">
+                <table class="kv-table">
+                    <tr>
+                        <td style="width: 18%;" class="kv-label">IRN No:</td>
+                        <td style="width: 82%; word-break: break-all;" class="bold">{{irnNo}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">Ack No & Date:</td>
+                        <td>{{ackNoDate}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">E-Way Bill No:</td>
+                        <td class="bold" style="color: #0f172a;">{{ewayBillNoDate}}</td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <!-- 5. BILLED TO & SHIPPED TO SECTION -->
+    <table class="border-bottom">
+        <tr class="accent-bg">
+            <th style="width: 50%;" class="border-right text-left bold">BILLED TO (BUYER)</th>
+            <th style="width: 50%;" class="text-left bold">SHIPPED TO (CONSIGNEE)</th>
+        </tr>
+        <tr>
+            <!-- Billing Details -->
+            <td class="border-right">
+                <table class="kv-table">
+                    <tr>
+                        <td style="width: 32%;" class="kv-label">Company Name</td>
+                        <td style="width: 4%;">:</td>
+                        <td style="width: 64%;" class="bold">{{billedCompany}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">Contact Person</td>
+                        <td>:</td>
+                        <td class="bold">{{billedContact}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">Address</td>
+                        <td>:</td>
+                        <td>{{billedAddress}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">GSTIN</td>
+                        <td>:</td>
+                        <td class="bold">{{billedGstin}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">State Code</td>
+                        <td>:</td>
+                        <td>{{billedState}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">Contact No</td>
+                        <td>:</td>
+                        <td>{{billedPhone}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">Email ID</td>
+                        <td>:</td>
+                        <td>{{billedEmail}}</td>
+                    </tr>
+                </table>
+            </td>
+
+            <!-- Shipping Details -->
+            <td>
+                <table class="kv-table">
+                    <tr>
+                        <td style="width: 32%;" class="kv-label">Company Name</td>
+                        <td style="width: 4%;">:</td>
+                        <td style="width: 64%;" class="bold">{{shippedCompany}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">Contact Person</td>
+                        <td>:</td>
+                        <td class="bold">{{shippedContact}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">Address</td>
+                        <td>:</td>
+                        <td>{{shippedAddress}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">GSTIN</td>
+                        <td>:</td>
+                        <td class="bold">{{shippedGstin}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">State Code</td>
+                        <td>:</td>
+                        <td>{{shippedState}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">Contact No</td>
+                        <td>:</td>
+                        <td>{{shippedPhone}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">Email ID</td>
+                        <td>:</td>
+                        <td>{{shippedEmail}}</td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <!-- 6. ITEMS TABLE -->
+    <table class="items-table">
+        <thead>
+        <tr>
+            <th style="width: 5%;">S.No</th>
+            <th style="width: 33%;" class="text-left">Item Description</th>
+            <th style="width: 10%;">Part no</th>
+            <th style="width: 9%;">Qty</th>
+            <th style="width: 8%;">UOM</th>
+            <th style="width: 11%;" class="text-right">Rate (₹)</th>
+            <th style="width: 10%;" class="text-right">Tax (%)</th>
+            <th style="width: 14%;" class="text-right">Amount (₹)</th>
+        </tr>
+        </thead>
+        <tbody>
+{{itemRows}}
+        </tbody>
+    </table>
+
+    <!-- 7. SUMMARY & TAX BREAKDOWN -->
+    <table class="border-bottom">
+        <tr>
+            <!-- Left Side: Amount in Words & Notes -->
+            <td style="width: 58%;" class="border-right">
+                <div style="padding: 2px 0;">
+                    <span class="kv-label">Total Amount in Words:</span><br />
+                    <span class="bold" style="font-size: 9.5px; color: #0f172a;">{{totalAmountWords}}</span>
+                </div>
+                <div class="border-top" style="padding-top: 3px; margin-top: 4px;">
+                    <span class="kv-label">Tax Amount in Words:</span><br />
+                    <span style="font-size: 9px;">{{taxAmountWords}}</span>
+                </div>
+            </td>
+
+            <!-- Right Side: Calculations -->
+            <td style="width: 42%; padding: 0;">
+                <table class="kv-table">
+                    <tr>
+                        <td style="width: 60%;" class="text-right kv-label">Taxable Subtotal:</td>
+                        <td style="width: 40%;" class="text-right bold">{{taxableSubtotal}}</td>
+                    </tr>
+{{taxRows}}
+                    <tr>
+                        <td class="text-right kv-label">Round Off:</td>
+                        <td class="text-right">{{roundOff}}</td>
+                    </tr>
+                    <tr class="grand-total-row">
+                        <td class="text-right bold" style="font-size: 10px; color: #0f172a;">Grand Total (₹):</td>
+                        <td class="text-right bold" style="font-size: 10px; color: #2563eb;">{{grandTotal}}</td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <!-- 8. BANK DETAILS & TERMS -->
+    <table class="border-bottom">
+        <tr>
+            <!-- Bank Details -->
+            <td style="width: 50%;" class="border-right">
+                <div class="bold" style="font-size: 9.5px; margin-bottom: 2px; color: #0f172a;">Bank Transfer Details:</div>
+                <table class="kv-table">
+                    <tr>
+                        <td style="width: 30%;" class="kv-label">Bank Name</td>
+                        <td style="width: 4%;">:</td>
+                        <td style="width: 66%;" class="bold">{{bankName}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">Account Name</td>
+                        <td>:</td>
+                        <td>{{accountName}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">Account No</td>
+                        <td>:</td>
+                        <td class="bold">{{accountNo}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">IFSC Code</td>
+                        <td>:</td>
+                        <td class="bold">{{ifscCode}}</td>
+                    </tr>
+                    <tr>
+                        <td class="kv-label">Branch</td>
+                        <td>:</td>
+                        <td>{{branch}}</td>
+                    </tr>
+                </table>
+            </td>
+
+            <!-- Terms & Conditions -->
+            <td style="width: 50%;">
+                <div class="bold" style="font-size: 9.5px; margin-bottom: 2px; color: #0f172a;">Terms & Conditions:</div>
+                <ol class="terms-text" style="margin: 0; padding-left: 12px;">
+                    {{termsHtml}}
+                </ol>
+            </td>
+        </tr>
+    </table>
+
+    <!-- 9. SIGNATURE SECTION -->
+    <table>
+        <tr style="height: 60px;">
+            <td style="width: 50%; vertical-align: bottom;" class="border-right text-center">
+                <div style="border-top: 1px dashed #cbd5e1; width: 70%; margin: 0 auto 4px auto;"></div>
+                <div class="bold" style="font-size: 9px;">Receiver's Stamp & Signature</div>
+            </td>
+            <td style="width: 50%; vertical-align: top;" class="text-center">
+                <div class="bold" style="font-size: 9px; color: #0f172a;">{{authorizedFor}}</div>
+                <div class="signature-box">
+                    <span class="bold" style="font-size: 9px;">Authorised Signatory</span>
+                </div>
+            </td>
+        </tr>
+    </table>
+
+</div>
+
+</body>
+</html>

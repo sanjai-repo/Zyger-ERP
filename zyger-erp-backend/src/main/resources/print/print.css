@@ -1,0 +1,71 @@
+/* Zyger ERP — shared print stylesheet
+ * Inlined into every HTML print template (blob-print windows cannot fetch
+ * relative stylesheets), so keep this file dependency-free.
+ */
+@page {
+    size: A4 portrait;
+    margin: 10mm;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+}
+
+html, body {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    font-family: "Segoe UI", Tahoma, Arial, Helvetica, sans-serif;
+    color: #0f172a;
+    background-color: #ffffff;
+}
+
+body {
+    display: flex;
+    justify-content: center;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    border-spacing: 0;
+    table-layout: fixed;
+}
+
+td, th {
+    vertical-align: middle;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.text-center { text-align: center; }
+.text-left { text-align: left; }
+.text-right { text-align: right; }
+.bold { font-weight: 700; }
+.text-muted { color: #64748b; }
+
+.border-bottom { border-bottom: 1px solid #cbd5e1; }
+.border-top { border-top: 1px solid #cbd5e1; }
+.border-right { border-right: 1px solid #cbd5e1; }
+.border-left { border-left: 1px solid #cbd5e1; }
+
+/* Multi-page item tables: repeat the header on every page and keep rows intact. */
+thead {
+    display: table-header-group;
+}
+
+tbody tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+@media print {
+    body {
+        background-color: #ffffff;
+        padding: 0;
+    }
+}

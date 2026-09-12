@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.vite/
+
+# Graphify
+graphify-out/
+
+# IDE
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# Env (never bake secrets / machine-specific values into the image)
+.env
+.env.local
+.env.staging
+.env.production
+
+# Secrets
+secrets/

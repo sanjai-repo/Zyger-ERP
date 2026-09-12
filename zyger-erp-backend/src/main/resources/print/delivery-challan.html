@@ -1,0 +1,366 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <title>{{title}}</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <style type="text/css">
+        /* ── Shared print base (print/print.css) ── */
+{{printCss}}
+
+        /* ── Delivery Challan specific ── */
+        .divmain {
+            width: 190mm;
+            min-height: 275mm;
+            border: 1.5px solid #334155;
+            background: #ffffff;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        @media print {
+            .divmain {
+                width: 100%;
+                min-height: 275mm;
+                margin: 0;
+                border: 1.5px solid #334155;
+                box-shadow: none;
+            }
+        }
+
+        td, th {
+            padding: 6px 8px;
+        }
+
+        /* Top Company Header (Centered Letterhead) */
+        .company-header-table {
+            width: 100%;
+            border-bottom: 1px solid #334155;
+            background-color: #ffffff;
+        }
+
+        .logo-container {
+            text-align: center;
+            margin-bottom: 6px;
+        }
+
+        .logo-img {
+            max-height: 50px;
+            width: auto;
+            object-fit: contain;
+        }
+
+        .company-title {
+            font-size: 15pt;
+            font-weight: 800;
+            color: #1e293b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            text-align: center;
+        }
+
+        .company-address {
+            font-size: 8.5pt;
+            color: #475569;
+            margin-top: 3px;
+            line-height: 1.35;
+            text-align: center;
+        }
+
+        .company-contact {
+            font-size: 8pt;
+            color: #334155;
+            line-height: 1.4;
+            text-align: center;
+            margin-top: 4px;
+        }
+
+        /* Header Styling */
+        .dc-title-header {
+            width: 100%;
+            background-color: #1e293b !important;
+            color: #ffffff !important;
+            text-align: center;
+            font-size: 12pt;
+            font-weight: 700;
+            letter-spacing: 1px;
+            padding: 6px 0;
+            text-transform: uppercase;
+        }
+
+        /* Document state strip (COPY N / DRAFT) */
+        .doc-state {
+            background-color: #fef3c7 !important;
+            color: #92400e !important;
+            text-align: center;
+            font-size: 9pt;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            padding: 3px 0;
+            border-bottom: 1px solid #334155;
+            text-transform: uppercase;
+        }
+
+        /* Details Section */
+        .details-table {
+            border-top: 1px solid #334155;
+            border-bottom: 1px solid #334155;
+            border-collapse: collapse;
+        }
+
+        .details-table td {
+            font-size: 8.5pt;
+        }
+
+        .meta-label {
+            color: #334155;
+            font-weight: 600;
+        }
+
+        .meta-value {
+            color: #0f172a;
+            font-weight: 700;
+        }
+
+        .highlight-text {
+            color: #0f172a;
+            font-weight: 700;
+        }
+
+        /* Items Table Styling */
+        .item-table {
+            width: 100%;
+            border-collapse: collapse;
+            border-spacing: 0;
+            border-bottom: 1px solid #334155;
+        }
+
+        .item-table th {
+            background-color: #f1f5f9 !important;
+            color: #0f172a;
+            font-weight: 700;
+            font-size: 8.5pt;
+            text-align: center;
+            border: 1px solid #cbd5e1;
+            padding: 7px 4px;
+            text-transform: uppercase;
+        }
+
+        .item-table td {
+            border-right: 1px solid #cbd5e1;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 8.5pt;
+            padding: 7px 6px;
+        }
+
+        .item-table td:last-child {
+            border-right: none;
+        }
+
+        .item-table tbody tr:nth-child(even) {
+            background-color: #f8fafc;
+        }
+
+        /* Summary & Terms Footer */
+        .total-row {
+            background-color: #f1f5f9 !important;
+            border-top: 1px solid #334155;
+            border-bottom: 1px solid #334155;
+            font-weight: 700;
+            font-size: 9pt;
+        }
+
+        .total-row td {
+            padding: 7px 8px;
+        }
+
+        .terms-box {
+            padding: 8px 10px;
+            border-bottom: 1px solid #334155;
+            min-height: 60px;
+            font-size: 8.5pt;
+            background-color: #ffffff;
+        }
+
+        .terms-title {
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 4px;
+            text-decoration: underline;
+        }
+
+        /* Signatures Grid */
+        .sig-container {
+            width: 100%;
+            border-bottom: 1px solid #334155;
+            border-collapse: collapse;
+        }
+
+        .sig-block {
+            height: 85px;
+            font-size: 8pt;
+            vertical-align: top;
+            padding: 6px;
+        }
+
+        .computer-generated {
+            text-align: center;
+            font-size: 7.5pt;
+            color: #64748b;
+            padding: 5px 0;
+            font-style: italic;
+        }
+    </style>
+</head>
+
+<body>
+
+<div id="_div_main" class="divmain">
+    <div>
+        <!-- HEADER SECTION -->
+        <header>
+            <div id="_div_header" style="width:100%;">
+
+                <!-- ISSUING COMPANY ADDRESS HEADER (CENTERED WITH LOGO) -->
+                <table class="company-header-table" cellspacing="0" cellpadding="0">
+                    <tr>
+                        <td style="padding: 10px 12px; text-align: center;">
+                            <!-- COMPANY LOGO -->
+                            <div class="logo-container">
+{{companyLogo}}
+                            </div>
+
+                            <div class="company-title">{{companyName}}</div>
+                            <div class="company-address">
+                                {{companyAddress}}
+                            </div>
+                            <div class="company-contact">
+                                {{companyContact}}
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+
+                <!-- CHALLAN TITLE BAR -->
+                <div class="dc-title-header">
+                    {{dcTitle}}
+                </div>
+
+                {{docState}}
+
+                <!-- CONSIGNEE & METADATA TABLE -->
+                <table class="details-table" cellspacing="0" cellpadding="0">
+                    <tr>
+                        <!-- PARTY DETAILS (LEFT COLUMN) -->
+                        <td style="width: 52%; padding: 8px;" class="border-right">
+                            <div style="margin-bottom: 4px;">
+                                <span class="meta-label">{{consigneeLabel}}</span>
+                            </div>
+                            <div style="font-size: 9.5pt; font-weight: bold; color: #0f172a;">
+                                {{partyName}}
+                            </div>
+                            <div style="margin-top: 3px; color: #334155; line-height: 1.3;">
+                                {{partyAddress}}
+                            </div>
+                            <div style="margin-top: 8px; padding-top: 4px;">
+                                <span class="meta-label">{{partyCodeLabel}}:</span>
+                                <span class="meta-value">{{partyCode}}</span>
+                            </div>
+                            <div style="margin-top: 4px;">
+                                <span class="meta-label">e-Way Bill No:</span>
+                                <span class="meta-value">{{ewayBillNo}}</span>
+                            </div>
+                        </td>
+
+                        <!-- DC META DETAILS (RIGHT COLUMN) -->
+                        <td style="width: 48%; padding: 0;">
+                            <table cellspacing="0" cellpadding="0">
+                                <tr>
+                                    <td style="width: 45%;" class="border-right border-bottom meta-label">Challan No.</td>
+                                    <td style="width: 55%;" class="border-bottom highlight-text">{{challanNo}}</td>
+                                </tr>
+                                <tr>
+                                    <td class="border-right border-bottom meta-label">Challan Date</td>
+                                    <td class="border-bottom highlight-text">{{challanDate}}</td>
+                                </tr>
+                                <tr>
+                                    <td class="border-right border-bottom meta-label">{{refDocLabel}}</td>
+                                    <td class="border-bottom meta-value">{{refDocNo}}</td>
+                                </tr>
+                                <tr>
+                                    <td class="border-right border-bottom meta-label">{{refDocDateLabel}}</td>
+                                    <td class="border-bottom meta-value">{{refDocDate}}</td>
+                                </tr>
+                                <tr>
+                                    <td class="border-right border-bottom meta-label">Mode of Transport</td>
+                                    <td class="border-bottom meta-value">{{modeOfTransport}}</td>
+                                </tr>
+                                <tr>
+                                    <td class="border-right meta-label">Vehicle No.</td>
+                                    <td class="meta-value">{{vehicleNo}}</td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </header>
+
+        <!-- ITEMS SECTION -->
+        <div id="_div_item" style="width:100%;">
+            <table id="_tbl_item" class="item-table" cellspacing="0" cellpadding="0">
+                <thead>
+                <tr>
+                    <th style="width: 7%;">S.No</th>
+                    <th style="width: 38%;">Description of Goods</th>
+                    <th style="width: 13%;">HSN/SAC</th>
+                    <th style="width: 14%;">Batch / Heat No</th>
+                    <th style="width: 12%;">Qty</th>
+                    <th style="width: 16%;">Remarks</th>
+                </tr>
+                </thead>
+                <tbody>
+{{itemRows}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- FOOTER SECTION -->
+    <footer>
+        <div id="_div_footer" style="width:100%;">
+
+            <!-- TOTAL QUANTITY ROW -->
+            <table class="total-row" cellspacing="0" cellpadding="0">
+                <tr>
+                    <td style="width: 72%; text-align: right; padding-right: 15px;">TOTAL QUANTITY:</td>
+                    <td style="width: 28%; text-align: left; color: #0f172a; padding-left: 10px; font-weight: 700;">
+                        {{totalQty}}
+                    </td>
+                </tr>
+            </table>
+
+            <!-- TERMS AND CONDITIONS -->
+            <div class="terms-box">
+                <div class="terms-title">Terms and Conditions:</div>
+                <div style="color: #334155; line-height: 1.4;">
+                    {{termsHtml}}
+                </div>
+            </div>
+
+            <!-- SIGNATURE & TAX DETAILS BLOCK -->
+            <table class="sig-container" cellspacing="0" cellpadding="0">
+{{signatureBlock}}
+            </table>
+
+        </div>
+
+        <div class="computer-generated">
+            {{footerNote}}
+        </div>
+    </footer>
+</div>
+
+</body>
+</html>
