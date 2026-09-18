@@ -24,6 +24,7 @@ import AccuracyGauge from './charts/AccuracyGauge';
 import TopItemsBarChart from './charts/TopItemsBarChart';
 import AbcAnalysisChart from './charts/AbcAnalysisChart';
 import StockAgingChart from './charts/StockAgingChart';
+import StoreName from '../../../components/common/StoreName';
 
 type Period = 'LAST_7' | 'LAST_30' | 'THIS_MONTH' | 'THIS_YEAR';
 type TabKey = 'overview' | 'item' | 'store' | 'movements' | 'reorder';
@@ -343,7 +344,7 @@ export default function InventoryReportsPage() {
                         <td>{item.itemName}</td>
                         <td className="mut">{item.specification || '—'}</td>
                         <td>{item.itemType}</td>
-                        <td>{item.defaultWarehouse || '—'}</td>
+                        <td><StoreName code={item.defaultWarehouse} /></td>
                         <td><span className="badge" style={{ background: 'var(--red-bg, #fdecec)', color: 'var(--red)' }}>Not Available</span></td>
                       </tr>
                     ))}

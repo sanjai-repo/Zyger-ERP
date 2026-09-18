@@ -1543,7 +1543,7 @@ export default function DeliveryChallanForm({
             </div>
             <div style={{ flex: 1, padding: 0 }}>
               <iframe
-                src={`/api/inventory/delivery-challan/${config.screenId}/${currentDocument?.id || documentId}/print?download=false`}
+                src={`/api/inventory/delivery-challan/${config.screenId}/${currentDocument?.id || documentId}/print?download=false&copies=3`}
                 style={{ width: '100%', height: '100%', border: 'none' }}
                 title="DC Print Preview"
               />

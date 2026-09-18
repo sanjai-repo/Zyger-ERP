@@ -6,6 +6,7 @@ import { getApiErrorMessage } from '../../../utils/apiError';
 import { formatDate, formatNumber } from '../../../utils/format';
 import StatusBadge from '../../../components/common/StatusBadge';
 import { docTypeScreenMap } from './docTypeScreenMap';
+import StoreName from '../../../components/common/StoreName';
 
 type TraceNode = {
   nodeId: string;
@@ -191,7 +192,7 @@ export default function TraceabilityViewerPage() {
                       <StatusBadge status={n.status} />
                     </td>
                     <td className="num">{formatNumber(n.qty)}</td>
-                    <td>{n.location || '—'}</td>
+                    <td><StoreName code={n.location} /></td>
                     <td>{n.batchNo || '—'}</td>
                     <td>{n.heatNo || '—'}</td>
                     <td>{n.actor || '—'}</td>

@@ -5,10 +5,23 @@ import { useAuth } from '../../../contexts/AuthContext';
 import { getApiErrorMessage } from '../../../utils/apiError';
 import ConfirmActionModal from '../../../components/common/ConfirmActionModal';
 
+interface EcrRiskLine {
+  id: number;
+  identifiedRisk: string;
+  riskLevel: string;
+  remarks?: string;
+}
+
+interface GapAnalysisRun {
+  id: number;
+  runNumber: string;
+}
+
 interface Ecr {
   id: number;
   ecrNumber: string;
   ecoNumber?: string;
+  gapAnalysisRunId?: number | null;
   changeType: string;
   itemCode: string;
   itemDescription: string;
@@ -63,8 +76,10 @@ const PRIORITIES = [
 ];
 
 const STATUS_COLORS: Record<string, { color: string; bg: string }> = {
+  DRAFT:         { color: '#6b7280', bg: '#f3f4f6' },
   RAISED:        { color: '#888',    bg: '#e9ecef' },
   UNDER_REVIEW:  { color: '#3b82f6', bg: '#dbeafe' },
+  SUBMITTED:     { color: '#3b82f6', bg: '#dbeafe' },
   APPROVED:      { color: '#22c55e', bg: '#d4edda' },
   REJECTED:      { color: '#ef4444', bg: '#f8d7da' },
   IMPLEMENTED:   { color: '#10b981', bg: '#d1fae5' },
@@ -72,6 +87,19 @@ const STATUS_COLORS: Record<string, { color: string; bg: string }> = {
 };
 
 const ACTIONABLE_STATUSES: Record<string, { label: string; action: string; icon: string }[]> = {
+  DRAFT: [
+    { label: 'Submit', action: 'submit-ecr', icon: 'send' },
+  ],
+  RAISED: [
+    { label: 'Submit', action: 'submit-ecr', icon: 'send' },
+  ],
+  REJECTED: [
+    { label: 'Resubmit', action: 'submit-ecr', icon: 'send' },
+  ],
+  SUBMITTED: [
+    { label: 'Approve', action: 'approve', icon: 'check_circle' },
+    { label: 'Reject', action: 'reject', icon: 'cancel' },
+  ],
   UNDER_REVIEW: [
     { label: 'Approve', action: 'approve', icon: 'check_circle' },
     { label: 'Reject', action: 'reject', icon: 'cancel' },
@@ -96,8 +124,11 @@ export default function EcrScreen() {
   const [editId, setEditId] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Ecr | null>(null);
   const [busy, setBusy] = useState(false);
-  const [actionTarget, setActionTarget] = useState<{ ecr: Ecr; action: string } | null>(null);
+  const [actionTarget, setActionTarget] = useState<{ ecr: Ecr; action: string; label: string } | null>(null);
   const [existingOrders, setExistingOrders] = useState<Array<{workOrderId: number; woNumber: string; status: string; orderQuantity: number; disposition: string | null}>>([]);
+  const [gapAnalysisRuns, setGapAnalysisRuns] = useState<GapAnalysisRun[]>([]);
+  const [riskLines, setRiskLines] = useState<EcrRiskLine[]>([]);
+  const [newRisk, setNewRisk] = useState({ identifiedRisk: '', riskLevel: 'MEDIUM', remarks: '' });
 
   const load = async () => {
     setLoading(true);
@@ -112,7 +143,41 @@ export default function EcrScreen() {
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, []);
+  const loadGapAnalysisRuns = async () => {
+    try {
+      const { data } = await apiClient.get('/v1/planning/gap-analysis');
+      setGapAnalysisRuns(Array.isArray(data) ? data : data.content ?? []);
+    } catch { setGapAnalysisRuns([]); }
+  };
+
+  useEffect(() => { load(); loadGapAnalysisRuns(); }, []);
+
+  const fetchRiskLines = async () => {
+    if (!editId) { setRiskLines([]); return; }
+    try {
+      const { data } = await apiClient.get(`/v1/planning/engineering-changes/${editId}/risk-lines`);
+      setRiskLines(Array.isArray(data) ? data : []);
+    } catch { setRiskLines([]); }
+  };
+
+  useEffect(() => { fetchRiskLines(); }, [editId]);
+
+  const addRiskLine = async () => {
+    if (!editId) { toast('Save the ECR before adding risk lines.', 'error'); return; }
+    if (!newRisk.identifiedRisk.trim()) { toast('Identified Risk is required.', 'error'); return; }
+    try {
+      await apiClient.post(`/v1/planning/engineering-changes/${editId}/risk-lines`, newRisk);
+      setNewRisk({ identifiedRisk: '', riskLevel: 'MEDIUM', remarks: '' });
+      fetchRiskLines();
+    } catch (e) { toast(getApiErrorMessage(e, 'Failed to add risk line.'), 'error'); }
+  };
+
+  const removeRiskLine = async (lineId: number) => {
+    try {
+      await apiClient.delete(`/v1/planning/engineering-changes/risk-lines/${lineId}`);
+      fetchRiskLines();
+    } catch (e) { toast(getApiErrorMessage(e, 'Failed to remove risk line.'), 'error'); }
+  };
 
   const save = async () => {
     if (!String(form.changeType ?? '').trim()) { toast('Change Type is required.', 'error'); return; }
@@ -156,7 +221,7 @@ export default function EcrScreen() {
         `/v1/planning/engineering-changes/${actionTarget.ecr.id}/actions/${actionTarget.action}`,
         { note }
       );
-      toast(`ECR ${actionTarget.action}d successfully.`);
+      toast(`${actionTarget.label} successful.`);
       setActionTarget(null); load();
     } catch (e) {
       toast(getApiErrorMessage(e, 'Action failed.'), 'error');
@@ -166,7 +231,7 @@ export default function EcrScreen() {
 
   const set = (k: string, v: unknown) => setForm((c) => ({ ...c, [k]: v }));
 
-  const genericStatus = String(form.status ?? 'RAISED');
+  const genericStatus = String(form.status ?? 'DRAFT');
 
   const fetchExistingOrders = async () => {
     if (!editId) return;
@@ -213,6 +278,13 @@ export default function EcrScreen() {
             </select>
           </label>
           <label className="fld">
+            <span>Gap Analysis No</span>
+            <select className="in" value={String(form.gapAnalysisRunId ?? '')} onChange={(e) => set('gapAnalysisRunId', e.target.value ? Number(e.target.value) : null)}>
+              <option value="">None (standalone ECR)</option>
+              {gapAnalysisRuns.map((g) => <option key={g.id} value={g.id}>{g.runNumber}</option>)}
+            </select>
+          </label>
+          <label className="fld">
             <span>Item Code *</span>
             <input className="in" value={String(form.itemCode ?? '')} onChange={(e) => set('itemCode', e.target.value)} />
           </label>
@@ -238,14 +310,11 @@ export default function EcrScreen() {
           </label>
           <label className="fld">
             <span>Status</span>
-            <select className="in" value={String(form.status ?? 'RAISED')} onChange={(e) => set('status', e.target.value)}>
-              <option value="RAISED">Raised</option>
-              <option value="UNDER_REVIEW">Under Review</option>
-              <option value="APPROVED">Approved</option>
+            <select className="in" value={String(form.status ?? 'DRAFT')} onChange={(e) => set('status', e.target.value)} disabled={editId !== null}>
+              <option value="DRAFT">Draft</option>
               <option value="REJECTED">Rejected</option>
-              <option value="IMPLEMENTED">Implemented</option>
-              <option value="CLOSED">Closed</option>
             </select>
+            {editId !== null && <small className="muted">Workflow status changes only via the row actions.</small>}
           </label>
           <label className="fld">
             <span>Effective Date</span>
@@ -402,6 +471,55 @@ export default function EcrScreen() {
         </div>
       )}
 
+      {editId && (
+        <div className="panel">
+          <div className="panel-h">
+            <h2><span className="material-symbols-rounded">warning</span> Risk Analysis</h2>
+          </div>
+          <div className="twrap">
+            <table className="tbl">
+              <thead>
+                <tr><th className="num">S.No</th><th>Identified Risk</th><th>Risk Level</th><th>Remarks</th><th>Actions</th></tr>
+              </thead>
+              <tbody>
+                {riskLines.length === 0 ? (
+                  <tr><td colSpan={5}><div className="empty"><span className="material-symbols-rounded">info</span> No risks recorded.</div></td></tr>
+                ) : riskLines.map((r, idx) => (
+                  <tr key={r.id}>
+                    <td className="num mut">{idx + 1}</td>
+                    <td>{r.identifiedRisk}</td>
+                    <td>{r.riskLevel}</td>
+                    <td>{r.remarks ?? ''}</td>
+                    <td>
+                      <button className="ibtn danger" title="Remove" onClick={() => removeRiskLine(r.id)}>
+                        <span className="material-symbols-rounded">delete</span>
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                <tr>
+                  <td className="num mut">+</td>
+                  <td><input className="in" placeholder="Identified risk..." value={newRisk.identifiedRisk} onChange={(e) => setNewRisk((c) => ({ ...c, identifiedRisk: e.target.value }))} /></td>
+                  <td>
+                    <select className="in" value={newRisk.riskLevel} onChange={(e) => setNewRisk((c) => ({ ...c, riskLevel: e.target.value }))}>
+                      <option value="LOW">Low</option>
+                      <option value="MEDIUM">Medium</option>
+                      <option value="HIGH">High</option>
+                    </select>
+                  </td>
+                  <td><input className="in" placeholder="Remarks..." value={newRisk.remarks} onChange={(e) => setNewRisk((c) => ({ ...c, remarks: e.target.value }))} /></td>
+                  <td>
+                    <button className="ibtn" title="Add" onClick={addRiskLine}>
+                      <span className="material-symbols-rounded">add_circle</span>
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="panel">
         <div className="toolbar">
           <div className="searchwrap">
@@ -456,7 +574,7 @@ export default function EcrScreen() {
                       <td>{r.effectiveDate ?? ''}</td>
                       <td>
                         {actions.map((a) => (
-                          <button key={a.action} className="ibtn" title={a.label} onClick={() => setActionTarget({ ecr: r, action: a.action })}>
+                          <button key={a.action} className="ibtn" title={a.label} onClick={() => setActionTarget({ ecr: r, action: a.action, label: a.label })}>
                             <span className="material-symbols-rounded">{a.icon}</span>
                           </button>
                         ))}

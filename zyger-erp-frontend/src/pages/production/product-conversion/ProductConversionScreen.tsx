@@ -1,3 +1,5 @@
+import UomSelect from '../../../components/common/UomSelect';
+import UomName from '../../../components/common/UomName';
 import { useEffect, useState, useCallback } from 'react';
 import apiClient from '../../../api/axiosClient';
 import { useToast } from '../../../contexts/ToastContext';
@@ -9,6 +11,7 @@ import { printDocument as printDoc } from '../../../utils/printDocument';
 import { exportToCsv } from '../../../utils/csvExport';
 import { filterPurchaseRelevantItems } from '../../../utils/itemClassification';
 import { useTabs } from '../../../contexts/TabsContext';
+import StoreSelect from '../../../components/common/StoreSelect';
 
 interface ProductConversion {
   id: number;
@@ -139,8 +142,8 @@ export default function ProductConversionScreen() {
                 <option value="RM_TO_SFG">Raw to Semi-Finished</option><option value="SFG_TO_FG">Semi-Finished to Finished</option><option value="OTHER">Other</option>
               </select>
             </label>
-            <label className="fld"><span>Source Warehouse</span><input className="in" value={String(form.sourceWarehouse ?? '')} onChange={(e) => set('sourceWarehouse', e.target.value)} /></label>
-            <label className="fld"><span>Destination Warehouse</span><input className="in" value={String(form.destinationWarehouse ?? '')} onChange={(e) => set('destinationWarehouse', e.target.value)} /></label>
+            <label className="fld"><span>Source Warehouse</span><StoreSelect value={String(form.sourceWarehouse ?? '')} onChange={(code) => set('sourceWarehouse', code)} /></label>
+            <label className="fld"><span>Destination Warehouse</span><StoreSelect value={String(form.destinationWarehouse ?? '')} onChange={(code) => set('destinationWarehouse', code)} /></label>
             <label className="fld"><span>Work Order No</span><input className="in" value={String(form.workOrderNumber ?? '')} onChange={(e) => set('workOrderNumber', e.target.value)} /></label>
             <label className="fld"><span>Job Card No</span><input className="in" value={String(form.jobCardNumber ?? '')} onChange={(e) => set('jobCardNumber', e.target.value)} /></label>
             <hr style={{ gridColumn: '1 / -1', border: 'none', borderTop: '1px solid var(--border)', margin: '4px 0' }} />
@@ -152,7 +155,7 @@ export default function ProductConversionScreen() {
             </label>
             <label className="fld"><span>Input Batch No</span><input className="in" value={String(form.inputBatchNumber ?? '')} onChange={(e) => set('inputBatchNumber', e.target.value)} /></label>
             <label className="fld"><span>Input Quantity</span><input className="in" type="number" value={String(form.inputQuantity ?? '')} onChange={(e) => { const iq = Number(e.target.value); set('inputQuantity', iq); const oq = Number(form.outputQuantity ?? 0); if (iq > 0 && oq > 0) set('conversionRate', oq / iq); }} /></label>
-            <label className="fld"><span>Input UOM</span><input className="in" value={String(form.inputUom ?? '')} onChange={(e) => set('inputUom', e.target.value)} /></label>
+            <label className="fld"><span>Input UOM</span><UomSelect value={String(form.inputUom ?? '')} onChange={(code) => set('inputUom', code)} /></label>
             <hr style={{ gridColumn: '1 / -1', border: 'none', borderTop: '1px solid var(--border)', margin: '4px 0' }} />
             <label className="fld"><span>Output Item Code *</span>
               <select className="in" value={String(form.outputItemCode ?? '')} onChange={(e) => { const item = items.find((i) => i.code === e.target.value); set('outputItemCode', e.target.value); if (item?.uom) set('outputUom', item.uom); }}>
@@ -162,7 +165,7 @@ export default function ProductConversionScreen() {
             </label>
             <label className="fld"><span>Output Batch No</span><input className="in" value={String(form.outputBatchNumber ?? '')} onChange={(e) => set('outputBatchNumber', e.target.value)} /></label>
             <label className="fld"><span>Output Quantity</span><input className="in" type="number" value={String(form.outputQuantity ?? '')} onChange={(e) => { const oq = Number(e.target.value); set('outputQuantity', oq); const iq = Number(form.inputQuantity ?? 0); if (iq > 0 && oq > 0) set('conversionRate', oq / iq); }} /></label>
-            <label className="fld"><span>Output UOM</span><input className="in" value={String(form.outputUom ?? '')} onChange={(e) => set('outputUom', e.target.value)} /></label>
+            <label className="fld"><span>Output UOM</span><UomSelect value={String(form.outputUom ?? '')} onChange={(code) => set('outputUom', code)} /></label>
             <label className="fld"><span>Conversion Rate</span><input className="in" type="number" step="0.001" value={String(form.conversionRate ?? '')} onChange={(e) => set('conversionRate', Number(e.target.value))} readOnly /></label>
             <hr style={{ gridColumn: '1 / -1', border: 'none', borderTop: '1px solid var(--border)', margin: '4px 0' }} />
             <label className="fld"><span>Process Loss Qty</span><input className="in" type="number" value={String(form.processLossQty ?? '')} onChange={(e) => set('processLossQty', Number(e.target.value))} /></label>
@@ -209,9 +212,9 @@ export default function ProductConversionScreen() {
                       <td><b>{r.conversionNumber}</b></td>
                       <td>{r.conversionType}</td>
                       <td>{r.inputItemCode}</td>
-                      <td>{r.inputQuantity} {r.inputUom}</td>
+                      <td>{r.inputQuantity} <UomName value={r.inputUom} /></td>
                       <td>{r.outputItemCode}</td>
-                      <td>{r.outputQuantity} {r.outputUom}</td>
+                      <td>{r.outputQuantity} <UomName value={r.outputUom} /></td>
                       <td>{r.processLossQty ?? 0}</td>
                       <td><StatusBadge status={r.status} variant={SC} /></td>
                       <td>

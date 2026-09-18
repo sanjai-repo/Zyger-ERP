@@ -200,6 +200,7 @@ export const SALES_DC_CONFIG: SalesDocScreenConfig = {
       { colNo: 3, key: 'itemName', label: 'Item Name', width: '150px' },
       { colNo: 4, key: 'description', label: 'Description', width: '140px' },
       { colNo: 5, key: 'dispatchQty', label: 'Dispatch Quantity *', type: 'number', required: true, width: '95px' },
+      { colNo: 5, key: 'availableStock', label: 'Stock Status', readOnly: true, width: '150px' },
       { colNo: 6, key: 'uom', label: 'UOM', width: '90px' },
       { colNo: 7, key: 'batchNumber', label: 'Batch Number', width: '100px' },
       { colNo: 8, key: 'lotNumber', label: 'Lot Number', width: '100px' },

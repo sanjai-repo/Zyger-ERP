@@ -9,8 +9,19 @@ function filenameFromDisposition(disposition: string | null, fallback: string): 
   return match ? decodeURIComponent(match[1]) : fallback;
 }
 
+// Sales Invoice and all Delivery Challans print as 3 labelled copies
+// (ORIGINAL / DUPLICATE / TRIPLICATE) in a single PDF via ?copies=3.
+const COPIES_PATH = /\/(sales-invoice|sales-dc|delivery-challan)\//;
+
+function withCopies(url: string): string {
+  if (!COPIES_PATH.test(url)) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}copies=3`;
+}
+
 export function printDocument(url: string, mode: 'print' | 'download' = 'print') {
-  fetch(url, { headers: authHeaders() })
+  const targetUrl = mode === 'print' ? withCopies(url) : url;
+  fetch(targetUrl, { headers: authHeaders() })
     .then((res) => {
       if (!res.ok) throw new Error(`Print/download failed (${res.status})`);
       return res.blob().then((blob) => ({ blob, disposition: res.headers.get('content-disposition') }));

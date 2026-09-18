@@ -165,10 +165,13 @@ public class DocumentController {
                 q.getOrDefault("format", "xlsx"), "stock-issue-request");
     }
 
-    /** Printable PDF of a single delivery challan (inline for print, attachment when download=true). */
+    /** Printable PDF of a single delivery challan (inline for print, attachment when download=true).
+     * When {@code copies > 1} the response is one merged PDF containing that many labelled
+     * copies (ORIGINAL / DUPLICATE / TRIPLICATE …) for a single print job. */
     @GetMapping("/delivery-challan/{type}/{id}/print")
     ResponseEntity<byte[]> printDc(@PathVariable String type, @PathVariable Long id,
                                    @RequestParam(defaultValue = "false") boolean download,
+                                   @RequestParam(defaultValue = "1") int copies,
                                    Principal p) {
         Map<String, Object> row = svc.toRow(svc.get(type, id));
         String docNo = String.valueOf(row.getOrDefault("docNo", type));
@@ -181,11 +184,16 @@ public class DocumentController {
                 .docNo(docNo).docType(type).printedBy(principalName(p)).copyNumber(copyNumber)
                 .build());
 
+        int safeCopies = Math.min(Math.max(copies, 1), 10);
+        byte[] pdf = safeCopies <= 1
+                ? printer.deliveryChallan(row, type, copyNumber)
+                : printer.copies(safeCopies, i -> printer.deliveryChallan(row, type, i));
+
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         disposition + "; filename=\"" + safeDocNo + ".pdf\"")
                 .contentType(MediaType.APPLICATION_PDF)
-                .body(printer.deliveryChallan(row, type, copyNumber));
+                .body(pdf);
     }
 
     @GetMapping("/delivery-challan/reports/register")

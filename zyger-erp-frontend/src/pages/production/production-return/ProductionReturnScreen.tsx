@@ -1,3 +1,5 @@
+import UomSelect from '../../../components/common/UomSelect';
+import UomName from '../../../components/common/UomName';
 import { useEffect, useState, useCallback } from 'react';
 import apiClient from '../../../api/axiosClient';
 import { useToast } from '../../../contexts/ToastContext';
@@ -9,6 +11,7 @@ import { printDocument as printDoc } from '../../../utils/printDocument';
 import { exportToCsv } from '../../../utils/csvExport';
 import { filterPurchaseRelevantItems } from '../../../utils/itemClassification';
 import { useTabs } from '../../../contexts/TabsContext';
+import StoreSelect from '../../../components/common/StoreSelect';
 
 interface ProductionReturn {
   id: number;
@@ -185,7 +188,7 @@ export default function ProductionReturnScreen() {
             <label className="fld"><span>Item Description</span><input className="in" value={String(form.itemDescription ?? '')} onChange={(e) => set('itemDescription', e.target.value)} /></label>
             <label className="fld"><span>Batch No</span><input className="in" value={String(form.batchNumber ?? '')} onChange={(e) => set('batchNumber', e.target.value)} /></label>
             <label className="fld"><span>Quantity</span><input className="in" type="number" value={String(form.quantity ?? '')} onChange={(e) => set('quantity', Number(e.target.value))} /></label>
-            <label className="fld"><span>UOM</span><input className="in" value={String(form.uom ?? '')} onChange={(e) => set('uom', e.target.value)} /></label>
+            <label className="fld"><span>UOM</span><UomSelect value={String(form.uom ?? '')} onChange={(code) => set('uom', code)} /></label>
             <label className="fld"><span>Original Issue Ref</span><input className="in" value={String(form.originalIssueReference ?? '')} onChange={(e) => set('originalIssueReference', e.target.value)} /></label>
             <label className="fld"><span>Return Reason</span><input className="in" value={String(form.returnReason ?? '')} onChange={(e) => set('returnReason', e.target.value)} /></label>
             <label className="fld"><span>Condition</span>
@@ -193,8 +196,8 @@ export default function ProductionReturnScreen() {
                 {DISPOSITIONS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
               </select>
             </label>
-            <label className="fld"><span>Warehouse</span><input className="in" value={String(form.warehouse ?? '')} onChange={(e) => set('warehouse', e.target.value)} /></label>
-            <label className="fld"><span>Location</span><input className="in" value={String(form.location ?? '')} onChange={(e) => set('location', e.target.value)} /></label>
+            <label className="fld"><span>Warehouse</span><StoreSelect value={String(form.warehouse ?? '')} onChange={(code) => set('warehouse', code)} /></label>
+            <label className="fld"><span>Store</span><StoreSelect value={String(form.location ?? '')} onChange={(code) => set('location', code)} /></label>
             <label className="fld"><span>Remarks</span><input className="in" value={String(form.remarks ?? '')} onChange={(e) => set('remarks', e.target.value)} /></label>
           </div>
           <div className="actbar">
@@ -234,7 +237,7 @@ export default function ProductionReturnScreen() {
                       <td><b>{r.returnNumber}</b></td>
                       <td>{r.workOrderNumber ?? '-'}</td>
                       <td>{r.itemCode}</td>
-                      <td>{r.quantity} {r.uom}</td>
+                      <td>{r.quantity} <UomName value={r.uom} /></td>
                       <td>{r.returnReason ?? '-'}</td>
                       <td>{r.condition ?? '-'}</td>
                       <td><StatusBadge status={r.status} variant={SC} /></td>

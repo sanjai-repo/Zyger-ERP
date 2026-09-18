@@ -63,6 +63,42 @@ public class MachineLoadLine {
     @Column(name = "sequence_on_machine")
     Integer sequenceOnMachine;
 
+    /** FRS §8: planned job on this row — links back to the Work Order + Route operation. */
+    @Column(name = "item_code", length = 60)
+    String itemCode;
+
+    @Column(name = "item_name", length = 200)
+    String itemName;
+
+    @Column(name = "process_name", length = 200)
+    String processName;
+
+    @Column(name = "process_qty", precision = 38, scale = 6)
+    BigDecimal processQty;
+
+    /** Total planned process hours = (setup + run × qty), inflated as needed; used for capacity compare. */
+    @Column(name = "process_time_hrs", precision = 12, scale = 4)
+    BigDecimal processTimeHrs;
+
+    /** FRS §8 rule 2 / §19: this plan row's Start must not precede this value. */
+    @Column(name = "previous_process_end")
+    Instant previousProcessEnd;
+
+    @Column(name = "start_time")
+    Instant startTime;
+
+    @Column(name = "end_time")
+    Instant endTime;
+
+    @Column(name = "total_time_sec")
+    Long totalTimeSec;
+
+    @Column(name = "operator_code", length = 60)
+    String operatorCode;
+
+    @Column(name = "tool_code", length = 60)
+    String toolCode;
+
     @Column(length = 200)
     String remarks;
 

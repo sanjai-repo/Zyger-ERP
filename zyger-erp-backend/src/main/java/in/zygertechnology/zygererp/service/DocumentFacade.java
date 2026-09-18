@@ -37,6 +37,7 @@ public class DocumentFacade {
     @Autowired LedgerRepository ledger;
     @Lazy @Autowired StockService stockService;
     @Autowired ItemCacheService itemCache;
+    @Autowired StoreNameResolver storeNames;
     @Autowired DocNumberService numbers;
     @Autowired SupplierInvoiceAttachmentRepository attachments;
     @Autowired PartyRepository parties;
@@ -2608,6 +2609,9 @@ public class DocumentFacade {
 
         boolean isJoReceiving = "jo-dc".equals(key) && e instanceof JoDc joDc && "Receiving after Job Work".equalsIgnoreCase(joDc.getChallanPurpose());
 
+        // Check EVERY line before any stock moves, and report all shortfalls together — with the
+        // store's name, not its code — so one Save & Post tells the user everything to fix.
+        List<String> shortfalls = new ArrayList<>();
         for (LineEntity line : e.getLines()) {
             String itemCode = line.getItemCode();
             if (itemCode == null || itemCode.isBlank()) continue;
@@ -2618,19 +2622,28 @@ public class DocumentFacade {
 
             String checkLoc = isJoReceiving ? "Goods with Job Worker" : firstNonEmpty(line.getLocation(), sourceLoc);
 
-            if (itemCache.findByCode(itemCode).isEmpty()) {
+            Optional<ItemMaster> item = itemCache.findByCode(itemCode);
+            if (item.isEmpty()) {
                 throw new IllegalStateException("Item " + itemCode + " is not available (not found in Item Master)");
             }
+            String label = itemCode + (item.get().getName() == null || item.get().getName().isBlank() ? "" : " (" + item.get().getName() + ")");
+            String where = storeNames.name(checkLoc);
 
             double available = stockService.available(itemCode, checkLoc);
             if (available <= 0) {
-                throw new IllegalStateException("Item " + itemCode + " is not available in stock at " + checkLoc);
-            }
-            if (available < qty.doubleValue()) {
-                throw new IllegalStateException("Quantity " + qty + " for item " + itemCode +
-                        " is low — only " + available + " available at " + checkLoc);
+                shortfalls.add("NOT AVAILABLE: " + label + " has no stock in " + where);
+            } else if (available < qty.doubleValue()) {
+                shortfalls.add("LOW STOCK: " + label + " — only " + stripZeros(available) + " available in " + where
+                        + ", but " + stripZeros(qty.doubleValue()) + " requested");
             }
         }
+        if (!shortfalls.isEmpty()) {
+            throw new IllegalStateException(String.join("; ", shortfalls));
+        }
+    }
+
+    private static String stripZeros(double v) {
+        return new java.math.BigDecimal(String.valueOf(v)).stripTrailingZeros().toPlainString();
     }
 
     private void reverseDcStock(String key, DocEntity e, String user) {

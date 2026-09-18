@@ -1,3 +1,4 @@
+import UomSelect from '../../../components/common/UomSelect';
 import { useEffect, useState, useCallback } from 'react';
 import apiClient from '../../../api/axiosClient';
 import { useToast } from '../../../contexts/ToastContext';
@@ -14,6 +15,7 @@ import {
   updateDispositionDoc,
   runDispositionAction,
 } from '../../../services/productionDispositionApi';
+import StoreSelect from '../../../components/common/StoreSelect';
 import type {
   DispositionKind,
   DispositionDoc,
@@ -252,7 +254,7 @@ function DispositionRecords({ kind, screenId }: Props) {
                     <td>{i + 1}</td>
                     <td><input className="in" value={l.itemCode} onChange={(e) => setLine(i, { itemCode: e.target.value })} /></td>
                     <td><input className="in" type="number" min="0" step="any" value={String(l.quantity ?? '')} onChange={(e) => setLine(i, { quantity: Number(e.target.value) })} /></td>
-                    <td><input className="in" value={l.uom ?? ''} onChange={(e) => setLine(i, { uom: e.target.value })} /></td>
+                    <td><UomSelect value={l.uom ?? ''} onChange={(code) => setLine(i, { uom: code })} /></td>
                     <td><input className="in" value={l.reasonCode ?? ''} onChange={(e) => setLine(i, { reasonCode: e.target.value })} /></td>
                     <td><input className="in" value={l.reasonDescription ?? ''} onChange={(e) => setLine(i, { reasonDescription: e.target.value })} /></td>
                     {kind !== 'REWORK' && (
@@ -264,9 +266,9 @@ function DispositionRecords({ kind, screenId }: Props) {
                       </td>
                     )}
                     {kind === 'REWORK' && <td><input className="in" value={l.targetOperationCode ?? ''} onChange={(e) => setLine(i, { targetOperationCode: e.target.value })} /></td>}
-                    {kind === 'SCRAP' && <td><input className="in" value={l.warehouse ?? 'STORE'} onChange={(e) => setLine(i, { warehouse: e.target.value })} /></td>}
+                    {kind === 'SCRAP' && <td><StoreSelect value={l.warehouse ?? 'STORE'} onChange={(code) => setLine(i, { warehouse: code })} /></td>}
                     <td><input className="in" value={l.batchNumber ?? ''} onChange={(e) => setLine(i, { batchNumber: e.target.value })} /></td>
-                    <td><input className="in" value={l.location ?? 'STORE'} onChange={(e) => setLine(i, { location: e.target.value })} /></td>
+                    <td><StoreSelect value={l.location ?? 'STORE'} onChange={(code) => setLine(i, { location: code })} /></td>
                     <td>
                       <button className="ibtn danger" title="Remove line" disabled={lines.length <= 1} onClick={() => setLines((prev) => prev.filter((_, x) => x !== i))}>
                         <span className="material-symbols-rounded">remove_circle</span>

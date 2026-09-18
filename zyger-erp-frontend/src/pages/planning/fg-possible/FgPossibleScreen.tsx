@@ -1,3 +1,4 @@
+import UomName from '../../../components/common/UomName';
 import { useState } from 'react';
 import apiClient from '../../../api/axiosClient';
 import { useToast } from '../../../contexts/ToastContext';
@@ -7,8 +8,15 @@ interface ComponentBreakdown {
   componentCode: string;
   componentDescription: string;
   uom: string;
+  qtyPerUnit: number;
   requiredQty: number;
   availableQty: number;
+  wipQty: number;
+  supplierQty: number;
+  totalStock: number;
+  safetyStock: number;
+  availableAboveSafety: number;
+  producibleQty: number;
   status: 'OK' | 'SHORT';
 }
 
@@ -16,6 +24,8 @@ interface FeasibilityResult {
   maxProducibleQty: number;
   limitingComponent: string;
   limitingComponentAvailableQty?: number;
+  minPossibleQty: number;
+  minPossibleLimitingComponent: string;
   isFeasible: boolean;
   decisionAction?: string;
   decisionRemarks?: string;
@@ -69,6 +79,8 @@ export default function FgPossibleScreen() {
         setResult({
           maxProducibleQty: 0,
           limitingComponent: 'N/A',
+          minPossibleQty: 0,
+          minPossibleLimitingComponent: 'N/A',
           isFeasible: false,
           breakdown: [],
         });
@@ -149,16 +161,24 @@ export default function FgPossibleScreen() {
                 <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>FG Possible Qty</div>
                 <div style={{ fontSize: 28, fontWeight: 700, color: result.isFeasible ? '#16a34a' : '#dc2626' }}>{result.maxProducibleQty}</div>
               </div>
+              <div style={{ flex: 1, minWidth: 150, textAlign: 'center', padding: 20, background: '#fdf4ff', borderRadius: 8, border: '2px solid #e9d5ff' }}>
+                <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }} title="Producible qty after reserving each component's safety stock — safe to promise to a customer">Min Possible Qty (safety-stock-aware)</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: '#7e22ce' }}>{result.minPossibleQty}</div>
+              </div>
               <div style={{ flex: 1, minWidth: 150, textAlign: 'center', padding: 20, background: result.maxProducibleQty < (orderQty || 0) ? '#fef2f2' : '#f0fdf4', borderRadius: 8, border: `2px solid ${result.maxProducibleQty < (orderQty || 0) ? '#fecaca' : '#bbf7d0'}` }}>
                 <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Shortage Qty</div>
                 <div style={{ fontSize: 28, fontWeight: 700, color: result.maxProducibleQty < (orderQty || 0) ? '#dc2626' : '#16a34a' }}>{Math.max(0, (orderQty || 0) - result.maxProducibleQty)}</div>
               </div>
             </div>
             {/* Limiting Factor */}
-            <div style={{ padding: '0 20px 12px' }}>
-              <label className="fld" style={{ marginBottom: 0 }}>
-                <span>Limiting Factor</span>
+            <div style={{ padding: '0 20px 12px', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+              <label className="fld" style={{ marginBottom: 0, flex: 1, minWidth: 200 }}>
+                <span>Limiting Factor (FG Possible)</span>
                 <span className="in" style={{ display: 'block', padding: '8px 12px', background: '#fffbeb', borderRadius: 4, fontWeight: 600, color: '#92400e' }}>{result.limitingComponent || '—'}</span>
+              </label>
+              <label className="fld" style={{ marginBottom: 0, flex: 1, minWidth: 200 }}>
+                <span>Limiting Factor (Min Possible)</span>
+                <span className="in" style={{ display: 'block', padding: '8px 12px', background: '#fdf4ff', borderRadius: 4, fontWeight: 600, color: '#7e22ce' }}>{result.minPossibleLimitingComponent || '—'}</span>
               </label>
             </div>
             {/* FRS §3.5: Decision Action */}
@@ -197,8 +217,15 @@ export default function FgPossibleScreen() {
                       <th>Component Code</th>
                       <th>Description</th>
                       <th>UOM</th>
+                      <th className="num">Req/Item</th>
                       <th>Required Qty</th>
                       <th>Available Qty</th>
+                      <th>WIP</th>
+                      <th>On PO</th>
+                      <th>Total Stock</th>
+                      <th>Safety Stock</th>
+                      <th>Avail. Above Safety</th>
+                      <th>Producible</th>
                       <th>Status</th>
                     </tr>
                   </thead>
@@ -210,9 +237,16 @@ export default function FgPossibleScreen() {
                           <td className="num mut">{idx + 1}</td>
                           <td>{comp.componentCode}</td>
                           <td>{comp.componentDescription}</td>
-                          <td>{comp.uom}</td>
+                          <td><UomName value={comp.uom} /></td>
+                          <td className="num">{comp.qtyPerUnit}</td>
                           <td>{comp.requiredQty}</td>
                           <td>{comp.availableQty}</td>
+                          <td>{comp.wipQty}</td>
+                          <td>{comp.supplierQty}</td>
+                          <td>{comp.totalStock}</td>
+                          <td>{comp.safetyStock}</td>
+                          <td>{comp.availableAboveSafety}</td>
+                          <td>{comp.producibleQty}</td>
                           <td>
                             <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 12, fontSize: 12, fontWeight: 600, color: sc.color, background: sc.bg }}>
                               {comp.status}

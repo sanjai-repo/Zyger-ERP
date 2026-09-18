@@ -27,6 +27,14 @@ public class GapAnalysisRun {
     @Column(name = "planning_horizon_end")
     Instant planningHorizonEnd;
 
+    /** FRS §9.1: CAPACITY (demand vs supply, legacy) or QMS (clause-level compliance) analysis mode */
+    @Column(name = "run_mode", length = 20)
+    String runMode = "CAPACITY";
+
+    /** FRS §9.1: the compliance standard the QMS run is checked against (e.g. ISO 9001:2015) */
+    @Column(name = "standard_ref", length = 100)
+    String standardRef;
+
     @Column(nullable = false, length = 30)
     String scope;
 

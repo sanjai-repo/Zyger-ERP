@@ -29,6 +29,7 @@ import { lookupDocumentByNumber } from '../../utils/documentLookup';
 import { logSystemActivity } from '../../utils/activityLog';
 import { exportToCsv } from '../../utils/csvExport';
 import { filterPurchaseRelevantItems } from '../../utils/itemClassification';
+import StoreSelect from '../../components/common/StoreSelect';
 
 const PAGE_SIZE = 10;
 
@@ -1898,6 +1899,20 @@ export default function PurchaseDocScreen({ config, initialDocId, viewOnly = fal
                                 items={itemMasters}
                                 allowOthers={f.allowOthers}
                                 onChange={(val) => handleLineItemChange(idx, f.key, val)}
+                              />
+                            </td>
+                          );
+                        }
+
+                        // Store picker — shows the store name, stores the code
+                        if (f.type === 'store') {
+                          return (
+                            <td key={f.key} style={colStyle}>
+                              <StoreSelect
+                                disabled={!editable}
+                                value={String(cellVal)}
+                                onChange={(code) => handleLineItemChange(idx, f.key, code)}
+                                style={{ width: '100%' }}
                               />
                             </td>
                           );

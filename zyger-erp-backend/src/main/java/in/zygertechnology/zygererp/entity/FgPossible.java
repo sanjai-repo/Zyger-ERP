@@ -39,6 +39,10 @@ public class FgPossible {
     @Column(name = "fg_possible_qty", precision = 38, scale = 2)
     BigDecimal fgPossibleQty;
 
+    /** Safety-stock-aware producible qty: MIN over BOM lines of (available - safetyStock) / qtyPer, floored at 0 */
+    @Column(name = "min_possible_qty", precision = 38, scale = 2)
+    BigDecimal minPossibleQty;
+
     @Column(name = "shortage_qty", precision = 38, scale = 2)
     BigDecimal shortageQty;
 

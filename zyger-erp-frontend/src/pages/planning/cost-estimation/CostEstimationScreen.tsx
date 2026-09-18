@@ -1,3 +1,4 @@
+import UomName from '../../../components/common/UomName';
 import { useEffect, useState } from 'react';
 import apiClient from '../../../api/axiosClient';
 import { useToast } from '../../../contexts/ToastContext';
@@ -30,6 +31,7 @@ interface CostEstimation {
   bomId?: number;
   routeId?: number;
   estimationVersion?: number;
+  priorVersionId?: number;
   currencyCode?: string;
   exchangeRate?: number;
   profitMarginPercent?: number;
@@ -39,6 +41,18 @@ interface CostEstimation {
   approvedBy?: string;
   status: string;
   remarks?: string;
+  rateFrom?: string;
+  referenceScreen?: string;
+  referenceNo?: string;
+  productImageUrl?: string;
+  processRateApplicable?: boolean;
+  profitFrom?: string;
+  makeupPercent?: number;
+  makeupAmount?: number;
+  discountPercent?: number;
+  netCost?: number;
+  otherCostAmount?: number;
+  roundOff?: boolean;
   totalMaterialCost?: number;
   totalMachineCost?: number;
   totalLabourCost?: number;
@@ -60,17 +74,44 @@ interface CostEstimation {
 interface CostLine {
   id: number;
   lineType: string;
-  componentCode?: string;
-  componentDescription?: string;
-  uom?: string;
-  quantity?: number;
-  rate?: number;
-  amount?: number;
+  componentItemCode?: string;
+  componentName?: string;
+  itemName?: string;
+  stockUom?: string;
+  alternateUom?: string;
+  conversionRatio?: number;
+  bomQtyStockUom?: number;
+  bomQtyAltUom?: number;
+  qtyRequired?: number;
+  ratePerUnit?: number;
+  rateStockUom?: number;
+  rateAltUom?: number;
+  productAmount?: number;
+  scrapQty?: number;
+  scrapRate?: number;
+  scrapAmount?: number;
+  thickness?: number;
+  width?: number;
+  length?: number;
+  dimensionUom?: string;
+  densityFactor?: number;
+  opSequence?: number;
+  operationName?: string;
   machineCode?: string;
-  machineDescription?: string;
-  setupTime?: number;
-  runTime?: number;
-  operationDescription?: string;
+  machineHourRate?: number;
+  efficiencyPct?: number;
+  batchQty?: number;
+  qty?: number;
+  processCost?: number;
+  machineCost?: number;
+  setupTimeHrs?: number;
+  cycleTimeHrs?: number;
+  totalTimeHrs?: number;
+  otherBasis?: string;
+  otherPercent?: number;
+  otherType?: string;
+  otherDescription?: string;
+  amount?: number;
 }
 
 const PAGE_SIZE = 20;
@@ -171,6 +212,19 @@ export default function CostEstimationScreen() {
       load();
     } catch (e) {
       toast(getApiErrorMessage(e, 'Calculate failed.'), 'error');
+    }
+    setBusy(false);
+  };
+
+  // FRS §10/§22: version rather than overwrite — clones header + lines into a new DRAFT revision.
+  const goToNewVersion = async (est: CostEstimation) => {
+    setBusy(true);
+    try {
+      const { data } = await apiClient.post(`/v1/planning/cost-estimations/${est.id}/new-version`);
+      toast(`Created version ${data.estimationVersion ?? ''} (${data.estimationNumber}).`);
+      load();
+    } catch (e) {
+      toast(getApiErrorMessage(e, 'Versioning failed.'), 'error');
     }
     setBusy(false);
   };
@@ -282,8 +336,59 @@ export default function CostEstimationScreen() {
             <input className="in" type="number" step="0.0001" value={String(form.exchangeRate ?? '')} onChange={(e) => set('exchangeRate', e.target.value ? Number(e.target.value) : null)} />
           </label>
           <label className="fld">
+            <span>Rate From</span>
+            <select className="in" value={String(form.rateFrom ?? 'STANDARD')} onChange={(e) => set('rateFrom', e.target.value)}>
+              <option value="STANDARD">Standard Rate</option>
+              <option value="FIFO">FIFO Rate</option>
+              <option value="WEIGHTED_AVG">Weighted Average</option>
+              <option value="LAST_PURCHASE">Last Purchase</option>
+            </select>
+          </label>
+          <label className="fld">
+            <span>Reference Screen</span>
+            <input className="in" value={String(form.referenceScreen ?? '')} onChange={(e) => set('referenceScreen', e.target.value)} />
+          </label>
+          <label className="fld">
+            <span>Reference No</span>
+            <input className="in" value={String(form.referenceNo ?? '')} onChange={(e) => set('referenceNo', e.target.value)} />
+          </label>
+          <label className="fld">
+            <span>Process Rate Applicable</span>
+            <select className="in" value={String(form.processRateApplicable ?? true)} onChange={(e) => set('processRateApplicable', e.target.value === 'true')}>
+              <option value="true">Yes</option>
+              <option value="false">No</option>
+            </select>
+          </label>
+          <label className="fld">
+            <span>Profit From</span>
+            <select className="in" value={String(form.profitFrom ?? 'TOTAL')} onChange={(e) => set('profitFrom', e.target.value)}>
+              <option value="TOTAL">Total / Net Cost</option>
+              <option value="RAW_MATERIAL">Raw Material Cost</option>
+              <option value="PROCESS">Process Cost</option>
+            </select>
+          </label>
+          <label className="fld">
             <span>Profit Margin %</span>
             <input className="in" type="number" step="0.01" value={String(form.profitMarginPercent ?? '')} onChange={(e) => set('profitMarginPercent', e.target.value ? Number(e.target.value) : null)} />
+          </label>
+          <label className="fld">
+            <span>Makeup %</span>
+            <input className="in" type="number" step="0.01" value={String(form.makeupPercent ?? '')} onChange={(e) => set('makeupPercent', e.target.value ? Number(e.target.value) : null)} />
+          </label>
+          <label className="fld">
+            <span>Makeup Amount</span>
+            <input className="in" type="number" step="0.01" value={String(form.makeupAmount ?? '')} onChange={(e) => set('makeupAmount', e.target.value ? Number(e.target.value) : null)} />
+          </label>
+          <label className="fld">
+            <span>Discount %</span>
+            <input className="in" type="number" step="0.01" value={String(form.discountPercent ?? '')} onChange={(e) => set('discountPercent', e.target.value ? Number(e.target.value) : null)} />
+          </label>
+          <label className="fld">
+            <span>Round-off</span>
+            <select className="in" value={String(form.roundOff ?? false)} onChange={(e) => set('roundOff', e.target.value === 'true')}>
+              <option value="false">No</option>
+              <option value="true">Yes</option>
+            </select>
           </label>
           <label className="fld">
             <span>Valid Upto</span>
@@ -386,9 +491,14 @@ export default function CostEstimationScreen() {
                           <button className="ibtn" title="Approve" onClick={(e) => { e.stopPropagation(); setActionTarget({ est: r, action: 'approve' }); }}>
                             <span className="material-symbols-rounded">check_circle</span>
                           </button>
-                          <button className="ibtn" title="Edit" onClick={(e) => { e.stopPropagation(); setForm(r as unknown as Record<string, unknown>); setEditId(r.id); }}>
-                            <span className="material-symbols-rounded">edit</span>
+                          <button className="ibtn" title="Go to New Version" onClick={(e) => { e.stopPropagation(); goToNewVersion(r); }}>
+                            <span className="material-symbols-rounded">difference</span>
                           </button>
+                          {r.status === 'DRAFT' && (
+                            <button className="ibtn" title="Edit" onClick={(e) => { e.stopPropagation(); setForm(r as unknown as Record<string, unknown>); setEditId(r.id); }}>
+                              <span className="material-symbols-rounded">edit</span>
+                            </button>
+                          )}
                           <button className="ibtn danger" title="Delete" onClick={(e) => { e.stopPropagation(); setDeleteTarget(r); }}>
                             <span className="material-symbols-rounded">delete</span>
                           </button>
@@ -414,11 +524,18 @@ export default function CostEstimationScreen() {
                                       <th>UOM</th>
                                       <th>Qty</th>
                                       <th>Rate</th>
+                                      <th>Efficiency %</th>
+                                      <th>Dimensions</th>
+                                      <th>Scrap Cr.</th>
                                       <th>Amount</th>
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {lines.map((ln, idx) => (
+                                    {lines.map((ln, idx) => {
+                                      const dims = (ln.thickness != null || ln.width != null || ln.length != null)
+                                        ? `${ln.thickness ?? ''}×${ln.width ?? ''}×${ln.length ?? ''} ${ln.dimensionUom ?? ''}`.trim()
+                                        : '—';
+                                      return (
                                       <tr key={ln.id}>
                                         <td className="num mut">{idx + 1}</td>
                                         <td>
@@ -430,14 +547,18 @@ export default function CostEstimationScreen() {
                                             {componentTypes.map((ct) => <option key={ct.code} value={ct.code}>{ct.name}</option>)}
                                           </select>
                                         </td>
-                                        <td>{ln.componentCode ?? ln.machineCode ?? '—'}</td>
-                                        <td>{ln.componentDescription ?? ln.operationDescription ?? '—'}</td>
-                                        <td>{ln.uom ?? '—'}</td>
-                                        <td>{ln.quantity ?? '—'}</td>
-                                        <td>{fmt(ln.rate)}</td>
-                                        <td>{fmt(ln.amount)}</td>
+                                        <td>{ln.componentItemCode ?? ln.machineCode ?? '—'}</td>
+                                        <td>{ln.componentName ?? ln.operationName ?? ln.otherDescription ?? '—'}</td>
+                                        <td><UomName value={ln.stockUom ?? ln.alternateUom ?? ln.dimensionUom} /></td>
+                                        <td>{ln.qtyRequired ?? ln.qty ?? '—'}</td>
+                                        <td>{fmt(ln.ratePerUnit ?? ln.rateStockUom ?? ln.machineHourRate)}</td>
+                                        <td>{ln.efficiencyPct != null ? `${ln.efficiencyPct}%` : '—'}</td>
+                                        <td>{dims}</td>
+                                        <td>{fmt(ln.scrapAmount)}</td>
+                                        <td>{fmt(ln.amount ?? ln.processCost ?? ln.machineCost)}</td>
                                       </tr>
-                                    ))}
+                                      );
+                                    })}
                                   </tbody>
                                 </table>
                               )}
@@ -482,10 +603,14 @@ export default function CostEstimationScreen() {
           <label className="fld"><span>Total Subcontract Cost</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatCurrency(form.totalSubcontractCost)}</span></label>
           <label className="fld"><span>Total Overhead Cost</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatCurrency(form.totalOverheadCost)}</span></label>
           <label className="fld"><span>Scrap Allowance Cost</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatCurrency(form.scrapAllowanceCost)}</span></label>
+          <label className="fld"><span>Other Cost (incl. overhead)</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatCurrency(form.otherCostAmount)}</span></label>
           <label className="fld"><span style={{ fontWeight: 700 }}>Total Manufacturing Cost</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#eff6ff', borderRadius: 4, fontWeight: 700, color: '#1e40af' }}>{formatCurrency(form.totalManufacturingCost)}</span></label>
+          <label className="fld"><span style={{ fontWeight: 700 }}>Net Cost</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#eff6ff', borderRadius: 4, fontWeight: 700, color: '#1e40af' }}>{formatCurrency(form.netCost)}</span></label>
           <label className="fld"><span>Profit Margin %</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{String(form.profitMarginPercent ?? '—')}%</span></label>
           <label className="fld"><span>Profit Amount</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{formatCurrency(form.profitAmount)}</span></label>
-          <label className="fld"><span style={{ fontWeight: 700 }}>Estimated Selling Price</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f0fdf4', borderRadius: 4, fontWeight: 700, color: '#16a34a' }}>{formatCurrency(form.estimatedSellingPrice)}</span></label>
+          <label className="fld"><span>Makeup %</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{String(form.makeupPercent ?? '—')}%</span></label>
+          <label className="fld"><span>Discount %</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f9fafb', borderRadius: 4, fontWeight: 600 }}>{String(form.discountPercent ?? '—')}%</span></label>
+          <label className="fld"><span style={{ fontWeight: 700 }}>Estimated Cost</span><span className="in" style={{ display: 'block', padding: '8px 12px', background: '#f0fdf4', borderRadius: 4, fontWeight: 700, color: '#16a34a' }}>{formatCurrency(form.estimatedSellingPrice)}</span></label>
         </div>
       </div>
 

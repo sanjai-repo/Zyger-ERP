@@ -1,6 +1,8 @@
 import { Fragment, useMemo, useState, type CSSProperties } from 'react';
 import { useEffect } from 'react';
 import { useTabs } from '../../../contexts/TabsContext';
+import { useStoreNames } from '../../../hooks/useStoreNames';
+import { useUomNames } from '../../../hooks/useUomNames';
 import { useToast } from '../../../contexts/ToastContext';
 import { getScreenComponent } from '../../../config/screenRegistry';
 import {
@@ -32,6 +34,7 @@ import TrendLineChart from './charts/TrendLineChart';
 import AccuracyGauge from './charts/AccuracyGauge';
 import AbcAnalysisChart from './charts/AbcAnalysisChart';
 import type { DrilldownRow } from '../../../types/inventory/reports.types';
+import StoreName from '../../../components/common/StoreName';
 
 type Period = 'LAST_7' | 'LAST_30' | 'THIS_MONTH' | 'THIS_YEAR';
 
@@ -197,6 +200,8 @@ interface KpiTile {
 }
 
 export default function InventoryDashboardPage() {
+  const { storeName } = useStoreNames();
+  const { uomName } = useUomNames();
   const { openTab } = useTabs();
   const { toast } = useToast();
 
@@ -271,7 +276,7 @@ export default function InventoryDashboardPage() {
   const openStoreStockTab = (storeCode: string) => {
     openTab({
       id: `store-detail-${storeCode}`,
-      label: `Store — ${storeCode}`,
+      label: `Store — ${storeName(storeCode)}`,
       icon: 'warehouse',
       component: getScreenComponent('store-detail'),
       props: { initialFilters: { location: storeCode } },
@@ -392,7 +397,7 @@ export default function InventoryDashboardPage() {
         <p style={{ margin: '4px 0 16px', color: '#555' }}>
           Generated {new Date().toLocaleString()} · Period:{' '}
           {period.replace('_', ' ').toLowerCase()} ({fromDate} → {toDate})
-          {store ? ` · Store: ${store}` : ''}
+          {store ? ` · Store: ${storeName(store)}` : ''}
         </p>
 
         <h2>1. Stock Summary</h2>
@@ -864,7 +869,7 @@ export default function InventoryDashboardPage() {
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                                 {row.perStore.map((s) => (
                                   <span key={s.storeCode} title={`${s.storeName || s.storeCode}: ${formatNumber(s.onHand)} in store`} style={{ padding: '2px 8px', borderRadius: 6, fontSize: 12, background: 'var(--item-bg, #f1f3f5)' }}>
-                                    <strong>{s.storeCode}</strong> {formatNumber(s.available)}
+                                    <strong>{s.storeName || s.storeCode}</strong> {formatNumber(s.available)}
                                   </span>
                                 ))}
                               </div>
@@ -880,7 +885,7 @@ export default function InventoryDashboardPage() {
                               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px 20px' }}>
                                 <Detail label="Category" value={row.category} />
                                 <Detail label="Item Group" value={row.itemGroup} />
-                                <Detail label="UOM" value={row.uom} />
+                                <Detail label="UOM" value={uomName(row.uom)} />
                                 <Detail label="Total Value" value={formatCurrency(row.value)} />
                                 <Detail label="Safety Stock" value={formatNumber(row.safetyStock)} />
                                 <Detail label="Reorder Point" value={formatNumber(row.reorderPoint)} />
@@ -1017,7 +1022,7 @@ export default function InventoryDashboardPage() {
                         <td>{txTypeIcon(str(row, 'txType'))} {str(row, 'txType') || '—'}</td>
                         <td>{str(row, 'itemCode')}</td>
                         <td>{str(row, 'itemName')}</td>
-                        <td>{str(row, 'location')}</td>
+                        <td><StoreName code={str(row, 'location')} /></td>
                         <td className="num" style={{ color: 'var(--green)' }}>{formatNumber(num(row, 'inQty'))}</td>
                         <td className="num" style={{ color: 'var(--red)' }}>{formatNumber(num(row, 'outQty'))}</td>
                         <td className="num">{formatNumber(num(row, 'runningBalance'))}</td>

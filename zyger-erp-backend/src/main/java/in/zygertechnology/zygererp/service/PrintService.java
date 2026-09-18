@@ -4,6 +4,8 @@ import com.google.zxing.BarcodeFormat;
 import com.google.zxing.MultiFormatWriter;
 import com.google.zxing.client.j2se.MatrixToImageWriter;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
+import com.lowagie.text.pdf.PdfCopy;
+import com.lowagie.text.pdf.PdfReader;
 import in.zygertechnology.zygererp.entity.CompanyInfo;
 import in.zygertechnology.zygererp.entity.ItemMaster;
 import org.jsoup.Jsoup;
@@ -14,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
+import java.io.ByteArrayInputStream;
 import java.awt.image.BufferedImage;
 import javax.imageio.ImageIO;
 import java.math.BigDecimal;
@@ -44,11 +47,23 @@ public class PrintService {
 
     private final in.zygertechnology.zygererp.repo.CompanyInfoRepository companyInfos;
     private final in.zygertechnology.zygererp.repo.ItemRepository items;
+    private final StoreNameResolver storeNames;
+    private final UomNameResolver uomNames;
+    private final in.zygertechnology.zygererp.repo.PartyRepository parties;
+    private final jakarta.persistence.EntityManager em;
 
     public PrintService(in.zygertechnology.zygererp.repo.CompanyInfoRepository companyInfos,
-                         in.zygertechnology.zygererp.repo.ItemRepository items) {
+                         in.zygertechnology.zygererp.repo.ItemRepository items,
+                         StoreNameResolver storeNames,
+                         UomNameResolver uomNames,
+                         in.zygertechnology.zygererp.repo.PartyRepository parties,
+                         jakarta.persistence.EntityManager em) {
         this.companyInfos = companyInfos;
         this.items = items;
+        this.storeNames = storeNames;
+        this.uomNames = uomNames;
+        this.parties = parties;
+        this.em = em;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -76,7 +91,7 @@ public class PrintService {
         .company-address { font-size: 8.5pt; color: #475569; margin-top: 3px; line-height: 1.35; text-align: center; }
         .company-contact { font-size: 8pt; color: #334155; line-height: 1.4; text-align: center; margin-top: 4px; }
         .dc-title-header { width: 100%; background-color: #1e293b; color: #ffffff; text-align: center; font-size: 12pt; font-weight: 700; letter-spacing: 1px; padding: 6px 0; text-transform: uppercase; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        .copy-label { text-align: center; font-size: 9pt; font-weight: 700; color: #1e293b; padding: 4px 0; letter-spacing: 1px; }
+        .copy-label { position: fixed; top: 6mm; right: 5mm; font-size: 11pt; font-weight: bold; color: #0f172a; letter-spacing: 1.5px; text-transform: uppercase; border: 0; background: none; padding: 0; }
         .details-table { border-top: 1px solid #334155; border-bottom: 1px solid #334155; border-collapse: collapse; }
         .details-table td { font-size: 8.5pt; }
         .border-right { border-right: 1px solid #cbd5e1; }
@@ -131,6 +146,7 @@ public class PrintService {
         .accent-bg { background-color: #f8fafc; }
         .banner-title { background-color: #0f172a; color: #ffffff; font-size: 11pt; font-weight: 700;
                          letter-spacing: 1.5px; text-transform: uppercase; padding: 4px 0; text-align: center; }
+        .copy-label { text-align: right; font-size: 11pt; font-weight: bold; color: #0f172a; letter-spacing: 1.5px; text-transform: uppercase; margin: 0 1mm 2mm 0; padding: 0; border: 0; background: none; }
         .kv-table td { padding: 2px 4px; font-size: 9pt; }
         .kv-label { color: #475569; font-weight: 600; font-size: 8pt; }
         .nowrap { white-space: nowrap; }
@@ -676,7 +692,8 @@ public class PrintService {
      * diagonal "DRAFT — NOT VALID FOR DISPATCH" watermark (BR-INV-DC-PRINT-3), and any print
      * after the first shows "COPY N" (FR-INV-DC-PRINT-1).
      */
-    public byte[] deliveryChallan(Map<String, Object> doc, String type, int copyNumber) {
+    public byte[] deliveryChallan(Map<String, Object> rawDoc, String type, int copyNumber) {
+        final Map<String, Object> doc = withCustomerDetails(rawDoc);
         StringBuilder body = new StringBuilder();
         body.append(letterhead());
         body.append(titleBarHtml(dcTitle(type)));
@@ -697,27 +714,33 @@ public class PrintService {
         List<String> partyLines = new ArrayList<>();
         partyLines.add(firstNonEmpty(str(doc.get("party")), str(doc.get("customer"))));
         String address = firstNonEmpty(str(doc.get("billingAddress")), str(doc.get("shippingAddress")), str(doc.get("deliveryAddress")));
+        if (address.isBlank()) address = str(doc.get("shippingAddress"));
         if (!address.isBlank()) partyLines.add(address);
         if (!isEmpty(doc.get("gstin"))) partyLines.add("GSTIN: " + str(doc.get("gstin")));
+        String dcContact = firstNonEmpty(str(doc.get("contactPerson")), "");
+        String dcPhone = str(doc.get("phone"));
+        if (!dcContact.isBlank() || !dcPhone.isBlank()) {
+            partyLines.add("Contact: " + dcContact + (!dcContact.isBlank() && !dcPhone.isBlank() ? " | " : "") + (dcPhone.isBlank() ? "" : "Ph: " + dcPhone));
+        }
 
         String purposeText = "jo-dc".equals(type) ? str(doc.getOrDefault("challanPurpose", "Job Work"))
                 : "transfer-dc".equals(type) ? "Stock Transfer (" + str(doc.getOrDefault("transferType", "Internal")) + ")"
                 : "sales-dc".equals(type) ? "Dispatch against Sales Order"
                 : str(doc.getOrDefault("dcAgainst", "Dispatch / Sale"));
-        List<String> locLines = List.of(str(doc.get("sourceLocation")), "Purpose: " + purposeText);
+        List<String> locLines = List.of(storeNames.name(str(doc.get("sourceLocation"))), "Purpose: " + purposeText);
 
         body.append("<table class=\"details-table\"><tr>");
         body.append("<td style=\"width:52%;\" class=\"border-right\">");
         body.append("<div class=\"meta-label\">").append(esc(partyHeading)).append("</div>");
         body.append("<div style=\"font-size:9.5pt; font-weight:bold; margin-top:2px;\">").append(esc(partyLines.get(0))).append("</div>");
         for (int i = 1; i < partyLines.size(); i++) {
-            body.append("<div style=\"margin-top:3px; color:#334155;\">").append(esc(partyLines.get(i))).append("</div>");
+            body.append("<div style=\"margin-top:3px; color:#334155; line-height:1.35;\">").append(esc(partyLines.get(i)).replace("\n", "<br/>")).append("</div>");
         }
         body.append("</td><td style=\"width:48%; padding:0;\">");
         body.append(metaGrid(meta));
         body.append("</td></tr></table>");
 
-        body.append(sectionBarHtml("From Location: " + str(doc.get("sourceLocation")) + "  —  " + purposeText));
+        body.append(sectionBarHtml("From Location: " + storeNames.name(str(doc.get("sourceLocation"))) + "  —  " + purposeText));
 
         List<String> headers = List.of("Sl.", "Item Code", "Description", "HSN", "Batch", "UOM", "Qty", "Rate", "Amount");
         List<List<String>> rows = new ArrayList<>();
@@ -731,7 +754,7 @@ public class PrintService {
             double a = line.get("amount") != null ? Double.parseDouble(String.valueOf(line.get("amount"))) : q * r;
             totalQty += q; totalAmt += a;
             rows.add(List.of(String.valueOf(sl), str(line.get("itemCode")), str(line.get("itemDesc")),
-                    str(line.get("hsnCode")), str(line.get("batchNo")), str(line.get("uom")),
+                    str(line.get("hsnCode")), str(line.get("batchNo")), uomNames.name(str(line.get("uom"))),
                     num(q), r > 0 ? String.format("%.2f", r) : "-", a > 0 ? String.format("%.2f", a) : "-"));
         }
         body.append(itemsTable(headers, rows, new boolean[]{false, false, false, false, false, false, true, true, true},
@@ -802,7 +825,7 @@ public class PrintService {
             @SuppressWarnings("unchecked") Map<String, Object> line = (Map<String, Object>) o;
             n++;
             rows.add(List.of(String.valueOf(n), str(line.get("itemCode")), str(line.get("itemDesc")),
-                    num(line.get("qty")), num(line.get("rate")), str(line.get("batchNo")), str(line.get("heatNo")), str(line.get("location"))));
+                    num(line.get("qty")), num(line.get("rate")), str(line.get("batchNo")), str(line.get("heatNo")), storeNames.name(str(line.get("location")))));
         }
         body.append(itemsTable(headers, rows, new boolean[]{false, false, false, true, true, false, false, false},
                 new int[]{3, 14, 34, 14, 14, 12, 12, 14},
@@ -848,7 +871,7 @@ public class PrintService {
         fields.add(new String[]{"Completed Qty", num(doc.get("completedQty"))});
         fields.add(new String[]{"Rejected Qty", num(doc.get("rejectedQty"))});
         fields.add(new String[]{"Scrap Qty", num(doc.get("scrapQty"))});
-        fields.add(new String[]{"UOM", str(doc.get("uom"))});
+        fields.add(new String[]{"UOM", uomNames.name(str(doc.get("uom")))});
         fields.add(new String[]{"Planned Start", str(doc.get("plannedStartDate"))});
         fields.add(new String[]{"Planned End", str(doc.get("plannedEndDate"))});
         fields.add(new String[]{"Due Date", str(doc.get("dueDate"))});
@@ -874,7 +897,7 @@ public class PrintService {
                 @SuppressWarnings("unchecked") Map<String, Object> line = (Map<String, Object>) o;
                 n++;
                 rows.add(List.of(String.valueOf(n), str(line.get("componentItemCode")), str(line.get("description")),
-                        str(line.get("uom")), num(line.get("requiredQuantity")), num(line.get("issuedQuantity"))));
+                        uomNames.name(str(line.get("uom"))), num(line.get("requiredQuantity")), num(line.get("issuedQuantity"))));
             }
             body.append(itemsTable(headers, rows, new boolean[]{false, false, false, false, true, true},
                     new int[]{4, 15, 30, 10, 12, 12}, null, null));
@@ -983,7 +1006,7 @@ public class PrintService {
             String itemCode = str(line.get("itemCode"));
             String hsn = items.findByCode(itemCode).map(ItemMaster::getHsnCode).filter(s -> !s.isBlank()).orElse("");
             String desc = firstNonEmpty(str(line.get("itemName")), str(line.get("specification")));
-            rows.add(List.of(String.valueOf(n), itemCode, desc, hsn, num(qty), str(line.get("uom")),
+            rows.add(List.of(String.valueOf(n), itemCode, desc, hsn, num(qty), uomNames.name(str(line.get("uom"))),
                     num(rate), num(discPct), num(taxPct), num(net)));
         }
         body.append(itemsTable(headers, rows, new boolean[]{false, false, false, false, true, false, true, true, true, true},
@@ -1067,7 +1090,7 @@ public class PrintService {
         for (Object o : lines(doc)) {
             @SuppressWarnings("unchecked") Map<String, Object> line = (Map<String, Object>) o;
             n++;
-            rows.add(List.of(String.valueOf(n), str(line.get("itemCode")), str(line.get("description")), str(line.get("uom")),
+            rows.add(List.of(String.valueOf(n), str(line.get("itemCode")), str(line.get("description")), uomNames.name(str(line.get("uom"))),
                     num(line.get("billedQty")), num(line.get("unitPrice")), str(line.get("taxCode")), num(line.get("netAmount"))));
         }
         body.append(itemsTable(headers, rows, new boolean[]{false, false, false, false, true, true, false, true},
@@ -1107,7 +1130,8 @@ public class PrintService {
         return renderInvoice(doc, copyNumber, true);
     }
 
-    private byte[] renderInvoice(Map<String, Object> doc, int copyNumber, boolean proforma) {
+    private byte[] renderInvoice(Map<String, Object> rawDoc, int copyNumber, boolean proforma) {
+        final Map<String, Object> doc = withCustomerDetails(rawDoc);
         CompanyInfo ci = companyInfos.findById(1L).orElse(null);
 
         // ---- Compute totals + per-rate tax breakdown up front so the header
@@ -1132,7 +1156,6 @@ public class PrintService {
         StringBuilder body = new StringBuilder();
         body.append(invoiceHeader(doc, ci, taxableTotal, taxTotal, grandTotal, proforma));
         body.append("<div class=\"banner-title\">").append(proforma ? "PROFORMA INVOICE" : "TAX INVOICE").append("</div>");
-        if (copyNumber > 1) body.append(copyLabelHtml(copyNumber));
 
         // 3. Invoice meta & transportation details
         body.append("<table class=\"border-bottom\"><tr>");
@@ -1235,7 +1258,7 @@ public class PrintService {
             body.append("</td>");
             body.append("<td class=\"text-center nowrap\">").append(esc(hsn)).append("</td>");
             body.append("<td class=\"text-right bold nowrap\">").append(money(qty)).append("</td>");
-            body.append("<td class=\"text-center nowrap\">").append(esc(str(line.get("uom")))).append("</td>");
+            body.append("<td class=\"text-center nowrap\">").append(esc(uomNames.name(str(line.get("uom"))))).append("</td>");
             body.append("<td class=\"text-right nowrap\">").append(money(rate)).append("</td>");
             body.append("<td class=\"text-right nowrap\">").append(esc(taxPct)).append("</td>");
             body.append("<td class=\"text-right bold nowrap\">").append(money(net)).append("</td>");
@@ -1309,7 +1332,7 @@ public class PrintService {
         body.append("</tr></table>");
 
         String wm = null;
-        return renderPdf(proforma ? "Proforma Invoice" : "Tax Invoice", INVOICE_CSS, "<div class=\"inv-box\">" + body + "</div>", wm);
+        return renderPdf(proforma ? "Proforma Invoice" : "Tax Invoice", INVOICE_CSS, copyLabelHtml(copyNumber) + "<div class=\"inv-box\">" + body + "</div>", wm);
     }
 
     /** Logo (left) + company info (centre) + QR code (right) header, per invoice.html.
@@ -1344,16 +1367,90 @@ public class PrintService {
         return sb.toString();
     }
 
+    /** Proformas and sales DCs don't store the customer's contact person / phone / email (and a
+     * DC stores no address at all), so fill any blank field from the customer master. Fields the
+     * document already carries are never overwritten. */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> withCustomerDetails(Map<String, Object> doc) {
+        Map<String, Object> m = new java.util.LinkedHashMap<>(doc);
+
+        // The linked sales order carries the address the goods were actually ordered for.
+        String so = firstNonEmpty(str(doc.get("salesOrderNumber")), str(doc.get("salesOrderNo")));
+        if (!so.isBlank()) {
+            try {
+                List<Object[]> rows = em.createNativeQuery(
+                        "SELECT shipping_address, billing_address FROM sales_order WHERE doc_no = :n AND deleted = false")
+                        .setParameter("n", so).getResultList();
+                if (!rows.isEmpty()) {
+                    putIfBlank(m, "shippingAddress", rows.get(0)[0] == null ? null : String.valueOf(rows.get(0)[0]));
+                    putIfBlank(m, "billingAddress", rows.get(0)[1] == null ? null : String.valueOf(rows.get(0)[1]));
+                }
+            } catch (RuntimeException ignored) { /* order lookup is best-effort */ }
+        }
+
+        String code = str(doc.get("customerCode"));
+        java.util.Optional<in.zygertechnology.zygererp.entity.Party> found = java.util.Optional.empty();
+        if (!code.isBlank()) found = parties.findByCode(code);
+        if (found.isEmpty()) {
+            String name = firstNonEmpty(str(doc.get("customer")), str(doc.get("party")));
+            if (!name.isBlank()) {
+                try { found = parties.findByName(name); } catch (RuntimeException ignored) { /* ambiguous name: skip */ }
+            }
+        }
+        if (found.isPresent()) {
+            in.zygertechnology.zygererp.entity.Party c = found.get();
+            putIfBlank(m, "contactPerson", c.getContactPerson());
+            putIfBlank(m, "phone", firstNonEmpty(c.getPhone(), c.getMobile()));
+            putIfBlank(m, "email", c.getEmail());
+            putIfBlank(m, "billingAddress", partyAddress(c, true));
+            putIfBlank(m, "shippingAddress", partyAddress(c, false));
+            putIfBlank(m, "gstin", c.getGstin());
+        }
+        return m;
+    }
+
+    private static void putIfBlank(Map<String, Object> m, String key, String value) {
+        if (value == null || value.isBlank()) return;
+        Object cur = m.get(key);
+        if (cur == null || String.valueOf(cur).isBlank()) m.put(key, value);
+    }
+
+    /** Best address for the customer: the stored billing/shipping text unless it's a blank or
+     * placeholder, else the general address, always completed with city / state / pincode. */
+    private String partyAddress(in.zygertechnology.zygererp.entity.Party c, boolean billed) {
+        String specific = billed ? c.getBillingAddress()
+                : firstNonEmpty(c.getShippingAddress(), c.getBillingAddress());
+        String base = isPlaceholderAddress(specific) ? c.getAddress() : specific;
+        if (base == null || base.isBlank()) return "";
+        StringBuilder sb = new StringBuilder(base.trim());
+        for (String part : new String[]{c.getCity(), c.getState(), c.getPincode()}) {
+            if (part != null && !part.isBlank() && !sb.toString().toLowerCase().contains(part.trim().toLowerCase())) {
+                sb.append(", ").append(part.trim());
+            }
+        }
+        return sb.toString();
+    }
+
+    private static boolean isPlaceholderAddress(String a) {
+        if (a == null || a.isBlank()) return true;
+        String t = a.trim().toLowerCase();
+        return t.equals("billing address") || t.equals("shipping address") || t.equals("address");
+    }
+
     private String invoiceKvRow(String label, String value, boolean blue) {
         return invoiceKvRow(label, value, blue, 40);
     }
 
     private String invoiceKvRow(String label, String value, boolean blue, int labelPct) {
+        return invoiceKvRow(label, value, blue, labelPct, "");
+    }
+
+    private String invoiceKvRow(String label, String value, boolean blue, int labelPct, String valueStyle) {
         int valuePct = 100 - labelPct - 4;
         StringBuilder sb = new StringBuilder("<tr>");
         sb.append("<td style=\"width:").append(labelPct).append("%;\" class=\"kv-label\">").append(esc(label)).append("</td>");
         sb.append("<td style=\"width:4%;\">:</td>");
-        sb.append("<td style=\"width:").append(valuePct).append("%;").append(blue ? " color:#2563eb;" : "").append("\" class=\"bold\">").append(esc(value)).append("</td>");
+        sb.append("<td style=\"width:").append(valuePct).append("%;").append(blue ? " color:#2563eb;" : "").append(valueStyle).append("\" class=\"bold\">").append(esc(value)).append("</td>");
         sb.append("</tr>");
         return sb.toString();
     }
@@ -1398,15 +1495,15 @@ public class PrintService {
         String gstin = firstNonEmpty(str(doc.get("customerGstin")), str(doc.get("gstin")));
         String phone = str(doc.get("phone"));
         String email = str(doc.get("email"));
-        rows.add(invoiceKvRow("Company Name", customer, false, 32));
-        rows.add(invoiceKvRow("Contact Person", contact, false, 32));
-        rows.add(invoiceKvRow("Address", address, false, 32));
+        rows.add(invoiceKvRow("Company Name", customer, false, 31));
+        rows.add(invoiceKvRow("Contact Person", contact, false, 31));
+        rows.add(invoiceKvRow("Address", address, false, 31));
         if (!proforma) {
-            rows.add(invoiceKvRow("GSTIN", gstin, false, 32));
-            rows.add(invoiceKvRow("State Code", placeOfSupplyDisplay(doc), false, 32));
+            rows.add(invoiceKvRow("GSTIN", gstin, false, 31));
+            rows.add(invoiceKvRow("State Code", placeOfSupplyDisplay(doc), false, 31));
         }
-        rows.add(invoiceKvRow("Contact No", phone, false, 32));
-        rows.add(invoiceKvRow("Email ID", email, false, 32));
+        rows.add(invoiceKvRow("Contact No", phone, false, 31));
+        rows.add(invoiceKvRow("Email ID", email, false, 31, " font-size:8pt; word-break:break-all;"));
         return rows;
     }
 
@@ -1550,7 +1647,7 @@ public class PrintService {
         int i = 1;
         for (Object o : lines(doc)) {
             @SuppressWarnings("unchecked") Map<String, Object> line = (Map<String, Object>) o;
-            rows.add(List.of(String.valueOf(i++), str(line.get("itemCode")), firstOf(line, "location"),
+            rows.add(List.of(String.valueOf(i++), str(line.get("itemCode")), storeNames.name(firstOf(line, "location")),
                     firstOf(line, "batchNo", "batchNumber", "heatNo"), num(line.get("qty")), firstOf(line, "stockStatus"),
                     num(firstOfObj(line, "currentReturnQty", "returnedQty"))));
         }
@@ -1587,7 +1684,7 @@ public class PrintService {
         int i = 1;
         for (Object o : lines(doc)) {
             @SuppressWarnings("unchecked") Map<String, Object> line = (Map<String, Object>) o;
-            rows.add(List.of(String.valueOf(i++), str(line.get("itemCode")), firstOf(line, "location"),
+            rows.add(List.of(String.valueOf(i++), str(line.get("itemCode")), storeNames.name(firstOf(line, "location")),
                     firstOf(line, "batchNo", "batchNumber", "heatNo"), num(line.get("qty")), firstOf(line, "stockStatus")));
         }
         body.append(itemsTable(headers, rows, new boolean[]{true, false, false, false, true, false},
@@ -1627,7 +1724,7 @@ public class PrintService {
         for (Object o : lines(doc)) {
             @SuppressWarnings("unchecked") Map<String, Object> line = (Map<String, Object>) o;
             List<String> row = new ArrayList<>(List.of(String.valueOf(i++), str(line.get("itemCode")),
-                    firstOf(line, "location", "storeLocation"), firstOf(line, "batchNo", "batchNumber", "heatNo")));
+                    storeNames.name(firstOf(line, "location", "storeLocation")), firstOf(line, "batchNo", "batchNumber", "heatNo")));
             if (physical) {
                 row.add(num(line.get("systemQty")));
                 row.add(num(line.get("physicalQty")));
@@ -1648,5 +1745,35 @@ public class PrintService {
         body.append(sigContainer(null, "Verified By", "Authorized Signatory"));
         body.append(computerGenerated("This is a Computer Generated " + title));
         return renderPdf(title, body.toString(), null);
+    }
+
+    /** Merges a document rendered N times (each with copyNumber 1..N) into a single PDF so
+     * one print job produces N labelled copies (ORIGINAL / DUPLICATE / TRIPLICATE …). */
+    public byte[] copies(int n, java.util.function.IntFunction<byte[]> renderer) {
+        if (n <= 1) return renderer.apply(1);
+        try {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            PdfReader first = new PdfReader(new ByteArrayInputStream(renderer.apply(1)));
+            com.lowagie.text.Document outDoc = new com.lowagie.text.Document(first.getPageSize(1));
+            outDoc.setMargins(0, 0, 0, 0);
+            PdfCopy copier = new PdfCopy(outDoc, out);
+            outDoc.open();
+            for (int i = 1; i <= first.getNumberOfPages(); i++) {
+                copier.addPage(copier.getImportedPage(first, i));
+            }
+            first.close();
+            for (int c = 2; c <= n; c++) {
+                PdfReader rd = new PdfReader(new ByteArrayInputStream(renderer.apply(c)));
+                for (int i = 1; i <= rd.getNumberOfPages(); i++) {
+                    copier.addPage(copier.getImportedPage(rd, i));
+                }
+                rd.close();
+            }
+            outDoc.close();
+            return out.toByteArray();
+        } catch (Exception e) {
+            log.error("PDF multi-copy merge failed", e);
+            throw new IllegalStateException("PDF multi-copy merge failed", e);
+        }
     }
 }

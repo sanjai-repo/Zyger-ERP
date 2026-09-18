@@ -23,6 +23,30 @@ public class GapAnalysisResult {
     @Column(name = "gap_type", nullable = false, length = 30)
     String gapType;
 
+    /** FRS §9.1 (QMS mode): the clause/reference the gap is reported against (e.g. 7.5.3, 8.3.5) */
+    @Column(name = "clause_no", length = 20)
+    String clauseNo;
+
+    @Column(name = "clause_text", length = 1000)
+    String clauseText;
+
+    /** FRS §9.1 (QMS mode): NOT_ASSESSED, COMPLIANT, PARTIAL, NON_COMPLIANT */
+    @Column(name = "compliance_status", length = 20)
+    String complianceStatus;
+
+    @Column(name = "reference_doc", length = 200)
+    String referenceDoc;
+
+    @Column(name = "procedure_ref", length = 200)
+    String procedureRef;
+
+    /** FRS §9.1 (QMS mode): DESIGN, DOCUMENTATION, PROCESS, TRAINING, EQUIPMENT, CALIBRATION */
+    @Column(name = "change_category", length = 60)
+    String changeCategory;
+
+    @Column(name = "gap_description", length = 500)
+    String gapDescription;
+
     @Column(name = "context_code", length = 100)
     String contextCode;
 

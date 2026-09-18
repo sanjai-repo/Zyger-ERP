@@ -1,6 +1,8 @@
+import UomName from '../../../../components/common/UomName';
 import { useState, useEffect } from 'react';
 import { useToast } from '../../../../contexts/ToastContext';
 import { getApiErrorMessage } from '../../../../utils/apiError';
+import StoreName from '../../../../components/common/StoreName';
 
 export default function DeliveryChallanReports() {
   const { toast } = useToast();
@@ -269,8 +271,8 @@ export default function DeliveryChallanReports() {
                       <td><b>{r.docNo}</b></td>
                       <td>{r.docDate}</td>
                       <td>{r.party}</td>
-                      <td>{r.fromLocation}</td>
-                      <td>{r.toLocation}</td>
+                      <td><StoreName code={r.fromLocation} /></td>
+                      <td><StoreName code={r.toLocation} /></td>
                       <td>{r.referenceNo || '-'}</td>
                       <td className="num">{r.lineCount}</td>
                       <td className="num">{r.totalQty}</td>
@@ -426,8 +428,8 @@ export default function DeliveryChallanReports() {
                     <tr key={i}>
                       <td><b>{r.dcNo}</b></td>
                       <td>{r.dcDate}</td>
-                      <td>{r.fromLocation}</td>
-                      <td>{r.toLocation}</td>
+                      <td><StoreName code={r.fromLocation} /></td>
+                      <td><StoreName code={r.toLocation} /></td>
                       <td>{r.transferType}</td>
                       <td>{r.vehicleNo || '-'}</td>
                       <td>{r.lrNo || '-'}</td>
@@ -533,7 +535,7 @@ export default function DeliveryChallanReports() {
                       <td>{r.fromLocation || '-'}</td>
                       <td>{r.toLocation || '-'}</td>
                       <td className="num">{r.qty}</td>
-                      <td>{r.uom || 'PCS'}</td>
+                      <td><UomName value={r.uom || 'PCS'} /></td>
                       <td>{r.purpose || '-'}</td>
                       <td><span className="badge">{r.status}</span></td>
                     </tr>

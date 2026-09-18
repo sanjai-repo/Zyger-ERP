@@ -50,6 +50,20 @@ public class MaterialPlan {
     @Column(name = "triggered_by", length = 100)
     private String triggeredBy;
 
+    /**
+     * FRS §5: demand-source selector for the MRP run. One of
+     * SALES_WORK_ORDER, INVENTORY_WORK_ORDER, MIN_STOCK_MANUFACTURING_ITEM,
+     * MIN_STOCK_PURCHASE_ITEM, MANUAL, ALL (default — all active WOs, prior behavior).
+     */
+    @Column(name = "planning_type", length = 40)
+    @Builder.Default
+    private String planningType = "ALL";
+
+    /** FRS §5: "Run MRP" nets on-hand/on-order/safety stock; "Run MRP W/o Stock" ignores them entirely. */
+    @Column(name = "run_mode", length = 20)
+    @Builder.Default
+    private String runMode = "RUN";
+
     @Version
     private Long version;
 

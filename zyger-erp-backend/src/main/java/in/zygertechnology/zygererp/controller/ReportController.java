@@ -5,6 +5,7 @@ import in.zygertechnology.zygererp.entity.*;
 import in.zygertechnology.zygererp.repo.ItemRepository;
 import in.zygertechnology.zygererp.repo.LedgerRepository;
 import in.zygertechnology.zygererp.repo.StoreMasterRepository;
+import in.zygertechnology.zygererp.service.StoreNameResolver;
 import in.zygertechnology.zygererp.service.DocumentFacade;
 import in.zygertechnology.zygererp.service.ExportService;
 import in.zygertechnology.zygererp.service.QualityInspectionService;
@@ -32,6 +33,7 @@ public class ReportController {
     private final LedgerRepository ledger;
     private final ExportService export;
     private final StoreMasterRepository stores;
+    private final StoreNameResolver storeNames;
     private final EntityManager em;
 
     private static final String[] INWARD_KEYS = {"po-inward", "lo-inward", "jo-inward", "general-inward"};
@@ -308,18 +310,18 @@ public class ReportController {
 
     @GetMapping("/api/inventory/reports/drilldown/{type}/export")
     ResponseEntity<byte[]> drilldownExport(@PathVariable String type, @RequestParam Map<String, String> q) {
-        return file(export.build(drilldownRows(type, q), q.getOrDefault("format", "xlsx"), type), q.getOrDefault("format", "xlsx"), type);
+        return file(export.build(storeNames.forExport(drilldownRows(type, q)), q.getOrDefault("format", "xlsx"), type), q.getOrDefault("format", "xlsx"), type);
     }
 
     @GetMapping("/api/inventory/reports/stock-ledger/export")
     ResponseEntity<byte[]> ledgerExport(@RequestParam Map<String, String> q) {
-        return file(export.build(ledgerRows(q), q.getOrDefault("format", "xlsx"), "stock-ledger"),
+        return file(export.build(storeNames.forExport(ledgerRows(q)), q.getOrDefault("format", "xlsx"), "stock-ledger"),
                 q.getOrDefault("format", "xlsx"), "stock-ledger");
     }
 
     @GetMapping("/api/inventory/reports/current-stock/export")
     ResponseEntity<byte[]> currentExport(@RequestParam Map<String, String> q) {
-        return file(export.build(currentStockRows(q), q.getOrDefault("format", "xlsx"), "current-stock"),
+        return file(export.build(storeNames.forExport(currentStockRows(q)), q.getOrDefault("format", "xlsx"), "current-stock"),
                 q.getOrDefault("format", "xlsx"), "current-stock");
     }
 
@@ -337,7 +339,7 @@ public class ReportController {
 
     @GetMapping("/api/inventory/reports/store-stock/export")
     ResponseEntity<byte[]> storeStockExport(@RequestParam Map<String, String> q) {
-        return file(export.build(storeStockRows(q), q.getOrDefault("format", "xlsx"), "store-stock"),
+        return file(export.build(storeNames.forExport(storeStockRows(q)), q.getOrDefault("format", "xlsx"), "store-stock"),
                 q.getOrDefault("format", "xlsx"), "store-stock");
     }
 
@@ -454,7 +456,7 @@ public class ReportController {
     @GetMapping("/api/inventory/reports/simple/export")
     ResponseEntity<byte[]> simpleExport(@RequestParam(defaultValue = "pdf") String format) {
         List<Map<String, Object>> rows = simpleExportRows();
-        return file(export.build(rows, format, "stock-snapshot"), format, "stock-snapshot");
+        return file(export.build(storeNames.forExport(rows), format, "stock-snapshot"), format, "stock-snapshot");
     }
 
     private List<Map<String, Object>> simpleExportRows() {

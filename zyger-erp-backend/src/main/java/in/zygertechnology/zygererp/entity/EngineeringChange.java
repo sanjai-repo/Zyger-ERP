@@ -21,6 +21,10 @@ public class EngineeringChange {
     @Column(name = "eco_number", length = 60)
     String ecoNumber;
 
+    /** FRS §9.2: an ECR can originate from a prior Gap Analysis record */
+    @Column(name = "gap_analysis_run_id")
+    Long gapAnalysisRunId;
+
     @Column(name = "change_type", length = 30)
     String changeType;
 
@@ -105,6 +109,20 @@ public class EngineeringChange {
     Instant verifiedDate;
     @Column(name = "closed_date")
     Instant closedDate;
+
+    /** FRS §9.2: workflow milestone stamps for the enforced DRAFT → SUBMITTED → APPROVED → IMPLEMENTED → CLOSED state machine */
+    @Column(name = "approved_at")
+    Instant approvedAt;
+
+    @Column(name = "implemented_at")
+    Instant implementedAt;
+
+    /** FRS §9.2: ECO cascade targets — the newly created BOM / Route Sheet revision on implement */
+    @Column(name = "new_bom_id")
+    Long newBomId;
+
+    @Column(name = "new_route_id")
+    Long newRouteId;
 
     @Column(name = "requested_by", length = 100)
     String requestedBy;

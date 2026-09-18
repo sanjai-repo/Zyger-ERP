@@ -1,3 +1,5 @@
+import { useUomNames } from '../../../hooks/useUomNames';
+import UomName from '../../../components/common/UomName';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   usePlanningDoc,
@@ -15,6 +17,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import StatusBadge from '../../../components/common/StatusBadge';
 import ConfirmActionModal from '../../../components/common/ConfirmActionModal';
 import apiClient from '../../../api/axiosClient';
+import StoreName from '../../../components/common/StoreName';
 
 const PAGE_SIZE = 8;
 const config = WORK_ORDER_CONFIG;
@@ -35,6 +38,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 
 export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { initialDocId?: string | number; viewOnly?: boolean }) {
+  const { uomName } = useUomNames();
   const { toast } = useToast();
   const [mode, setMode] = useState<'list' | 'form'>(initialDocId ? 'form' : 'list');
   const [documentId, setDocumentId] = useState<string | null>(initialDocId ? String(initialDocId) : null);
@@ -784,7 +788,7 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
                       <td>{String(row.salesOrderNo ?? row.soNumber ?? '—')}</td>
                       <td>{String(row.customer ?? row.customerCode ?? '—')}</td>
                       <td>{String(row.itemCode ?? '—')}</td>
-                      <td className="num">{formatNumber(Number(row.productionQty ?? row.orderQuantity ?? 0))} {String(row.uom ?? '')}</td>
+                      <td className="num">{formatNumber(Number(row.productionQty ?? row.orderQuantity ?? 0))} <UomName value={String(row.uom ?? '')} /></td>
                       <td>{row.plannedStartDate ? formatDate(String(row.plannedStartDate).slice(0, 10)) : '—'}</td>
                       <td>{row.plannedEndDate ? formatDate(String(row.plannedEndDate).slice(0, 10)) : '—'}</td>
                       <td><StatusBadge status={String(row.status ?? 'DRAFT')} /></td>
@@ -962,12 +966,12 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
 
               <label className="fld">
                 <span>Order Quantity</span>
-                <input className="in" value={form.orderQuantity ? `${formatNumber(Number(form.orderQuantity))} ${form.uom ?? 'Nos'}` : ''} readOnly style={{ background: '#f9fafb' }} />
+                <input className="in" value={form.orderQuantity ? `${formatNumber(Number(form.orderQuantity))} ${uomName(String(form.uom ?? 'Nos'))}` : ''} readOnly style={{ background: '#f9fafb' }} />
               </label>
 
               <label className="fld">
                 <span>Pending Quantity</span>
-                <input className="in" value={form.pendingQty ? `${formatNumber(Number(form.pendingQty))} ${form.uom ?? 'Nos'}` : ''} readOnly style={{ background: '#f9fafb' }} />
+                <input className="in" value={form.pendingQty ? `${formatNumber(Number(form.pendingQty))} ${uomName(String(form.uom ?? 'Nos'))}` : ''} readOnly style={{ background: '#f9fafb' }} />
               </label>
             </div>
 
@@ -1153,8 +1157,8 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
                         <td className="num" style={{ fontWeight: 600 }}>{formatNumber(Number(m.requiredQuantity ?? m.requiredQty ?? 0))}</td>
                         <td className="num">{formatNumber(Number(m.issuedQuantity ?? m.issuedQty ?? 0))}</td>
                         <td className="num" style={{ fontWeight: 600, color: Number(m.balanceQty ?? 0) > 0 ? '#b91c1c' : '#047857' }}>{formatNumber(Number(m.balanceQty ?? 0))}</td>
-                        <td>{String(m.uom ?? 'Kg')}</td>
-                        <td>{String(m.warehouse ?? 'RM Store')}</td>
+                        <td><UomName value={String(m.uom ?? 'Kg')} /></td>
+                        <td><StoreName code={String(m.warehouse ?? 'RM Store')} /></td>
                       </tr>
                     ))
                   )}
@@ -1376,7 +1380,7 @@ export default function WorkOrderScreen({ initialDocId, viewOnly = false }: { in
                               <strong style={{ color: '#0f172a' }}>{code}</strong>
                               {desc && desc !== code && <span style={{ color: '#64748b', fontSize: '0.8rem', display: 'block' }}>{desc}</span>}
                             </td>
-                            <td className="num">{formatNumber(Number(line.pendingQty ?? so.pendingQty ?? 0))} {String(line.uom ?? 'Nos')}</td>
+                            <td className="num">{formatNumber(Number(line.pendingQty ?? so.pendingQty ?? 0))} <UomName value={String(line.uom ?? 'Nos')} /></td>
                             <td>
                               <button type="button" className="btn btn-sm btn-p" onClick={() => handleSoSelect(so, line)}>Select</button>
                             </td>

@@ -1,3 +1,4 @@
+import StoreSelect from '../../../components/common/StoreSelect';
 import { useEffect, useMemo, useState } from 'react';
 import { useTabs } from '../../../contexts/TabsContext';
 import { useDrilldown } from '../../../hooks/useInventoryReports';
@@ -18,6 +19,8 @@ import { useToast } from '../../../contexts/ToastContext';
 import StatusBadge from '../../../components/common/StatusBadge';
 import { getScreenComponent } from '../../../config/screenRegistry';
 import StoreValueBarChart from './charts/StoreValueBarChart';
+import { useStoreNames } from '../../../hooks/useStoreNames';
+import { useUomNames } from '../../../hooks/useUomNames';
 
 const PAGE_SIZE = 10;
 
@@ -48,6 +51,8 @@ interface DrilldownPageProps {
 }
 
 export default function DrilldownPage({ drilldownType, initialFilters }: DrilldownPageProps) {
+  const { storeName } = useStoreNames();
+  const { uomName } = useUomNames();
   const config = DRILLDOWN_CONFIGS[drilldownType];
   const { setActiveTab } = useTabs();
   const { toast } = useToast();
@@ -215,8 +220,13 @@ export default function DrilldownPage({ drilldownType, initialFilters }: Drilldo
       return formatDate(String(value ?? ''));
     }
 
-    if (column.key === 'location') {
-      return String(row.storeName || row.location || '—');
+    if (column.key === 'uom') {
+      return uomName(String(value ?? '')) || '—';
+    }
+
+    if (column.key === 'location' || column.key === 'storeCode' || column.key === 'defaultWarehouse') {
+      const code = String(row[column.key] ?? row.location ?? '');
+      return String(row.storeName || storeName(code) || '—');
     }
 
     if (column.key === 'value') {
@@ -300,12 +310,11 @@ export default function DrilldownPage({ drilldownType, initialFilters }: Drilldo
           )}
 
           {has('location') && (
-            <input
-              className="in"
+            <StoreSelect
               value={location}
-              placeholder="Location"
-              onChange={(event) => setLocation(event.target.value)}
-              style={{ width: '130px' }}
+              placeholder="All stores"
+              onChange={setLocation}
+              style={{ width: '150px' }}
             />
           )}
 

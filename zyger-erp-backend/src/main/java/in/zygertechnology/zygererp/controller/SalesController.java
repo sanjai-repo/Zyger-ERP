@@ -167,19 +167,29 @@ public class SalesController {
     ResponseEntity<byte[]> print(
             @Parameter(description = "Document type") @PathVariable String type,
             @Parameter(description = "Document ID") @PathVariable Long id,
-            @RequestParam(defaultValue = "false") boolean download) {
+            @RequestParam(defaultValue = "false") boolean download,
+            @RequestParam(defaultValue = "1") int copies) {
         Map<String, Object> row = svc.getRow(key(type), id);
         String docNo = String.valueOf(row.getOrDefault("docNo", type)).replaceAll("[^A-Za-z0-9_-]", "_");
         String disposition = download ? "attachment" : "inline";
-        byte[] pdf = "sales-invoice".equals(type) ? printer.salesInvoice(row)
-                : "proforma-invoice".equals(type) ? printer.proformaInvoice(row)
-                : "sales-dc".equals(type) ? printer.deliveryChallan(row, type)
-                : printer.salesDoc(row, type);
+        int safeCopies = Math.min(Math.max(copies, 1), 10);
+        byte[] pdf = safeCopies <= 1 ? singleSalesPdf(type, row)
+                : printer.copies(safeCopies, c -> "sales-invoice".equals(type) ? printer.salesInvoice(row, c)
+                    : "proforma-invoice".equals(type) ? printer.proformaInvoice(row, c)
+                    : "sales-dc".equals(type) ? printer.deliveryChallan(row, type, c)
+                    : printer.salesDoc(row, type));
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         disposition + "; filename=\"" + docNo + ".pdf\"")
                 .contentType(MediaType.APPLICATION_PDF)
                 .body(pdf);
+    }
+
+    private byte[] singleSalesPdf(String type, Map<String, Object> row) {
+        return "sales-invoice".equals(type) ? printer.salesInvoice(row)
+                : "proforma-invoice".equals(type) ? printer.proformaInvoice(row)
+                : "sales-dc".equals(type) ? printer.deliveryChallan(row, type)
+                : printer.salesDoc(row, type);
     }
 
     @Operation(summary = "Get sales dashboard statistics")

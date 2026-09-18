@@ -1,6 +1,8 @@
+import StoreSelect from '../../../../components/common/StoreSelect';
 import { useState, useEffect } from 'react';
 import { useToast } from '../../../../contexts/ToastContext';
 import { getApiErrorMessage } from '../../../../utils/apiError';
+import StoreName from '../../../../components/common/StoreName';
 
 type AllotTab =
   | 'allotment'
@@ -210,7 +212,7 @@ export default function AllotmentAdjustmentReports() {
                 : allotRows.length === 0 ? <tr><td colSpan={6} style={{ textAlign: 'center', padding: '24px' }}>No allotments found</td></tr>
                 : allotRows.map((r, i) => (
                   <tr key={i}>
-                    <td><b>{r.docNo}</b></td><td>{r.docDate}</td><td>{r.itemCode || '-'}</td><td>{r.location || '-'}</td>
+                    <td><b>{r.docNo}</b></td><td>{r.docDate}</td><td>{r.itemCode || '-'}</td><td><StoreName code={r.location} /></td>
                     <td className="num">{r.totalQty}</td>
                     <td><span className={`badge ${r.status === 'APPROVED' || r.status === 'RELEASED' ? 'success' : r.status === 'CANCELLED' ? 'danger' : 'warn'}`}>{r.status}</span></td>
                   </tr>
@@ -234,7 +236,7 @@ export default function AllotmentAdjustmentReports() {
                 : ageingRows.length === 0 ? <tr><td colSpan={8} style={{ textAlign: 'center', padding: '24px' }}>No pending allotments</td></tr>
                 : ageingRows.map((r, i) => (
                   <tr key={i}>
-                    <td><b>{r.docNo}</b></td><td>{r.docDate}</td><td>{r.itemCode || '-'}</td><td>{r.location || '-'}</td>
+                    <td><b>{r.docNo}</b></td><td>{r.docDate}</td><td>{r.itemCode || '-'}</td><td><StoreName code={r.location} /></td>
                     <td className="num">{r.allottedQty}</td><td className="num">{r.ageingDays}</td><td>{r.ageingBucket}</td>
                     <td><span className="badge warn">{r.status}</span></td>
                   </tr>
@@ -275,7 +277,7 @@ export default function AllotmentAdjustmentReports() {
                 : releaseRows.length === 0 ? <tr><td colSpan={7} style={{ textAlign: 'center', padding: '24px' }}>No releases found</td></tr>
                 : releaseRows.map((r, i) => (
                   <tr key={i}>
-                    <td><b>{r.docNo}</b></td><td>{r.docDate}</td><td>{r.referenceNo || '-'}</td><td>{r.itemCode || '-'}</td><td>{r.location || '-'}</td>
+                    <td><b>{r.docNo}</b></td><td>{r.docDate}</td><td>{r.referenceNo || '-'}</td><td>{r.itemCode || '-'}</td><td><StoreName code={r.location} /></td>
                     <td className="num">{r.totalQty}</td>
                     <td><span className={`badge ${r.status === 'POSTED' ? 'success' : r.status === 'CANCELLED' ? 'danger' : 'warn'}`}>{r.status}</span></td>
                   </tr>
@@ -317,7 +319,7 @@ export default function AllotmentAdjustmentReports() {
                 : amendmentRows.length === 0 ? <tr><td colSpan={7} style={{ textAlign: 'center', padding: '24px' }}>No amendments found</td></tr>
                 : amendmentRows.map((r, i) => (
                   <tr key={i}>
-                    <td><b>{r.docNo}</b></td><td>{r.docDate}</td><td>{r.itemCode || '-'}</td><td>{r.location || '-'}</td>
+                    <td><b>{r.docNo}</b></td><td>{r.docDate}</td><td>{r.itemCode || '-'}</td><td><StoreName code={r.location} /></td>
                     <td>{r.reasonCode || '-'}</td><td className="num">{r.totalQty}</td>
                     <td><span className={`badge ${r.status === 'POSTED' ? 'success' : r.status === 'CANCELLED' ? 'danger' : 'warn'}`}>{r.status}</span></td>
                   </tr>
@@ -356,7 +358,7 @@ export default function AllotmentAdjustmentReports() {
                 : pendingRows.length === 0 ? <tr><td colSpan={8} style={{ textAlign: 'center', padding: '24px' }}>No pending approvals</td></tr>
                 : pendingRows.map((r, i) => (
                   <tr key={i}>
-                    <td><b>{r.docNo}</b></td><td>{r.docDate}</td><td>{r.itemCode || '-'}</td><td>{r.location || '-'}</td>
+                    <td><b>{r.docNo}</b></td><td>{r.docDate}</td><td>{r.itemCode || '-'}</td><td><StoreName code={r.location} /></td>
                     <td>{r.reasonCode || '-'}</td><td className="num">{r.ageingDays}</td><td>{r.ageingBucket}</td>
                     <td><span className="badge warn">{r.status}</span></td>
                   </tr>
@@ -370,7 +372,7 @@ export default function AllotmentAdjustmentReports() {
       {activeTab === 'variance' && (
         <div className="panel">
           <div className="fgrid" style={{ marginBottom: '16px' }}>
-            <label className="fld"><span>Location</span><input className="in" value={varLocation} onChange={(e) => setVarLocation(e.target.value)} /></label>
+            <label className="fld"><span>Location</span><StoreSelect value={varLocation} onChange={setVarLocation} placeholder="All stores" /></label>
             <label className="fld"><span>Item Code</span><input className="in" value={varItem} onChange={(e) => setVarItem(e.target.value)} /></label>
             <div className="fld" style={{ display: 'flex', alignItems: 'flex-end' }}>
               <button type="button" className="btn btn-p" onClick={fetchVariance} disabled={loading}>
@@ -389,7 +391,7 @@ export default function AllotmentAdjustmentReports() {
                 : varianceRows.length === 0 ? <tr><td colSpan={10} style={{ textAlign: 'center', padding: '24px' }}>No physical variance records</td></tr>
                 : varianceRows.map((r, i) => (
                   <tr key={i}>
-                    <td><b>{r.amendmentNo}</b></td><td>{r.docDate}</td><td>{r.location}</td><td>{r.countTeam || '-'}</td><td>{r.countSheetNo || '-'}</td>
+                    <td><b>{r.amendmentNo}</b></td><td>{r.docDate}</td><td><StoreName code={r.location} /></td><td>{r.countTeam || '-'}</td><td>{r.countSheetNo || '-'}</td>
                     <td>{r.itemCode}</td><td className="num">{r.systemQty}</td><td className="num">{r.physicalQty}</td>
                     <td className="num">{r.varianceQty}</td><td className="num">{r.variancePct}%</td>
                   </tr>

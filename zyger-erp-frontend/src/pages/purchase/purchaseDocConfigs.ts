@@ -12,7 +12,7 @@ export interface LineFieldDef {
   colNo: number;
   key: string;
   label: string;
-  type?: 'text' | 'number' | 'date' | 'select' | 'lookup';
+  type?: 'text' | 'number' | 'date' | 'select' | 'lookup' | 'store';
   options?: string[];
   readOnly?: boolean;
   required?: boolean;
@@ -480,7 +480,7 @@ export const PURCHASE_RETURN_CONFIG: DocScreenConfig = {
       // Leave blank to auto-resolve from the matching item on the original PO Inward
       // (see DocumentFacade.collectLines) — only needed here to override that, e.g. the
       // material was moved to a different store since it was received.
-      { colNo: 5, key: 'location', label: 'Warehouse / Location', width: '120px' },
+      { colNo: 5, key: 'location', label: 'Store', type: 'store', width: '140px' },
       { colNo: 6, key: 'batchNo', label: 'Batch No', width: '100px' },
       { colNo: 7, key: 'heatNo', label: 'Heat No', width: '100px' },
       { colNo: 8, key: 'lotNo', label: 'Lot No', width: '100px' },

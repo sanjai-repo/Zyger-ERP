@@ -187,6 +187,7 @@ const MeterMasterPage = lazy(() => import('../pages/MeterMasterPage'));
 const SamplingPlanPage = lazy(() => import('../pages/SamplingPlanPage'));
 const InspectionPlanPage = lazy(() => import('../pages/InspectionPlanPage'));
 const OeePage = lazy(() => import('../pages/OeePage'));
+const RejectedItemsPage = lazy(() => import('../pages/quality/RejectedItemsPage'));
 const SupplierScorecardPage = lazy(() => import('../pages/quality/SupplierScorecardPage'));
 const CostRollupPage = lazy(() => import('../pages/maintenance/CostRollupPage'));
 
@@ -233,6 +234,7 @@ export const SCREEN_REGISTRY: Record<string, ScreenDefinition> = Object.fromEntr
     'quality-inspection': QualityPage,
     'quality-ncr': NcrPage,
     'inspection-pending': InspectionPendingPage,
+    'rejected-items': RejectedItemsPage,
     'inward-inspection-iqc': IqcInspectionPage,
     'lo-inspection': LoInspectionPage,
     'jomin-inspection': JominInspectionPage,

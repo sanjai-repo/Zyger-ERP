@@ -664,38 +664,18 @@ export const NAV_ITEMS: NavTopItem[] = [
     icon: 'precision_manufacturing',
     children: [
       {
-        type: 'group',
-        id: 'production-planning',
-        label: 'Production Planning',
-        icon: 'calendar_month',
-        children: [
-          { type: 'heading', id: 'production-planning-heading', label: 'PRODUCTION PLANNING', icon: 'calendar_month' },
-          {
-            type: 'item',
-            id: 'production-dashboard',
-            label: 'Production Dashboard',
-            icon: 'space_dashboard',
-            screenId: 'production-dashboard',
-            tabIcon: 'space_dashboard',
-          },
-        ],
+        type: 'item',
+        id: 'production-entry',
+        label: 'Production Entry',
+        icon: 'engineering',
+        screenId: 'production-entry',
       },
-
       {
-        type: 'group',
-        id: 'production-orders',
-        label: 'Production Orders',
-        icon: 'fact_check',
-        children: [
-          { type: 'heading', id: 'production-orders-heading', label: 'PRODUCTION ORDERS', icon: 'fact_check' },
-          {
-            type: 'item',
-            id: 'production-order',
-            label: 'Production Order',
-            icon: 'assignment_turned_in',
-            screenId: 'production-order',
-          },
-        ],
+        type: 'item',
+        id: 'production-pending',
+        label: 'Production Pending',
+        icon: 'pending_actions',
+        screenId: 'production-pending',
       },
 
       {
@@ -705,27 +685,6 @@ export const NAV_ITEMS: NavTopItem[] = [
         icon: 'precision_manufacturing',
         children: [
           { type: 'heading', id: 'shop-floor-execution-heading', label: 'SHOP FLOOR EXECUTION', icon: 'precision_manufacturing' },
-          {
-            type: 'item',
-            id: 'job-card',
-            label: 'Job Card',
-            icon: 'assignment',
-            screenId: 'job-card',
-          },
-          {
-            type: 'item',
-            id: 'job-card-kanban',
-            label: 'Job Card Kanban',
-            icon: 'view_kanban',
-            screenId: 'job-card-kanban',
-          },
-          {
-            type: 'item',
-            id: 'production-entry',
-            label: 'Production Entry',
-            icon: 'engineering',
-            screenId: 'production-entry',
-          },
           {
             type: 'item',
             id: 'production-log',
@@ -826,23 +785,6 @@ export const NAV_ITEMS: NavTopItem[] = [
             label: 'Quality Gate',
             icon: 'gavel',
             screenId: 'production-quality-gate',
-          },
-        ],
-      },
-
-      {
-        type: 'group',
-        id: 'monitoring-control',
-        label: 'Monitoring & Control',
-        icon: 'monitoring',
-        children: [
-          { type: 'heading', id: 'monitoring-control-heading', label: 'MONITORING & CONTROL', icon: 'monitoring' },
-          {
-            type: 'item',
-            id: 'production-pending',
-            label: 'Production Pending',
-            icon: 'pending_actions',
-            screenId: 'production-pending',
           },
         ],
       },
@@ -1020,6 +962,14 @@ export const NAV_ITEMS: NavTopItem[] = [
             screenId: 'inspection-pending',
           },
         ],
+      },
+
+      {
+        type: 'item',
+        id: 'rejected-items',
+        label: 'Rejected Items',
+        icon: 'block',
+        screenId: 'rejected-items',
       },
 
       {

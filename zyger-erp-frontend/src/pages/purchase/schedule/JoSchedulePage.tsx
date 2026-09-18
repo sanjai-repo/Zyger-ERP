@@ -1,3 +1,5 @@
+import { useUomNames } from '../../../hooks/useUomNames';
+import UomName from '../../../components/common/UomName';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../../contexts/AuthContext';
 import axiosClient from '../../../api/axiosClient';
@@ -9,6 +11,7 @@ import { logSystemActivity } from '../../../utils/activityLog';
 import { exportToCsv } from '../../../utils/csvExport';
 import { filterPurchaseRelevantItems } from '../../../utils/itemClassification';
 import SearchableItemLookup from '../../../components/common/SearchableItemLookup';
+import StoreSelect from '../../../components/common/StoreSelect';
 
 interface JoScheduleRow {
   id?: number;
@@ -34,6 +37,7 @@ interface JoScheduleRow {
 }
 
 export default function JoSchedulePage() {
+  const { uomName } = useUomNames();
   const { openTab } = useTabs();
   const { toast } = useToast();
   const { user } = useAuth();
@@ -564,7 +568,7 @@ export default function JoSchedulePage() {
                     </td>
                     <td className="num">₹{s.unitPrice ?? 120}</td>
                     <td className="num cell-b">
-                      {s.scheduledQty} <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{s.uom || 'PCS'}</span>
+                      {s.scheduledQty} <span style={{ fontSize: '11px', color: 'var(--muted)' }}><UomName value={s.uom || 'PCS'} /></span>
                     </td>
                     <td className="num cell-b" style={{ color: '#7367f0' }}>
                       ₹{(s.totalAmount ?? (s.scheduledQty * (s.unitPrice ?? 120))).toLocaleString()}
@@ -644,7 +648,7 @@ export default function JoSchedulePage() {
                   <option value="">— Select Reference JO or Subcon Quotation to Auto-Fill —</option>
                   {referenceDocs.map((ref) => (
                     <option key={ref.id} value={ref.docNo}>
-                      {ref.docNo} ({ref.type}) — {ref.subcontractor} — {ref.process} — {ref.itemCode} ({ref.qty} {ref.uom})
+                      {ref.docNo} ({ref.type}) — {ref.subcontractor} — {ref.process} — {ref.itemCode} ({ref.qty} {uomName(ref.uom)})
                     </option>
                   ))}
                 </select>
@@ -804,15 +808,10 @@ export default function JoSchedulePage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <label className="fld">
                   <span>Delivery Location / Work Center</span>
-                  <select
-                    className="in"
+                  <StoreSelect
                     value={newSchedule.location}
-                    onChange={(e) => setNewSchedule((prev) => ({ ...prev, location: e.target.value }))}
-                  >
-                    <option value="SUBCON-01 - Heat Treatment Bay">SUBCON-01 - Heat Treatment Bay</option>
-                    <option value="STORE-02 - Subcontracting Store">STORE-02 - Subcontracting Store</option>
-                    <option value="MAIN - Main Warehouse">MAIN - Main Warehouse</option>
-                  </select>
+                    onChange={(code) => setNewSchedule((prev) => ({ ...prev, location: code }))}
+                  />
                 </label>
 
                 <label className="fld">

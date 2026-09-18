@@ -679,6 +679,26 @@ public class PlanningService {
         return newRs;
     }
 
+    /** FRS §9.2: ECR implement cascade — clone a released Route Sheet to the next revision and mark
+     * the source UNDER_REVISION, tagging the new revision with the ECR number for traceability. */
+    @Transactional
+    public RouteSheet createRouteSheetRevisionFromEcr(Long routeId, String remarks, String user, String ecrNumber) {
+        RouteSheet source = routeRepo.findById(routeId).orElseThrow(() -> new IllegalArgumentException("Route Sheet not found: " + routeId));
+        if (!"RELEASED".equals(source.getStatus()) && !"APPROVED".equals(source.getStatus())) {
+            throw new IllegalStateException("Route Sheet must be RELEASED/APPROVED before the ECR can cascade to a new revision (current: " + source.getStatus() + ").");
+        }
+        RouteSheet newRs = createRouteSheetRevision(source, remarks, user);
+        if (ecrNumber != null && !ecrNumber.isBlank()) {
+            String base = remarks == null || remarks.isBlank() ? "" : remarks;
+            newRs.setRemarks((base + " [ECR " + ecrNumber + "]").trim());
+            routeRepo.save(newRs);
+        }
+        source.setStatus("UNDER_REVISION");
+        source.setUpdatedAt(Instant.now());
+        routeRepo.save(source);
+        return newRs;
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // FRS BOM Release Action
     // ═══════════════════════════════════════════════════════════════

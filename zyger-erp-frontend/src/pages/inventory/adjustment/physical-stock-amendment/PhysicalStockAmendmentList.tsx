@@ -13,6 +13,7 @@ import { getApiErrorMessage } from '../../../../utils/apiError';
 import { useToast } from '../../../../contexts/ToastContext';
 import StatusBadge from '../../../../components/common/StatusBadge';
 import ConfirmActionModal from '../../../../components/common/ConfirmActionModal';
+import StoreName from '../../../../components/common/StoreName';
 
 const PAGE_SIZE = 8;
 
@@ -254,7 +255,7 @@ export default function PhysicalStockAmendmentList({
                       <span className="cell-b">{row.docNo}</span>
                     </td>
                     <td>{formatDate(row.date)}</td>
-                    <td>{row.storeLocation || '—'}</td>
+                    <td><StoreName code={row.storeLocation} /></td>
                     <td>{row.countType || '—'}</td>
                     <td className="num">{formatNumber(row.qty ?? 0)}</td>
                     <td>

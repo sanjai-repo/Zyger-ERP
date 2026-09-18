@@ -1,3 +1,4 @@
+import UomName from '../../../components/common/UomName';
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { masterService } from '../../../services/masterService';
@@ -246,7 +247,7 @@ export default function ItemStockTab() {
                         <div className="mut" style={{ fontSize: 12 }}>
                           {row.specification && row.specification !== row.itemName
                             ? row.specification
-                            : row.uom || '—'}
+                            : <UomName value={row.uom} />}
                         </div>
                       </td>
                       <td>
@@ -286,7 +287,7 @@ export default function ItemStockTab() {
                                   whiteSpace: 'nowrap',
                                 }}
                               >
-                                <strong>{store.storeCode}</strong> {formatNumber(store.available)}
+                                <strong>{store.storeName || store.storeCode}</strong> {formatNumber(store.available)}
                               </span>
                             ))}
                           </div>

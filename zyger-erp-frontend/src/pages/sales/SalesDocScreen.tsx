@@ -92,6 +92,7 @@ export default function SalesDocScreen({ config, initialDocId, viewOnly = false,
   const [itemMasters, setItemMasters] = useState<Array<{ id: number; name: string; code: string; uom?: string; price?: number; description?: string; taxCode?: string; active?: boolean }>>([]);
   const [uomMasters, setUomMasters] = useState<Array<{ id: number; code: string; name: string }>>([]);
   const [storeMasters, setStoreMasters] = useState<Array<{ code: string; name: string }>>([]);
+  const [stockAvailability, setStockAvailability] = useState<Record<string, number>>({});
 
   // Active Sales Orders for Proforma, DC, Invoice auto-population
   const [salesOrderList, setSalesOrderList] = useState<Array<Record<string, unknown>>>([]);
@@ -264,6 +265,51 @@ export default function SalesDocScreen({ config, initialDocId, viewOnly = false,
     ? genericStatus !== 'CANCELLED'
     : (!documentId || ['DRAFT', 'REJECTED'].includes(genericStatus)));
   const isBusy = createMutation.isPending || updateMutation.isPending || actionMutation.isPending || deleteMutation.isPending;
+
+  // ---- Sales DC: live stock check against the Source Location --------------------------------
+  // Each line is checked against the store it will be dispatched from, so the user sees "not
+  // available" / "low stock" while entering the challan instead of only when posting fails.
+  const dcSourceLocation = String(form.sourceLocation ?? '');
+  const dcItemKey = docType === 'sales-dc' ? lines.map((l) => String(l.itemCode ?? '')).join(',') : '';
+  useEffect(() => {
+    if (docType !== 'sales-dc') return;
+    const pairs = lines
+      .filter((l) => l.itemCode && String(l.itemCode).toUpperCase() !== 'OTHERS')
+      .map((l) => ({ itemCode: String(l.itemCode), location: dcSourceLocation }))
+      .filter((p) => p.location);
+    if (pairs.length === 0) { setStockAvailability({}); return; }
+    let active = true;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await axiosClient.post('/inventory/stock/availability/check', { lines: pairs });
+        if (!active) return;
+        const results = (Array.isArray(res.data) ? res.data : res.data?.results ?? []) as Array<{ itemCode: string; location: string; availableQty: number }>;
+        const next: Record<string, number> = {};
+        results.forEach((r) => { next[`${r.itemCode}||${r.location}`] = Number(r.availableQty ?? 0); });
+        setStockAvailability(next);
+      } catch { if (active) setStockAvailability({}); }
+    }, 300);
+    return () => { active = false; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docType, dcSourceLocation, dcItemKey]);
+
+  type StockCheck = { status: 'ok' | 'low' | 'none' | 'unknown'; available: number; qty: number };
+  const stockCheckFor = (line: Record<string, unknown>): StockCheck => {
+    const qty = Number(line.dispatchQty ?? line.currentDispatchQty ?? line.qty ?? 0);
+    const known = stockAvailability[`${line.itemCode}||${dcSourceLocation}`];
+    if (!line.itemCode || !dcSourceLocation || known === undefined) return { status: 'unknown', available: 0, qty };
+    if (known <= 0) return { status: 'none', available: known, qty };
+    if (qty > known) return { status: 'low', available: known, qty };
+    return { status: 'ok', available: known, qty };
+  };
+  const stockProblems = (): string[] =>
+    docType !== 'sales-dc' ? [] : lines.flatMap((l, i) => {
+      const c = stockCheckFor(l);
+      const label = `Line ${i + 1} (${String(l.itemCode || 'item')})`;
+      if (c.status === 'none') return [`${label}: NOT AVAILABLE — no stock in the selected store`];
+      if (c.status === 'low') return [`${label}: LOW STOCK — only ${c.available} available, dispatch quantity is ${c.qty}`];
+      return [];
+    });
 
   const rows = listQuery.data?.content ?? [];
   const totalElements = listQuery.data?.totalElements ?? rows.length;
@@ -712,6 +758,13 @@ export default function SalesDocScreen({ config, initialDocId, viewOnly = false,
 
   const handleSave = async (e?: React.FormEvent, postAfter = false) => {
     if (e) e.preventDefault();
+    if (postAfter) {
+      const problems = stockProblems();
+      if (problems.length > 0) {
+        toast(`Cannot post stock — ${problems.join(' | ')}`, 'error');
+        return;
+      }
+    }
     try {
       const payload = buildPayload();
       let savedRes: any;
@@ -721,6 +774,12 @@ export default function SalesDocScreen({ config, initialDocId, viewOnly = false,
       } else {
         savedRes = await createMutation.mutateAsync(payload);
         toast('Sales Document created successfully!', 'success');
+        // Keep working on the document just created: if the stock post below is rejected
+        // (low stock, quality hold, ...) a retry must update THIS draft, not create a second one.
+        if (postAfter && savedRes?.id) {
+          setDocumentId(String(savedRes.id));
+          setForm((prev) => ({ ...prev, docNo: savedRes.docNo ?? prev.docNo }));
+        }
       }
 
       // Sales DC ships straight from Draft to a posted stock movement in one action —
@@ -1332,6 +1391,20 @@ export default function SalesDocScreen({ config, initialDocId, viewOnly = false,
                                 items={itemMasters.filter(it => it.active !== false)}
                                 onChange={(val) => handleLineItemChange(idx, f.key, val)}
                               />
+                            </td>
+                          );
+                        }
+
+                        // Sales DC: live stock status for this line at the Source Location
+                        if (f.key === 'availableStock') {
+                          const c = stockCheckFor(line);
+                          const look = c.status === 'ok' ? { t: `In stock: ${c.available}`, color: '#047857', bg: '#ecfdf5' }
+                            : c.status === 'low' ? { t: `LOW STOCK: only ${c.available}`, color: '#b45309', bg: '#fffbeb' }
+                            : c.status === 'none' ? { t: 'NOT AVAILABLE', color: '#b91c1c', bg: '#fef2f2' }
+                            : { t: dcSourceLocation ? '—' : 'Select source', color: '#64748b', bg: 'transparent' };
+                          return (
+                            <td key={f.key} style={colStyle}>
+                              <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 6, fontSize: 12, fontWeight: 600, color: look.color, background: look.bg, whiteSpace: 'nowrap' }}>{look.t}</span>
                             </td>
                           );
                         }

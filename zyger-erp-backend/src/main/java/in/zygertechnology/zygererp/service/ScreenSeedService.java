@@ -144,6 +144,7 @@ public class ScreenSeedService {
         put("last-off-inspection", "Last Off Inspection", "QUALITY");
         put("final-inspection", "Final Inspection", "QUALITY");
         put("inspection-pending", "Inspection Pending", "QUALITY");
+        put("rejected-items", "Rejected Items", "QUALITY");
         put("inward-test-certificate", "Inward Test Certificate", "QUALITY");
         put("internal-test-certificate", "Internal Test Certificate", "QUALITY");
         put("outward-test-certificate", "Outward Test Certificate", "QUALITY");

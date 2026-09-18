@@ -1,3 +1,4 @@
+import UomSelect from '../../../components/common/UomSelect';
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import apiClient from '../../../api/axiosClient';
 import { useToast } from '../../../contexts/ToastContext';
@@ -1021,7 +1022,7 @@ export default function BomMasterScreen() {
               </label>
 
               <label className="fld"><span>UOM</span>
-                <input className="in" value={bom.baseUom} onChange={(e) => setField('baseUom', e.target.value)} disabled={!isEditable && !!editId} />
+                <UomSelect value={bom.baseUom} onChange={(code) => setField('baseUom', code)} disabled={!isEditable && !!editId} />
               </label>
 
               <label className="fld" style={{ gridColumn: 'span 2' }}><span>Copy BOM</span>

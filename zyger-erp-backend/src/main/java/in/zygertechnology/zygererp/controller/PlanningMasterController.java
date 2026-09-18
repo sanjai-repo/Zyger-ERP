@@ -2,7 +2,11 @@ package in.zygertechnology.zygererp.controller;
 
 import in.zygertechnology.zygererp.entity.*;
 import in.zygertechnology.zygererp.repo.*;
+import in.zygertechnology.zygererp.service.BomExplosionService;
 import in.zygertechnology.zygererp.service.DocNumberService;
+import in.zygertechnology.zygererp.service.DocumentFacade;
+import in.zygertechnology.zygererp.service.FeasibilityService;
+import in.zygertechnology.zygererp.service.PlanningService;
 import in.zygertechnology.zygererp.security.RequirePermission;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -46,9 +50,15 @@ public class PlanningMasterController {
     private final in.zygertechnology.zygererp.repository.EscalationRuleRepository escalationRules;
     private final in.zygertechnology.zygererp.service.NotificationService notificationService;
     private final MaterialReservationRepository materialReservations;
+    private final MachineOperatingHoursRepository machineOperatingHours;
     private final FgPossibleRepository fgPossibles;
     private final CostComponentTypeRepository costComponentTypes;
     private final RouteOperationInspectionRepository routeOpInspections;
+    private final EcrRiskLineRepository ecrRiskLines;
+    private final FeasibilityService feasibilityService;
+    private final BomExplosionService bomExplosionService;
+    private final DocumentFacade documentFacade;
+    private final PlanningService planningService;
 
     private String principalName(Principal p) { return p != null ? p.getName() : "system"; }
 
@@ -143,6 +153,18 @@ public class PlanningMasterController {
     @RequirePermission(module = "PLANNING", screen = "*", action = "DELETE")
     public void deleteMaterialPlanLine(@PathVariable Long lineId) { materialPlanLines.deleteById(lineId); }
 
+    private static final Set<String> MANUFACTURING_ITEM_TYPES = Set.of("SEMI_FG", "FG", "SFG", "MANUFACTURING");
+    private static final Set<String> PURCHASE_ITEM_TYPES = Set.of("RAW_MATERIAL", "PURCHASABLE");
+
+    /** FRS §5: all demand-source planning types known to the MRP engine. Unknown values fail loudly. */
+    private static final Set<String> VALID_PLANNING_TYPES = Set.of(
+        "ALL", "SALES_WORK_ORDER", "INVENTORY_WORK_ORDER",
+        "MIN_STOCK_MANUFACTURING_ITEM", "MIN_STOCK_PURCHASE_ITEM",
+        "FIXED_SALES_ORDER", "SCHEDULE_SALES_ORDER", "MANUAL");
+
+    /** One demand record fed into the BOM explosion — a work order, a fixed SO line, or a schedule line. */
+    private record Demand(String itemCode, BigDecimal qty, String sourceRef, Long bomId) {}
+
     // ---- MRP Run ----
     @PostMapping("/api/v1/planning/material-plans/{id}/run")
     @RequirePermission(module = "PLANNING", screen = "*", action = "APPROVE")
@@ -150,20 +172,82 @@ public class PlanningMasterController {
         MaterialPlan plan = materialPlans.findById(id).orElseThrow(() -> new RuntimeException("Material Plan not found"));
         materialPlanLines.findByPlanId(id).forEach(l -> materialPlanLines.deleteById(l.getId()));
 
-        List<WorkOrder> activeWOs = new ArrayList<>(workOrders.findByStatus("RELEASED"));
-        activeWOs.addAll(workOrders.findByStatus("IN_PROCESS"));
+        String planningType = plan.getPlanningType() == null || plan.getPlanningType().isBlank() ? "ALL" : plan.getPlanningType();
+        if (!VALID_PLANNING_TYPES.contains(planningType)) {
+            throw new RuntimeException("Unknown planningType '" + planningType + "'. Supported: "
+                + String.join(", ", VALID_PLANNING_TYPES));
+        }
+        boolean withoutStock = "RUN_WITHOUT_STOCK".equals(plan.getRunMode());
 
-        Set<String> visitedItems = new HashSet<>();
+        // FRS §5: MANUAL means the plan carries only user-entered lines — skip auto-explosion entirely.
+        if ("MANUAL".equals(planningType)) {
+            plan.setStatus("COMPLETE");
+            plan.setUpdatedAt(Instant.now());
+            return materialPlans.save(plan);
+        }
+
+        List<WorkOrder> allActiveWOs = new ArrayList<>(workOrders.findByStatus("RELEASED"));
+        allActiveWOs.addAll(workOrders.findByStatus("IN_PROCESS"));
+
+        // FRS §5: Planning Type selects the demand source this run explodes. Unlike the legacy
+        // implementation everything travels as a Demand — SO-driven runs have no Work Order at all.
+        List<Demand> demands = new ArrayList<>();
+        switch (planningType) {
+            case "SALES_WORK_ORDER" -> demands.addAll(woDemands(allActiveWOs, true));
+            case "INVENTORY_WORK_ORDER" -> demands.addAll(woDemands(allActiveWOs, false));
+            case "ALL" -> demands.addAll(woDemands(allActiveWOs, null));
+            case "FIXED_SALES_ORDER" -> demands.addAll(fixedSalesOrderDemands());
+            case "SCHEDULE_SALES_ORDER" -> demands.addAll(scheduleSalesOrderDemands());
+            case "MIN_STOCK_MANUFACTURING_ITEM", "MIN_STOCK_PURCHASE_ITEM" -> { /* handled below, no WO explosion */ }
+            default -> throw new RuntimeException("Unknown planningType '" + planningType + "'");
+        }
+
         Map<String, BigDecimal> grossByItem = new LinkedHashMap<>();
         Map<String, Integer> maxLevelByItem = new LinkedHashMap<>();
         Map<String, String> sourceWoByItem = new LinkedHashMap<>();
 
-        for (WorkOrder wo : activeWOs) {
-            if (wo.getBomId() == null) continue;
-            ProductionBOM bom = productionBoms.findById(wo.getBomId()).orElse(null);
-            if (bom == null) continue;
-            BigDecimal woQty = wo.getOrderQuantity() == null ? BigDecimal.ONE : wo.getOrderQuantity();
-            explodeBom(bom, woQty, 0, grossByItem, maxLevelByItem, sourceWoByItem, wo.getWoNumber(), visitedItems, 5);
+        for (Demand demand : demands) {
+            if (demand.itemCode() == null || demand.itemCode().isBlank()) continue;
+            ProductionBOM bom = null;
+            if (demand.bomId() != null) {
+                bom = productionBoms.findById(demand.bomId()).orElse(null);
+            } else {
+                bom = usableBomForItem(demand.itemCode());
+            }
+            if (bom == null) {
+                // Purchased / no-BOM demand — the finished item itself is the requirement.
+                grossByItem.merge(demand.itemCode(), demand.qty(), BigDecimal::add);
+                maxLevelByItem.putIfAbsent(demand.itemCode(), 0);
+                sourceWoByItem.putIfAbsent(demand.itemCode(), demand.sourceRef());
+                continue;
+            }
+            for (BomExplosionService.Requirement req : bomExplosionService.requirementsPerRootUnit(bom)) {
+                BigDecimal gross = req.getPerRootQty().multiply(demand.qty());
+                grossByItem.merge(req.getComponentItemCode(), gross, BigDecimal::add);
+                maxLevelByItem.merge(req.getComponentItemCode(), req.getLevel(), Math::max);
+                sourceWoByItem.putIfAbsent(req.getComponentItemCode(), demand.sourceRef());
+            }
+        }
+
+        // FRS §5: Min Stock planning types trigger demand from the item master's reorder point,
+        // not from any Work Order — one demand line per item currently below its reorder point.
+        if ("MIN_STOCK_MANUFACTURING_ITEM".equals(planningType) || "MIN_STOCK_PURCHASE_ITEM".equals(planningType)) {
+            Set<String> eligibleTypes = "MIN_STOCK_MANUFACTURING_ITEM".equals(planningType)
+                ? MANUFACTURING_ITEM_TYPES : PURCHASE_ITEM_TYPES;
+            for (ItemMaster item : items.findAll()) {
+                String t = item.getItemType() == null ? "" : item.getItemType().trim().toUpperCase();
+                if (!eligibleTypes.contains(t)) continue;
+                BigDecimal reorderPoint = item.getReorderPoint() != null ? item.getReorderPoint() : item.getMinStockLevel();
+                if (reorderPoint == null) continue;
+                BigDecimal onHand = stockBalances.sumAvailableByItem(item.getCode(), null);
+                if (onHand == null) onHand = BigDecimal.ZERO;
+                if (onHand.compareTo(reorderPoint) >= 0) continue; // not below reorder point — no demand
+                BigDecimal reorderQty = item.getReorderQty() != null && item.getReorderQty().compareTo(BigDecimal.ZERO) > 0
+                    ? item.getReorderQty() : reorderPoint.subtract(onHand);
+                grossByItem.merge(item.getCode(), reorderQty, BigDecimal::add);
+                maxLevelByItem.putIfAbsent(item.getCode(), 0);
+                sourceWoByItem.putIfAbsent(item.getCode(), "MIN-STOCK");
+            }
         }
 
         for (Map.Entry<String, BigDecimal> entry : grossByItem.entrySet()) {
@@ -176,23 +260,28 @@ public class PlanningMasterController {
             BigDecimal onHand = stockBalances.sumAvailableByItem(itemCode, null);
             if (onHand == null) onHand = BigDecimal.ZERO;
 
-            BigDecimal onOrder = activeWOs.stream()
+            BigDecimal onOrder = allActiveWOs.stream()
                 .filter(wo -> wo.getItemCode() != null && wo.getItemCode().equals(itemCode))
                 .map(wo -> wo.getOrderQuantity() == null ? BigDecimal.ZERO : wo.getOrderQuantity())
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-            // Planning Module audit: this used to re-read grossByItem for the same itemCode,
-            // which — since grossByItem is keyed uniquely per item via merge() — just returned
-            // gross itself. That made wip == gross, which cancelled gross out of the net
-            // formula entirely (net = gross - (onHand+onOrder+gross) + safetyStock reduces to
-            // safetyStock - onHand - onOrder, completely independent of actual demand). There
-            // is no real work-in-process quantity tracked anywhere this run has access to, so
-            // rather than fabricate one, wip is zeroed until a genuine WIP source exists —
-            // this at least restores gross demand actually driving the net requirement.
-            BigDecimal wip = BigDecimal.ZERO;
+            // Genuine work-in-process from reservations still open (not yet released back to stock).
+            BigDecimal wip = feasibilityService.stockView(itemCode, true, false).wip();
 
-            BigDecimal available = onHand.add(onOrder).add(wip);
-            BigDecimal net = gross.subtract(available).add(safetyStock).max(BigDecimal.ZERO);
+            // FRS §5 Run Mode: "Run MRP W/o Stock" is gross requirement, ignoring on-hand/on-order/
+            // safety stock entirely — a distinct code path, not just a stock-qty override, since it
+            // also changes what counts as a shortfall.
+            BigDecimal net;
+            if (withoutStock) {
+                onHand = BigDecimal.ZERO;
+                onOrder = BigDecimal.ZERO;
+                safetyStock = BigDecimal.ZERO;
+                wip = BigDecimal.ZERO;
+                net = gross;
+            } else {
+                BigDecimal available = onHand.add(onOrder).add(wip);
+                net = gross.subtract(available).add(safetyStock).max(BigDecimal.ZERO);
+            }
 
             MaterialPlanLine line = new MaterialPlanLine();
             line.setPlan(plan);
@@ -211,7 +300,7 @@ public class PlanningMasterController {
             line.setNetRequirement(net);
             line.setRecommendedOrderQty(net.max(BigDecimal.ZERO));
             line.setSourceWoNumber(sourceWoByItem.getOrDefault(itemCode, ""));
-            line.setOrderType(hasActiveWoForItem(itemCode, activeWOs) ? "PRODUCTION" : "PURCHASE");
+            line.setOrderType(resolveOrderType(itemCode, itemOpt.map(ItemMaster::getItemType).orElse(null), allActiveWOs));
             line.setActionStatus("PENDING");
             materialPlanLines.save(line);
         }
@@ -221,35 +310,79 @@ public class PlanningMasterController {
         return materialPlans.save(plan);
     }
 
-    private void explodeBom(ProductionBOM bom, BigDecimal parentQty, int level,
-                           Map<String, BigDecimal> grossByItem, Map<String, Integer> maxLevelByItem,
-                           Map<String, String> sourceWoByItem, String woNumber,
-                           Set<String> visitedItems, int maxDepth) {
-        if (level > maxDepth) return;
-        for (ProductionBOMLine bomLine : bom.getLines()) {
-            BigDecimal qtyPer = bomLine.getQuantityPer() == null ? BigDecimal.ONE : bomLine.getQuantityPer();
-            BigDecimal scrapPct = bomLine.getScrapPercentage() == null ? BigDecimal.ZERO : bomLine.getScrapPercentage();
-            BigDecimal effectiveQtyPer = qtyPer.multiply(BigDecimal.ONE.add(scrapPct.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP)));
-            BigDecimal gross = parentQty.multiply(effectiveQtyPer);
-
-            String compCode = bomLine.getComponentItemCode();
-            grossByItem.merge(compCode, gross, BigDecimal::add);
-            maxLevelByItem.merge(compCode, level, Math::max);
-            sourceWoByItem.putIfAbsent(compCode, woNumber);
-
-            if (bomLine.getChildBomId() != null && !visitedItems.contains(compCode)) {
-                visitedItems.add(compCode);
-                ProductionBOM childBom = productionBoms.findById(bomLine.getChildBomId()).orElse(null);
-                if (childBom != null) {
-                    explodeBom(childBom, gross, level + 1, grossByItem, maxLevelByItem,
-                              sourceWoByItem, woNumber, visitedItems, maxDepth);
-                }
-            }
-        }
+    private ProductionBOM usableBomForItem(String itemCode) {
+        return productionBoms.findByItemCodeAndIsActiveTrue(itemCode).stream()
+            .filter(b -> !"REJECTED".equals(b.getStatus()) && !"OBSOLETE".equals(b.getStatus()))
+            .findFirst()
+            .orElse(null);
     }
 
-    private boolean hasActiveWoForItem(String itemCode, List<WorkOrder> activeWOs) {
-        return activeWOs.stream().anyMatch(wo -> itemCode.equals(wo.getItemCode()));
+    private List<Demand> woDemands(List<WorkOrder> wos, Boolean salesOnly) {
+        List<Demand> out = new ArrayList<>();
+        for (WorkOrder wo : wos) {
+            if (salesOnly != null && salesOnly != (wo.getSalesOrderId() != null)) continue;
+            if (wo.getItemCode() == null || wo.getItemCode().isBlank()) continue;
+            BigDecimal qty = wo.getOrderQuantity() == null ? BigDecimal.ONE : wo.getOrderQuantity();
+            out.add(new Demand(wo.getItemCode(), qty, wo.getWoNumber() != null ? wo.getWoNumber() : wo.getDocNo(), wo.getBomId()));
+        }
+        return out;
+    }
+
+    /** FRS §5.1: Fixed sales orders — each line's pending qty (order qty minus qty committed to WOs). */
+    private List<Demand> fixedSalesOrderDemands() {
+        List<Demand> out = new ArrayList<>();
+        List<SalesOrder> orders = em.createQuery(
+                "select so from SalesOrder so where so.status not in ('DRAFT','REJECTED','CANCELLED','CLOSED')",
+                SalesOrder.class).getResultList();
+        for (SalesOrder so : orders) {
+            boolean fixed = so.getSoType() == null || "FIXED".equalsIgnoreCase(so.getSoType());
+            if (!fixed) continue;
+            if (so.getLines() == null) continue;
+            for (SalesOrderItem line : so.getLines()) {
+                BigDecimal pending = line.getPendingQty() != null && line.getPendingQty().signum() > 0
+                    ? line.getPendingQty() : line.getOrderQty();
+                if (pending == null || pending.signum() <= 0) continue;
+                String item = line.getItemCode() != null ? line.getItemCode() : line.getItemName();
+                if (item == null || item.isBlank()) continue;
+                Long bomId = productionBoms.findByItemCodeAndSalesOrderIdAndIsActiveTrue(item, so.getId()).stream()
+                    .filter(b -> !"REJECTED".equals(b.getStatus()) && !"OBSOLETE".equals(b.getStatus()))
+                    .findFirst().map(ProductionBOM::getId).orElse(null);
+                out.add(new Demand(item, pending, so.getDocNo(), bomId));
+            }
+        }
+        return out;
+    }
+
+    /** FRS §5.1: Open schedule lines — the outstanding delivery-lot quantities on each schedule. */
+    private List<Demand> scheduleSalesOrderDemands() {
+        List<Demand> out = new ArrayList<>();
+        List<SalesOrderSchedule> schedules = em.createQuery(
+                "select s from SalesOrderSchedule s join fetch s.doc where s.pendingQty is not null and s.pendingQty > 0",
+                SalesOrderSchedule.class).getResultList();
+        for (SalesOrderSchedule s : schedules) {
+            String status = s.getStatus();
+            if (status != null && ("CLOSED".equalsIgnoreCase(status) || "CANCELLED".equalsIgnoreCase(status))) continue;
+            if (s.getItemCode() == null || s.getItemCode().isBlank()) continue;
+            SalesOrder so = s.getDoc();
+            Long bomId = null;
+            if (so != null) {
+                bomId = productionBoms.findByItemCodeAndSalesOrderIdAndIsActiveTrue(s.getItemCode(), so.getId()).stream()
+                    .filter(b -> !"REJECTED".equals(b.getStatus()) && !"OBSOLETE".equals(b.getStatus()))
+                    .findFirst().map(ProductionBOM::getId).orElse(null);
+            }
+            String source = so != null && so.getDocNo() != null ? so.getDocNo() + "/" + (s.getScheduleNumber() != null ? s.getScheduleNumber() : s.getId()) : s.getId().toString();
+            out.add(new Demand(s.getItemCode(), s.getPendingQty(), source, bomId));
+        }
+        return out;
+    }
+
+    /** Manufacturing item types (or items with an active WO) plan as PRODUCTION; the rest purchase. */
+    private String resolveOrderType(String itemCode, String itemType, List<WorkOrder> allActiveWOs) {
+        String t = itemType == null ? "" : itemType.trim().toUpperCase();
+        if (MANUFACTURING_ITEM_TYPES.contains(t)) return "PRODUCTION";
+        if (PURCHASE_ITEM_TYPES.contains(t)) return "PURCHASE";
+        boolean hasWo = allActiveWOs.stream().anyMatch(wo -> itemCode.equals(wo.getItemCode()));
+        return hasWo ? "PRODUCTION" : "PURCHASE";
     }
 
     // ===========================
@@ -264,74 +397,135 @@ public class PlanningMasterController {
 
         BigDecimal targetQty = body.containsKey("quantity") && body.get("quantity") != null
             ? new BigDecimal(body.get("quantity").toString()) : null;
+        boolean includeWip = Boolean.TRUE.equals(body.get("includeWip"));
+        boolean includeOpenPo = Boolean.TRUE.equals(body.get("includeOpenPo"));
 
-        List<ProductionBOM> boms = productionBoms.findByItemCode(itemCode);
-        ProductionBOM bom = boms.stream()
-            .filter(b -> !"REJECTED".equals(b.getStatus()) && !"OBSOLETE".equals(b.getStatus()))
-            .findFirst()
-            .orElse(null);
+        return feasibilityService.checkFeasibility(itemCode, targetQty, includeWip, includeOpenPo);
+    }
 
-        if (bom == null) {
-            Map<String, Object> r = new LinkedHashMap<>();
-            r.put("maxProducibleQty", BigDecimal.ZERO);
-            r.put("limitingComponent", "No BOM found");
-            r.put("isFeasible", false);
-            r.put("breakdown", List.of());
-            return r;
-        }
+    // ---- Material Plan Spawn ----
+    @PostMapping("/api/v1/planning/material-plans/{id}/spawn")
+    @RequirePermission(module = "PLANNING", screen = "*", action = "CREATE")
+    public Map<String, Object> spawnMaterialPlan(@PathVariable Long id, Principal principal) {
+        MaterialPlan plan = materialPlans.findById(id).orElseThrow(() -> new RuntimeException("Material Plan not found"));
+        String planNumber = plan.getPlanNumber();
+        String user = principalName(principal);
+        List<Map<String, Object>> spawned = new ArrayList<>();
 
-        List<Map<String, Object>> breakdown = new ArrayList<>();
-        BigDecimal maxProducible = targetQty != null ? targetQty : null;
-        String limitingComponent = "None";
+        for (MaterialPlanLine line : materialPlanLines.findByPlanId(id)) {
+            BigDecimal net = line.getNetRequirement() == null ? BigDecimal.ZERO : line.getNetRequirement();
+            if (net.signum() <= 0) continue;
+            if (line.getActionStatus() != null
+                && ("SPAWNED".equals(line.getActionStatus()) || "DONE".equals(line.getActionStatus()))) continue;
 
-        for (ProductionBOMLine line : bom.getLines()) {
-            String compCode = line.getComponentItemCode();
-            BigDecimal qtyPer = line.getQuantityPer() == null ? BigDecimal.ONE : line.getQuantityPer();
-
-            BigDecimal scrapPct = line.getScrapPercentage() == null ? BigDecimal.ZERO : line.getScrapPercentage();
-            BigDecimal effectiveQtyPer = qtyPer.multiply(BigDecimal.ONE.add(scrapPct.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP)));
-
-            BigDecimal available = stockBalances.sumAvailableByItem(compCode, null);
-            if (available == null) available = BigDecimal.ZERO;
-
-            BigDecimal requiredForTarget = targetQty != null ? effectiveQtyPer.multiply(targetQty) : effectiveQtyPer;
-
-            String status = available.compareTo(requiredForTarget) >= 0 ? "OK" : "SHORT";
-            if ("SHORT".equals(status)) {
-                if (targetQty == null) {
-                    BigDecimal canProduce = effectiveQtyPer.compareTo(BigDecimal.ZERO) > 0
-                        ? available.divide(effectiveQtyPer, 0, RoundingMode.FLOOR) : BigDecimal.ZERO;
-                    if (maxProducible == null || canProduce.compareTo(maxProducible) < 0) {
-                        maxProducible = canProduce;
-                        limitingComponent = compCode;
-                    }
-                } else {
-                    maxProducible = BigDecimal.ZERO;
-                    limitingComponent = compCode;
-                }
+            String orderType = line.getOrderType() == null ? "" : line.getOrderType().trim().toUpperCase();
+            String reference;
+            switch (orderType) {
+                case "PRODUCTION" -> { reference = spawnWorkOrder(line, planNumber, user); }
+                case "SUBCONTRACT" -> { reference = spawnJobOrder(line, planNumber, user); }
+                case "PURCHASE" -> { reference = spawnPurchaseRequest(line, planNumber, user); }
+                default -> { continue; }
             }
 
-            Optional<ItemMaster> compItem = items.findByCode(compCode);
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("componentCode", compCode);
-            row.put("componentDescription", compItem.map(ItemMaster::getDescription).orElse(""));
-            row.put("uom", compItem.map(ItemMaster::getUom).orElse(line.getUom() != null ? line.getUom() : ""));
-            row.put("requiredQty", requiredForTarget);
-            row.put("availableQty", available);
-            row.put("status", status);
-            breakdown.add(row);
+            line.setActionStatus("SPAWNED");
+            materialPlanLines.save(line);
+
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("lineId", line.getId());
+            m.put("itemCode", line.getItemCode());
+            m.put("orderType", orderType);
+            m.put("reference", reference);
+            spawned.add(m);
         }
 
-        if (maxProducible == null) maxProducible = BigDecimal.ZERO;
-        boolean feasible = maxProducible.compareTo(BigDecimal.ZERO) > 0
-            && (targetQty == null || maxProducible.compareTo(targetQty) >= 0);
-
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("maxProducibleQty", maxProducible);
-        result.put("limitingComponent", limitingComponent);
-        result.put("isFeasible", feasible);
-        result.put("breakdown", breakdown);
+        result.put("planId", id);
+        result.put("spawnedCount", spawned.size());
+        result.put("spawned", spawned);
         return result;
+    }
+
+    private BigDecimal spawnQty(MaterialPlanLine line) {
+        BigDecimal recommended = line.getRecommendedOrderQty() == null ? BigDecimal.ZERO : line.getRecommendedOrderQty();
+        BigDecimal net = line.getNetRequirement() == null ? BigDecimal.ZERO : line.getNetRequirement();
+        BigDecimal qty = recommended.signum() > 0 ? recommended : net;
+        return qty.signum() > 0 ? qty : BigDecimal.ZERO;
+    }
+
+    private String localDateString(Instant instant) {
+        if (instant == null) return null;
+        return instant.atZone(ZoneId.systemDefault()).toLocalDate().toString();
+    }
+
+    private String spawnPurchaseRequest(MaterialPlanLine line, String planNumber, String user) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("requestType", "MRP");
+        body.put("source", "Material Plan " + planNumber);
+        body.put("referenceType", "material-plan");
+        body.put("referenceNumber", planNumber);
+        body.put("requestedBy", user);
+        body.put("priority", "NORMAL");
+        body.put("requiredDate", localDateString(line.getRequiredDate()));
+        List<Map<String, Object>> lines = new ArrayList<>();
+        Map<String, Object> l = new LinkedHashMap<>();
+        l.put("itemName", line.getItemCode());
+        l.put("itemType", "RAW_MATERIAL");
+        l.put("requiredQty", spawnQty(line));
+        if (line.getUom() != null) l.put("uom", line.getUom());
+        if (line.getItemDescription() != null && !line.getItemDescription().isBlank()) {
+            l.put("specification", line.getItemDescription());
+        }
+        if (line.getRequiredDate() != null) l.put("requiredDate", localDateString(line.getRequiredDate()));
+        l.put("productionReference", planNumber);
+        lines.add(l);
+        body.put("lines", lines);
+        DocEntity e = documentFacade.create("purchase-request", body, user);
+        return e.getDocNo();
+    }
+
+    private String spawnWorkOrder(MaterialPlanLine line, String planNumber, String user) {
+        BigDecimal qty = spawnQty(line);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("itemCode", line.getItemCode());
+        if (line.getItemDescription() != null) body.put("itemDescription", line.getItemDescription());
+        body.put("orderQuantity", qty);
+        body.put("productionQty", qty);
+        body.put("pendingQty", qty);
+        if (line.getUom() != null) body.put("uom", line.getUom());
+        body.put("sourceType", "Material Plan");
+        body.put("sourceDocNo", planNumber);
+        body.put("priority", "MEDIUM");
+        body.put("remarks", "MRP spawn from material plan " + planNumber);
+        ProductionBOM bom = usableBomForItem(line.getItemCode());
+        if (bom != null) {
+            body.put("bomId", bom.getId());
+            body.put("bomCode", bom.getBomNumber() != null ? bom.getBomNumber() : bom.getDocNo());
+            if (bom.getBomVersion() != null) body.put("bomRevision", bom.getBomVersion());
+        }
+        if (line.getRequiredDate() != null) body.put("dueDate", localDateString(line.getRequiredDate()));
+        DocEntity e = documentFacade.create("work-order", body, user);
+        return e.getDocNo();
+    }
+
+    private String spawnJobOrder(MaterialPlanLine line, String planNumber, String user) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("jobWorkType", "SUBCONTRACT");
+        body.put("processName", line.getRemarks() != null && !line.getRemarks().isBlank()
+            ? line.getRemarks() : "Subcontract processing");
+        if (line.getRequiredDate() != null) body.put("requiredDate", localDateString(line.getRequiredDate()));
+        List<Map<String, Object>> lines = new ArrayList<>();
+        Map<String, Object> l = new LinkedHashMap<>();
+        l.put("itemName", line.getItemCode());
+        if (line.getItemDescription() != null && !line.getItemDescription().isBlank()) {
+            l.put("description", line.getItemDescription());
+        }
+        l.put("orderQty", spawnQty(line));
+        if (line.getUom() != null) l.put("uom", line.getUom());
+        l.put("productionReference", planNumber);
+        lines.add(l);
+        body.put("lines", lines);
+        DocEntity e = documentFacade.create("job-order", body, user);
+        return e.getDocNo();
     }
 
     // ===========================
@@ -462,13 +656,148 @@ public class PlanningMasterController {
         MachineLoadPlan plan = machineLoadPlans.findById(id).orElseThrow(() -> new RuntimeException("Machine Load Plan not found"));
         line.setId(null);
         line.setLoadPlan(plan);
+        line.setCreatedBy(principalName(principal));
         line.setCreatedAt(Instant.now());
+        scheduleMachineLoadLine(line, plan, null);
         return machineLoadLines.save(line);
+    }
+
+    /** FRS §19: in-place line scheduling/reschedule update (machine/shift/date + start time).
+     * The sequenced row's Start must not precede the previous process' planned/actual End. */
+    @PutMapping("/api/v1/planning/machine-load-lines/{lineId}")
+    @RequirePermission(module = "PLANNING", screen = "*", action = "EDIT")
+    public MachineLoadLine updateMachineLoadLine(@PathVariable Long lineId, @RequestBody MachineLoadLine line, Principal principal) {
+        MachineLoadLine e = machineLoadLines.findById(lineId).orElseThrow(() -> new RuntimeException("Machine Load Line not found"));
+        MachineLoadPlan plan = e.getLoadPlan();
+        e.setMachineCode(blankToNull(line.getMachineCode()) != null ? line.getMachineCode() : e.getMachineCode());
+        e.setShiftName(blankToNull(line.getShiftName()));
+        e.setLoadDate(line.getLoadDate());
+        e.setStartTime(line.getStartTime());
+        e.setProcessQty(line.getProcessQty());
+        e.setSetupHours(line.getSetupHours());
+        e.setRunHours(line.getRunHours());
+        e.setProcessTimeHrs(line.getProcessTimeHrs());
+        e.setWoNumber(blankToNull(line.getWoNumber()));
+        e.setOperationSequence(line.getOperationSequence());
+        e.setWoOperationCode(blankToNull(line.getWoOperationCode()));
+        e.setItemCode(blankToNull(line.getItemCode()));
+        e.setItemName(blankToNull(line.getItemName()));
+        e.setProcessName(blankToNull(line.getProcessName()));
+        e.setOperatorCode(blankToNull(line.getOperatorCode()));
+        e.setToolCode(blankToNull(line.getToolCode()));
+        e.setRemarks(blankToNull(line.getRemarks()));
+        scheduleMachineLoadLine(e, plan, e.getId());
+        e.setUpdatedAt(Instant.now());
+        e.setUpdatedBy(principalName(principal));
+        return machineLoadLines.save(e);
+    }
+
+    /** FRS §8 rule 3: Calculate derives Process Time / End datetime / Total Time, then compares
+     * the load against the machine's available hours for the day (from MachineOperatingHours). */
+    @PostMapping("/api/v1/planning/machine-load-plans/{planId}/lines/{lineId}/calculate")
+    @RequirePermission(module = "PLANNING", screen = "*", action = "APPROVE")
+    public MachineLoadLine calculateMachineLoadLine(@PathVariable Long planId, @PathVariable Long lineId, Principal principal) {
+        MachineLoadLine e = machineLoadLines.findById(lineId).orElseThrow(() -> new RuntimeException("Machine Load Line not found"));
+        MachineLoadPlan plan = e.getLoadPlan();
+        e.setUpdatedAt(Instant.now());
+        scheduleMachineLoadLine(e, plan, e.getId());
+        return machineLoadLines.save(e);
     }
 
     @DeleteMapping("/api/v1/planning/machine-load-plans/lines/{lineId}")
     @RequirePermission(module = "PLANNING", screen = "*", action = "DELETE")
     public void deleteMachineLoadLine(@PathVariable Long lineId) { machineLoadLines.deleteById(lineId); }
+
+    private String blankToNull(String v) { return (v == null || v.isBlank()) ? null : v; }
+
+    /** FRS §19 sequencing + capacity: computes duration, chains off the previous process' end,
+     * derives End datetime, and flags over-commitment against the machine's available shift hours. */
+    private void scheduleMachineLoadLine(MachineLoadLine line, MachineLoadPlan plan, Long selfId) {
+        BigDecimal qty = line.getProcessQty() == null ? BigDecimal.ONE : line.getProcessQty();
+        BigDecimal setup = nz(line.getSetupHours());
+        BigDecimal run = nz(line.getRunHours());
+        BigDecimal processHrs = line.getProcessTimeHrs() != null ? line.getProcessTimeHrs()
+            : setup.add(run.multiply(qty));
+        line.setProcessTimeHrs(processHrs);
+
+        // Sequence chaining: Start must not precede the previous process' planned/actual End.
+        if (line.getWoNumber() != null && line.getOperationSequence() != null && line.getOperationSequence() > 1) {
+            Instant prevEnd = previousProcessEnd(line.getWoNumber(), line.getOperationSequence(), plan.getId(), selfId);
+            if (prevEnd != null) {
+                line.setPreviousProcessEnd(prevEnd);
+                if (line.getStartTime() == null) {
+                    line.setStartTime(prevEnd);
+                } else if (line.getStartTime().isBefore(prevEnd)) {
+                    throw new IllegalStateException("Start time " + line.getStartTime()
+                        + " precedes Previous Process EndDatetime " + prevEnd
+                        + " for WO " + line.getWoNumber() + " operation " + line.getOperationSequence()
+                        + " (FRS §19 sequencing rule).");
+                }
+            }
+        }
+
+        long totalSec = Math.round(processHrs.doubleValue() * 3600.0);
+        line.setTotalTimeSec(totalSec);
+        if (line.getStartTime() != null) {
+            line.setEndTime(line.getStartTime().plusSeconds(totalSec));
+        }
+
+        // Availability check: use the machine's recorded operating hours for the day when present.
+        BigDecimal available = availableHoursFor(line, plan);
+        BigDecimal plannedLoad = line.getProcessTimeHrs() == null ? BigDecimal.ZERO : line.getProcessTimeHrs();
+        line.setAvailableHours(available);
+        if (line.getPlannedLoadHours() == null || line.getPlannedLoadHours().compareTo(BigDecimal.ZERO) == 0) {
+            line.setPlannedLoadHours(plannedLoad);
+        }
+        boolean overloaded = available.compareTo(BigDecimal.ZERO) > 0
+            && line.getPlannedLoadHours().compareTo(available) > 0;
+        line.setIsOverloaded(overloaded);
+        line.setOverloadHours(overloaded ? line.getPlannedLoadHours().subtract(available) : BigDecimal.ZERO);
+        line.setUtilizationPercent(available.compareTo(BigDecimal.ZERO) > 0
+            ? line.getPlannedLoadHours().multiply(BigDecimal.valueOf(100))
+                .divide(available, 2, RoundingMode.HALF_UP)
+            : BigDecimal.ZERO);
+    }
+
+    private BigDecimal nz(BigDecimal v) { return v == null ? BigDecimal.ZERO : v; }
+
+    /** FRS §19: the predecessor operation's planned/actual End — first from an already-planned load line
+     * in this plan (same WO, prior sequence), else from the Work Order's own operation timings. */
+    private Instant previousProcessEnd(String woNumber, Integer opSequence, Long planId, Long selfId) {
+        int predSeq = opSequence - 1;
+        MachineLoadLine pred = machineLoadLines.findByWoNumberAndOperationSequence(woNumber, predSeq).stream()
+            .filter(l -> !l.getId().equals(selfId))
+            .filter(l -> l.getEndTime() != null)
+            .filter(l -> planId == null || l.getLoadPlan() != null && l.getLoadPlan().getId().equals(planId))
+            .findFirst().orElse(null);
+        if (pred != null) return pred.getEndTime();
+        WorkOrder wo = workOrders.findByWoNumber(woNumber).stream().findFirst().orElse(null);
+        if (wo != null) {
+            return wo.getOperations().stream()
+                .filter(wop -> wop.getOperationSequence() != null && wop.getOperationSequence() == predSeq)
+                .map(WorkOrderOperation::getEndTime)
+                .filter(Objects::nonNull)
+                .findFirst().orElse(null);
+        }
+        return null;
+    }
+
+    /** Available hours for a line: per-day record from MachineOperatingHours, else the plan's
+     * total operating hours across its date range, else the work center/day fallback. */
+    private BigDecimal availableHoursFor(MachineLoadLine line, MachineLoadPlan plan) {
+        BigDecimal fallback = BigDecimal.valueOf(8);
+        if (line.getMachineCode() != null && plan != null && plan.getPlanFrom() != null && plan.getPlanTo() != null) {
+            BigDecimal range = machineOperatingHours.sumOperatingHours(line.getMachineCode(), plan.getPlanFrom(), plan.getPlanTo());
+            if (range != null && range.compareTo(BigDecimal.ZERO) > 0) return range;
+        }
+        if (line.getMachineCode() != null && line.getLoadDate() != null) {
+            LocalDate day = line.getLoadDate().atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+            return machineOperatingHours.findByMachineCodeAndWorkDate(line.getMachineCode(), day)
+                .map(MachineOperatingHours::getOperatingHours)
+                .orElse(fallback);
+        }
+        return fallback;
+    }
 
     // ---- Generate load from active WOs ----
     @PostMapping("/api/v1/planning/machine-load-plans/{id}/generate")
@@ -507,9 +836,21 @@ public class PlanningMasterController {
         for (Map.Entry<String, BigDecimal> entry : loadByMachine.entrySet()) {
             String machineCode = entry.getKey();
             BigDecimal plannedLoad = entry.getValue();
-            BigDecimal available = availableByMachine.getOrDefault(machineCode, BigDecimal.valueOf(8));
 
-            // FRS §7.2: Check machine status — BREAKDOWN/UNDER_MAINTENANCE machines get 0 available hours
+            // FRS §8 rule 1: prefer the machine's recorded operating hours across the plan's date
+            // range (from MachineOperatingHours / shift calendars); fall back to work center capacity.
+            BigDecimal available = BigDecimal.ZERO;
+            if (plan.getPlanFrom() != null && plan.getPlanTo() != null) {
+                BigDecimal operatingHrs = machineOperatingHours.sumOperatingHours(machineCode, plan.getPlanFrom(), plan.getPlanTo());
+                if (operatingHrs != null && operatingHrs.compareTo(BigDecimal.ZERO) > 0) {
+                    available = operatingHrs;
+                }
+            }
+            if (available.compareTo(BigDecimal.ZERO) == 0) {
+                available = availableByMachine.getOrDefault(machineCode, BigDecimal.valueOf(8));
+            }
+
+            // FRS §7.2: BREAKDOWN / UNDER_MAINTENANCE machines get zero available hours.
             boolean isBlocked = machines.findByCode(machineCode)
                     .map(m -> "BREAKDOWN".equals(m.getStatus()) || "UNDER_MAINTENANCE".equals(m.getStatus()))
                     .orElse(false);
@@ -525,6 +866,7 @@ public class PlanningMasterController {
             MachineLoadLine line = new MachineLoadLine();
             line.setLoadPlan(plan);
             line.setMachineCode(machineCode);
+            line.setLoadDate(plan.getPlanFrom() != null ? plan.getPlanFrom().atStartOfDay(java.time.ZoneId.systemDefault()).toInstant() : Instant.now());
             line.setAvailableHours(available);
             line.setPlannedLoadHours(plannedLoad);
             line.setUtilizationPercent(utilPct);
@@ -553,8 +895,14 @@ public class PlanningMasterController {
     @RequirePermission(module = "PLANNING", screen = "*", action = "CREATE")
     public EngineeringChange createEngineeringChange(@RequestBody EngineeringChange ec, Principal principal) {
         ec.setId(null);
+        // FRS §9.2/§21: Gap Analysis No, if set, must resolve to an existing Gap Analysis record
+        if (ec.getGapAnalysisRunId() != null && !gapAnalysisRuns.existsById(ec.getGapAnalysisRunId())) {
+            throw new RuntimeException("Gap Analysis run not found: " + ec.getGapAnalysisRunId());
+        }
         ec.setEcrNumber(numbers.next("engineering-change", "ECR"));
         if (ec.getStatus() == null) ec.setStatus("DRAFT");
+        if (ec.getEcrStatus() == null) ec.setEcrStatus("DRAFT");
+        if (ec.getEcoStatus() == null) ec.setEcoStatus("DRAFT");
         ec.setCreatedBy(principalName(principal));
         ec.setCreatedAt(Instant.now());
         return engineeringChanges.save(ec);
@@ -569,8 +917,22 @@ public class PlanningMasterController {
     @RequirePermission(module = "PLANNING", screen = "*", action = "EDIT")
     public EngineeringChange updateEngineeringChange(@PathVariable Long id, @RequestBody EngineeringChange ec, Principal principal) {
         EngineeringChange e = engineeringChanges.findById(id).orElseThrow(() -> new RuntimeException("Engineering Change not found"));
+        if (ec.getGapAnalysisRunId() != null && !gapAnalysisRuns.existsById(ec.getGapAnalysisRunId())) {
+            throw new RuntimeException("Gap Analysis run not found: " + ec.getGapAnalysisRunId());
+        }
+        String current = e.getEcrStatus() != null ? e.getEcrStatus() : e.getStatus();
+        // FRS §9.2: the DRAFT→SUBMITTED→APPROVED→IMPLEMENTED→CLOSED state machine is enforced —
+        // an ECR may only be edited while still DRAFT or after it was REJECTED (for resubmission).
+        if (current != null && !Set.of("DRAFT", "REJECTED", "RAISED").contains(current)) {
+            throw new IllegalStateException("ECR " + e.getEcrNumber() + " is " + current
+                + " and can no longer be edited. Only DRAFT or REJECTED ECRs accept changes.");
+        }
         ec.setId(id);
         ec.setEcrNumber(e.getEcrNumber());
+        // Workflow state only advances via the action endpoint — never through an edit payload.
+        ec.setEcrStatus(e.getEcrStatus());
+        ec.setEcoStatus(e.getEcoStatus());
+        ec.setStatus(e.getStatus());
         ec.setCreatedAt(e.getCreatedAt());
         ec.setCreatedBy(e.getCreatedBy());
         ec.setUpdatedAt(Instant.now());
@@ -580,7 +942,44 @@ public class PlanningMasterController {
 
     @DeleteMapping("/api/v1/planning/engineering-changes/{id}")
     @RequirePermission(module = "PLANNING", screen = "*", action = "DELETE")
-    public void deleteEngineeringChange(@PathVariable Long id) { engineeringChanges.deleteById(id); }
+    public void deleteEngineeringChange(@PathVariable Long id) {
+        EngineeringChange e = engineeringChanges.findById(id).orElseThrow(() -> new RuntimeException("Engineering Change not found"));
+        String current = e.getEcrStatus() != null ? e.getEcrStatus() : e.getStatus();
+        if (current != null && !Set.of("DRAFT", "REJECTED", "RAISED").contains(current)) {
+            throw new IllegalStateException("Only DRAFT/REJECTED ECRs can be deleted; " + e.getEcrNumber() + " is " + current + ".");
+        }
+        ecrRiskLines.findByEngineeringChangeId(id).forEach(l -> ecrRiskLines.deleteById(l.getId()));
+        engineeringChanges.deleteById(id);
+    }
+
+    // ---- Risk Analysis grid (FRS §9.2/§21: structured, not a flat text field) ----
+    @GetMapping("/api/v1/planning/engineering-changes/{id}/risk-lines")
+    public List<EcrRiskLine> getEcrRiskLines(@PathVariable Long id) {
+        return ecrRiskLines.findByEngineeringChangeId(id);
+    }
+
+    @PostMapping("/api/v1/planning/engineering-changes/{id}/risk-lines")
+    @RequirePermission(module = "PLANNING", screen = "*", action = "CREATE")
+    public EcrRiskLine addEcrRiskLine(@PathVariable Long id, @RequestBody EcrRiskLine line) {
+        EngineeringChange ec = engineeringChanges.findById(id).orElseThrow(() -> new RuntimeException("Engineering Change not found"));
+        line.setId(null);
+        line.setEngineeringChange(ec);
+        return ecrRiskLines.save(line);
+    }
+
+    @PutMapping("/api/v1/planning/engineering-changes/risk-lines/{lineId}")
+    @RequirePermission(module = "PLANNING", screen = "*", action = "EDIT")
+    public EcrRiskLine updateEcrRiskLine(@PathVariable Long lineId, @RequestBody EcrRiskLine line) {
+        EcrRiskLine e = ecrRiskLines.findById(lineId).orElseThrow(() -> new RuntimeException("Risk line not found"));
+        line.setId(lineId);
+        line.setEngineeringChange(e.getEngineeringChange());
+        line.setCreatedAt(e.getCreatedAt());
+        return ecrRiskLines.save(line);
+    }
+
+    @DeleteMapping("/api/v1/planning/engineering-changes/risk-lines/{lineId}")
+    @RequirePermission(module = "PLANNING", screen = "*", action = "DELETE")
+    public void deleteEcrRiskLine(@PathVariable Long lineId) { ecrRiskLines.deleteById(lineId); }
 
     @PostMapping("/api/v1/planning/engineering-changes/{id}/actions/{action}")
     @RequirePermission(module = "PLANNING", screen = "*", action = "APPROVE")
@@ -589,50 +988,113 @@ public class PlanningMasterController {
                                                     Principal principal) {
         EngineeringChange ec = engineeringChanges.findById(id).orElseThrow(() -> new RuntimeException("Engineering Change not found"));
         String note = body != null ? body.getOrDefault("note", "") : "";
+        String currentEcr = ec.getEcrStatus() != null ? ec.getEcrStatus() : (ec.getStatus() != null ? ec.getStatus() : "DRAFT");
+        String currentEco = ec.getEcoStatus() != null ? ec.getEcoStatus() : "DRAFT";
+        String user = principalName(principal);
+
         switch (action.toLowerCase()) {
-            case "submit-ecr":
+            case "submit-ecr": {
+                // FRS §9.2: DRAFT/REJECTED (or legacy RAISED/UNDER_REVIEW) → SUBMITTED
+                requireEcrState(currentEcr, Set.of("DRAFT", "REJECTED", "RAISED"), "submit-ecr");
                 ec.setEcrStatus("SUBMITTED");
                 ec.setStatus("SUBMITTED");
+                ec.setEcoStatus("DRAFT");
                 createApprovalSteps("ENGINEERING_CHANGE", ec.getId(), List.of("PLANNING_MANAGER", "PLANT_HEAD"), principal);
                 break;
+            }
             case "approve-ecr":
+            case "approve": {
+                // FRS §9.2: only SUBMITTED (or legacy UNDER_REVIEW) ECRs may be approved
+                requireEcrState(currentEcr, Set.of("SUBMITTED", "UNDER_REVIEW"), "approve");
+                // FRS §21 rule 1: approval is blocked if stock disposition is required but not recorded
+                if (Boolean.TRUE.equals(ec.getInventoryImpact())
+                    && (ec.getOldStockDisposition() == null || ec.getOldStockDisposition().isBlank())) {
+                    throw new IllegalStateException("Existing stock disposition must be recorded before an ECR with inventory impact can be approved.");
+                }
                 ec.setEcrStatus("APPROVED");
                 ec.setStatus("APPROVED");
-                ec.setApprovedBy(principalName(principal));
-                advanceApprovalStep("ENGINEERING_CHANGE", ec.getId(), principalName(principal));
+                ec.setApprovedBy(user);
+                ec.setApprovedAt(Instant.now());
+                advanceApprovalStep("ENGINEERING_CHANGE", ec.getId(), user);
                 break;
+            }
             case "reject-ecr":
+            case "reject": {
+                requireEcrState(currentEcr, Set.of("SUBMITTED", "DRAFT", "RAISED", "UNDER_REVIEW"), "reject");
                 ec.setEcrStatus("REJECTED");
                 ec.setStatus("REJECTED");
+                ec.setRemarks(note == null || note.isBlank() ? ec.getRemarks() : note);
                 break;
-            case "approve":
-                ec.setEcrStatus("APPROVED");
-                ec.setStatus("APPROVED");
-                ec.setApprovedBy(principalName(principal));
-                break;
-            case "reject":
-                ec.setEcrStatus("REJECTED");
-                ec.setStatus("REJECTED");
-                break;
+            }
             case "implement": {
-                if (!"APPROVED".equals(ec.getEcrStatus())) {
-                    throw new IllegalStateException("ECR must be APPROVED before ECO can be implemented. Current ECR status: " + ec.getEcrStatus());
+                if (!"APPROVED".equals(currentEcr)) {
+                    throw new IllegalStateException("ECR must be APPROVED before ECO can be implemented. Current ECR status: " + currentEcr);
                 }
                 ec.setEcoStatus("IMPLEMENTED");
                 ec.setStatus("IMPLEMENTED");
                 ec.setEffectiveDate(Instant.now());
+                ec.setImplementedAt(Instant.now());
+                applyEcrRevisionCascade(ec, note, user);
                 break;
             }
-            case "close":
+            case "close": {
+                if (!Set.of("IMPLEMENTED", "APPROVED").contains(currentEco) && !Set.of("IMPLEMENTED", "APPROVED").contains(ec.getStatus() == null ? "" : ec.getStatus())) {
+                    throw new IllegalStateException("ECR must be IMPLEMENTED before it can be closed. Current ECO status: " + currentEco);
+                }
                 ec.setEcoStatus("CLOSED");
                 ec.setStatus("CLOSED");
+                ec.setClosedDate(Instant.now());
                 break;
+            }
             default:
                 throw new RuntimeException("Unknown action: " + action);
         }
         ec.setUpdatedAt(Instant.now());
-        ec.setUpdatedBy(principalName(principal));
+        ec.setUpdatedBy(user);
         return engineeringChanges.save(ec);
+    }
+
+    private void requireEcrState(String current, Set<String> allowed, String action) {
+        if (current == null || !allowed.contains(current)) {
+            throw new IllegalStateException("ECR state '" + current + "' does not permit action '" + action + "'. Allowed from: " + String.join(", ", allowed));
+        }
+    }
+
+    /** FRS §9.2: on ECO implementation, cascade the revision to the active BOM and Route Sheet and
+     * record the newly created revision ids + from/to revision labels back on the ECR. */
+    private void applyEcrRevisionCascade(EngineeringChange ec, String note, String user) {
+        String remarks = note != null && !note.isBlank() ? note : (ec.getDescriptionOfChange() != null ? ec.getDescriptionOfChange() : "ECR " + ec.getEcrNumber());
+        if (Boolean.TRUE.equals(ec.getBomImpact()) && ec.getItemCode() != null && !ec.getItemCode().isBlank()) {
+            ProductionBOM active = usableBomForItem(ec.getItemCode());
+            if (active != null) {
+                if (ec.getBomRevFrom() == null || ec.getBomRevFrom().isBlank()) {
+                    ec.setBomRevFrom(active.getBomVersion() != null ? active.getBomVersion()
+                        : "Rev " + (active.getRevisionNo() != null ? active.getRevisionNo() : 0));
+                }
+                String toRev = ec.getBomRevTo() != null && !ec.getBomRevTo().isBlank()
+                    ? ec.getBomRevTo() : ec.getProposedRevision();
+                ProductionBOM newBom = planningService.createBomRevision(active.getId(), toRev, "ECR " + ec.getEcrNumber() + ": " + remarks, user);
+                ec.setNewBomId(newBom.getId());
+                if (ec.getBomRevTo() == null || ec.getBomRevTo().isBlank()) ec.setBomRevTo(newBom.getBomVersion());
+            }
+        }
+        if (Boolean.TRUE.equals(ec.getRouteImpact()) && ec.getItemCode() != null && !ec.getItemCode().isBlank()) {
+            RouteSheet active = routeSheets.findByItemCode(ec.getItemCode()).stream()
+                .filter(r -> Set.of("RELEASED", "APPROVED").contains(r.getStatus()))
+                .findFirst().orElse(null);
+            if (active != null) {
+                if (ec.getRouteRevFrom() == null || ec.getRouteRevFrom().isBlank()) {
+                    ec.setRouteRevFrom(active.getRouteVersion() != null ? active.getRouteVersion()
+                        : "Rev " + (active.getRevisionNo() != null ? active.getRevisionNo() : 0));
+                }
+                String toRev = ec.getRouteRevTo() != null && !ec.getRouteRevTo().isBlank()
+                    ? ec.getRouteRevTo() : ec.getProposedRevision();
+                RouteSheet newRs = planningService.createRouteSheetRevisionFromEcr(active.getId(),
+                    "ECR " + ec.getEcrNumber() + ": " + remarks, user, ec.getEcrNumber());
+                ec.setNewRouteId(newRs.getId());
+                if (ec.getRouteRevTo() == null || ec.getRouteRevTo().isBlank()) ec.setRouteRevTo(newRs.getRouteVersion());
+            }
+        }
     }
 
     // ===========================
@@ -770,6 +1232,126 @@ public class PlanningMasterController {
         return saved;
     }
 
+    // ---- Run QMS Clause Gap Analysis (FRS §9.1) ----
+    @PostMapping("/api/v1/planning/gap-analysis/{id}/run-qms")
+    @RequirePermission(module = "PLANNING", screen = "*", action = "APPROVE")
+    public GapAnalysisRun runQmsGapAnalysis(@PathVariable Long id, Principal principal) {
+        GapAnalysisRun run = gapAnalysisRuns.findById(id).orElseThrow(() -> new RuntimeException("Gap Analysis Run not found"));
+        run.setRunMode("QMS");
+        gapAnalysisResults.findByRunId(id).forEach(r -> gapAnalysisResults.deleteById(r.getId()));
+
+        String scope = run.getScope() == null ? "PLANT" : run.getScope().trim().toUpperCase();
+        String scopeValue = run.getScopeValue();
+        List<ItemMaster> assessItems = new ArrayList<>();
+        if ("ITEM".equals(scope) && scopeValue != null && !scopeValue.isBlank()) {
+            items.findByCode(scopeValue).ifPresent(assessItems::add);
+        }
+        if (assessItems.isEmpty()) assessItems.addAll(items.findAll());
+        if (assessItems.isEmpty()) {
+            throw new RuntimeException("No items found to assess — create items first.");
+        }
+        String scopeLabel = "ITEM".equals(scope) && scopeValue != null && !scopeValue.isBlank() ? scopeValue : "PLANT";
+
+        boolean drawingControlOk = assessItems.stream().allMatch(it ->
+            it.getDrawingNumber() != null && !it.getDrawingNumber().isBlank()
+                && it.getDrawingRevision() != null && !it.getDrawingRevision().isBlank());
+        boolean bomControlOk = assessItems.stream().allMatch(it -> usableBomForItem(it.getCode()) != null);
+        boolean routeControlOk = assessItems.stream().allMatch(it ->
+            routeSheets.findByItemCode(it.getCode()).stream().anyMatch(r -> Set.of("RELEASED", "APPROVED").contains(r.getStatus())));
+        boolean mastersOk = !machines.findAll().isEmpty();
+        boolean reservationsOk = !materialReservations.findByStatus("RESERVED").isEmpty();
+        boolean activeProductionOk = !workOrders.findByStatus("RELEASED").isEmpty() || !workOrders.findByStatus("IN_PROCESS").isEmpty();
+        boolean changeControlOk = !engineeringChanges.findAll().isEmpty();
+        boolean stockAccuracyOk = stockBalances.count() > 0;
+        boolean revisionTraceOk = assessItems.stream().allMatch(it -> it.getRevision() != null && !it.getRevision().isBlank());
+
+        List<QmsClause> clauses = List.of(
+            new QmsClause("7.5.3", "Control of documented information",
+                "Documented information required by the QMS shall be controlled to ensure it is available and protected.",
+                "DOCUMENTATION", "Item Master / Drawing register", "PR-QC-01",
+                "Capture the drawing number and current revision for every item on the Item Master.",
+                "Items missing drawing number or drawing revision",
+                drawingControlOk),
+            new QmsClause("7.1.5", "Monitoring and measuring resources",
+                "The organization shall determine, provide and maintain resources to ensure valid monitoring results.",
+                "EQUIPMENT", "Machine Master", "PR-MAINT-01",
+                "Register the plant machinery so load planning and calibration tracking can reference real capacity.",
+                "No machines registered in the Machine Master",
+                mastersOk),
+            new QmsClause("8.3.5", "Design and development outputs",
+                "Design outputs shall be reviewed, verified, validated and approved before release.",
+                "DESIGN", "Production BOM master", "PR-DES-01",
+                "Maintain an active, approved BOM for every manufactured finished good.",
+                "Items without an active/approved BOM",
+                bomControlOk),
+            new QmsClause("8.5.1", "Control of production and service provision",
+                "Production shall be carried out under controlled conditions, including available documented information.",
+                "PROCESS", "Route Sheet master", "PR-PROD-01",
+                "Maintain a released/approved Route Sheet per manufactured item so operations are planned and repeatable.",
+                "Items without a released/approved Route Sheet",
+                routeControlOk),
+            new QmsClause("8.5.2", "Identification and traceability",
+                "The organization shall identify the status of outputs and control unique identification when traceability is a requirement.",
+                "PROCESS", "Material Reservation", "PR-INV-01",
+                "Record material reservations so WIP and lot traceability start at issue.",
+                "No active material reservations captured",
+                reservationsOk),
+            new QmsClause("8.7", "Control of nonconforming outputs",
+                "Nonconforming outputs shall be identified and controlled to prevent delivery to the customer.",
+                "QUALITY", "ECR / ECO register", "PR-QC-02",
+                "Route engineering changes through the ECR approval workflow and record dispositions.",
+                "No engineering change records exist — change handling is not demonstrated",
+                changeControlOk),
+            new QmsClause("10.2", "Nonconformity and corrective action",
+                "The organization shall react to nonconformities and take action to eliminate causes.",
+                "PROCESS", "MRP / Gap Analysis", "PR-MRP-01",
+                "Run the capacity MRP and review its output for shortfall items before releasing production.",
+                "No active/released or in-process work orders found",
+                activeProductionOk),
+            new QmsClause("7.1.4", "Environment for the operation of processes",
+                "The organization shall determine, provide and maintain the environment necessary for operation.",
+                "EQUIPMENT", "Stock Balance", "PR-INV-02",
+                "Maintain stock balances so environment/consumption and availability are traceable.",
+                "No stock balance rows recorded",
+                stockAccuracyOk),
+            new QmsClause("7.5.1", "General — documented information",
+                "The organization's QMS shall include documented information required by standards and the organization itself.",
+                "DOCUMENTATION", "Item Master", "PR-DES-02",
+                "Record a revision label on every item so drawings/BOM/routes can be traced to a known revision.",
+                "Items without a recorded revision label",
+                revisionTraceOk)
+        );
+
+        for (QmsClause clause : clauses) {
+            GapAnalysisResult result = new GapAnalysisResult();
+            result.setRun(run);
+            result.setGapType("QMS");
+            result.setClauseNo(clause.no());
+            result.setClauseText(clause.text());
+            result.setReferenceDoc(clause.referenceDoc());
+            result.setProcedureRef(clause.procedureRef());
+            result.setChangeCategory(clause.category());
+            result.setContextCode(scopeLabel);
+            result.setContextDescription(clause.title());
+            result.setGapDescription(clause.gapDescription());
+            result.setComplianceStatus(clause.compliant() ? "COMPLIANT" : "NON_COMPLIANT");
+            result.setSeverity(clause.compliant() ? "LOW" : "HIGH");
+            result.setSuggestedAction(clause.remediation());
+            result.setActionStatus(clause.compliant() ? "OK" : "OPEN");
+            result.setCreatedAt(Instant.now());
+            gapAnalysisResults.save(result);
+        }
+
+        run.setStatus("COMPLETE");
+        run.setGeneratedBy(principalName(principal));
+        run.setUpdatedAt(Instant.now());
+        return gapAnalysisRuns.save(run);
+    }
+
+    private record QmsClause(String no, String title, String text, String category,
+                             String referenceDoc, String procedureRef,
+                             String remediation, String gapDescription, boolean compliant) {}
+
     // ===========================
     // ---- Cost Estimation ------
     // ===========================
@@ -799,13 +1381,145 @@ public class PlanningMasterController {
     @RequirePermission(module = "PLANNING", screen = "*", action = "EDIT")
     public CostEstimation updateCostEstimation(@PathVariable Long id, @RequestBody CostEstimation ce, Principal principal) {
         CostEstimation e = costEstimations.findById(id).orElseThrow(() -> new RuntimeException("Cost Estimation not found"));
-        ce.setId(id);
-        ce.setEstimationNumber(e.getEstimationNumber());
-        ce.setCreatedAt(e.getCreatedAt());
-        ce.setCreatedBy(e.getCreatedBy());
-        ce.setUpdatedAt(Instant.now());
-        ce.setUpdatedBy(principalName(principal));
-        return costEstimations.save(ce);
+        // FRS §10/§22: estimates are versioned, not overwritten — only DRAFT estimates are editable in place.
+        if (!"DRAFT".equals(e.getStatus())) {
+            throw new IllegalStateException("Estimate " + e.getEstimationNumber() + " is " + e.getStatus()
+                + " and cannot be edited in place. Use 'Go to New Version' to create a new editable revision.");
+        }
+        // Merge only caller-editable header fields onto the managed entity; never trust the payload for
+        // workflow state, generated numbers, approval stamps or computed totals (in-place PUT fix).
+        e.setItemCode(ce.getItemCode());
+        e.setItemDescription(ce.getItemDescription());
+        e.setCustomerName(ce.getCustomerName());
+        e.setCustomerId(ce.getCustomerId());
+        e.setSoNumber(ce.getSoNumber());
+        e.setSoId(ce.getSoId());
+        e.setBatchQty(ce.getBatchQty());
+        e.setBomId(ce.getBomId());
+        e.setRouteId(ce.getRouteId());
+        e.setCurrencyCode(ce.getCurrencyCode());
+        e.setExchangeRate(ce.getExchangeRate());
+        e.setProfitMarginPercent(ce.getProfitMarginPercent());
+        e.setValidUpto(ce.getValidUpto());
+        e.setPreparedBy(ce.getPreparedBy());
+        e.setRemarks(ce.getRemarks());
+        e.setRateFrom(ce.getRateFrom());
+        e.setReferenceScreen(ce.getReferenceScreen());
+        e.setReferenceNo(ce.getReferenceNo());
+        e.setProductImageUrl(ce.getProductImageUrl());
+        e.setProcessRateApplicable(ce.getProcessRateApplicable());
+        e.setProfitFrom(ce.getProfitFrom());
+        e.setMakeupPercent(ce.getMakeupPercent());
+        e.setMakeupAmount(ce.getMakeupAmount());
+        e.setDiscountPercent(ce.getDiscountPercent());
+        e.setRoundOff(ce.getRoundOff());
+        e.setUpdatedAt(Instant.now());
+        e.setUpdatedBy(principalName(principal));
+        return costEstimations.save(e);
+    }
+
+    /** FRS §22 / §506: "Go to New Version" clones an estimate (header + lines) as a new DRAFT
+     * revision, preserving the prior version untouched and linking back to it. */
+    @PostMapping("/api/v1/planning/cost-estimations/{id}/new-version")
+    @RequirePermission(module = "PLANNING", screen = "*", action = "CREATE")
+    public CostEstimation newCostEstimationVersion(@PathVariable Long id, Principal principal) {
+        CostEstimation src = costEstimations.findById(id).orElseThrow(() -> new RuntimeException("Cost Estimation not found"));
+        CostEstimation clone = new CostEstimation();
+        clone.setItemCode(src.getItemCode());
+        clone.setItemDescription(src.getItemDescription());
+        clone.setCustomerName(src.getCustomerName());
+        clone.setCustomerId(src.getCustomerId());
+        clone.setSoNumber(src.getSoNumber());
+        clone.setSoId(src.getSoId());
+        clone.setBatchQty(src.getBatchQty());
+        clone.setBomId(src.getBomId());
+        clone.setRouteId(src.getRouteId());
+        clone.setCurrencyCode(src.getCurrencyCode());
+        clone.setExchangeRate(src.getExchangeRate());
+        clone.setProfitMarginPercent(src.getProfitMarginPercent());
+        clone.setValidUpto(src.getValidUpto());
+        clone.setRemarks(src.getRemarks());
+        clone.setRateFrom(src.getRateFrom());
+        clone.setReferenceScreen(src.getReferenceScreen());
+        clone.setReferenceNo(src.getReferenceNo());
+        clone.setProductImageUrl(src.getProductImageUrl());
+        clone.setProcessRateApplicable(src.getProcessRateApplicable());
+        clone.setProfitFrom(src.getProfitFrom());
+        clone.setMakeupPercent(src.getMakeupPercent());
+        clone.setMakeupAmount(src.getMakeupAmount());
+        clone.setDiscountPercent(src.getDiscountPercent());
+        clone.setRoundOff(src.getRoundOff());
+        clone.setEstimationNumber(numbers.next("cost-estimation", "CE"));
+        clone.setEstimationVersion((src.getEstimationVersion() == null ? 1 : src.getEstimationVersion()) + 1);
+        clone.setPriorVersionId(src.getId());
+        clone.setStatus("DRAFT");
+        clone.setIsActiveQuote(false);
+        clone.setPreparedBy(principalName(principal));
+        clone.setPreparedDate(Instant.now());
+        clone.setCreatedBy(principalName(principal));
+        clone.setCreatedAt(Instant.now());
+        CostEstimation saved = costEstimations.save(clone);
+
+        for (CostEstimationLine srcLine : costEstimationLines.findByEstimationId(id)) {
+            CostEstimationLine line = new CostEstimationLine();
+            line.setEstimation(saved);
+            line.setLineType(srcLine.getLineType());
+            line.setComponentItemCode(srcLine.getComponentItemCode());
+            line.setComponentName(srcLine.getComponentName());
+            line.setItemName(srcLine.getItemName());
+            line.setOpSequence(srcLine.getOpSequence());
+            line.setOperationName(srcLine.getOperationName());
+            line.setMachineCode(srcLine.getMachineCode());
+            line.setQtyRequired(srcLine.getQtyRequired());
+            line.setRatePerUnit(srcLine.getRatePerUnit());
+            line.setAmount(srcLine.getAmount());
+            line.setMachineHourRate(srcLine.getMachineHourRate());
+            line.setSetupTimeHrs(srcLine.getSetupTimeHrs());
+            line.setCycleTimeHrs(srcLine.getCycleTimeHrs());
+            line.setTotalTimeHrs(srcLine.getTotalTimeHrs());
+            line.setMachineCost(srcLine.getMachineCost());
+            line.setLabourHours(srcLine.getLabourHours());
+            line.setLabourRate(srcLine.getLabourRate());
+            line.setLabourCost(srcLine.getLabourCost());
+            line.setToolingCost(srcLine.getToolingCost());
+            line.setIsSubcontract(srcLine.getIsSubcontract());
+            line.setSubcontractRate(srcLine.getSubcontractRate());
+            line.setSubcontractCost(srcLine.getSubcontractCost());
+            line.setSourceRate(srcLine.getSourceRate());
+            line.setRemarks(srcLine.getRemarks());
+            line.setStockUom(srcLine.getStockUom());
+            line.setConversionRatio(srcLine.getConversionRatio());
+            line.setAlternateUom(srcLine.getAlternateUom());
+            line.setBomQtyAltUom(srcLine.getBomQtyAltUom());
+            line.setBomQtyStockUom(srcLine.getBomQtyStockUom());
+            line.setRateStockUom(srcLine.getRateStockUom());
+            line.setRateAltUom(srcLine.getRateAltUom());
+            line.setProductAmount(srcLine.getProductAmount());
+            line.setScrapQty(srcLine.getScrapQty());
+            line.setScrapRate(srcLine.getScrapRate());
+            line.setScrapAmount(srcLine.getScrapAmount());
+            line.setThickness(srcLine.getThickness());
+            line.setWidth(srcLine.getWidth());
+            line.setLength(srcLine.getLength());
+            line.setDimensionUom(srcLine.getDimensionUom());
+            line.setDensityFactor(srcLine.getDensityFactor());
+            line.setEfficiencyPct(srcLine.getEfficiencyPct());
+            line.setBatchQty(srcLine.getBatchQty());
+            line.setQty(srcLine.getQty());
+            line.setProcessCost(srcLine.getProcessCost());
+            line.setSetupRateHr(srcLine.getSetupRateHr());
+            line.setInsRateHr(srcLine.getInsRateHr());
+            line.setProcessTimeMin(srcLine.getProcessTimeMin());
+            line.setSetupTimeMin(srcLine.getSetupTimeMin());
+            line.setInsTimeMin(srcLine.getInsTimeMin());
+            line.setOtherBasis(srcLine.getOtherBasis());
+            line.setOtherPercent(srcLine.getOtherPercent());
+            line.setOtherType(srcLine.getOtherType());
+            line.setOtherDescription(srcLine.getOtherDescription());
+            line.setCreatedAt(Instant.now());
+            costEstimationLines.save(line);
+        }
+        return saved;
     }
 
     @DeleteMapping("/api/v1/planning/cost-estimations/{id}")
@@ -868,39 +1582,100 @@ public class PlanningMasterController {
         return costEstimations.save(ce);
     }
 
-    // ---- Auto-calculate cost estimation from BOM + Route ----
+    // ---- Auto-calculate cost estimation from BOM + Route (FRS §10/§22) ----
     @PostMapping("/api/v1/planning/cost-estimations/{id}/calculate")
     @RequirePermission(module = "PLANNING", screen = "*", action = "APPROVE")
     public CostEstimation calculateCostEstimation(@PathVariable Long id, Principal principal) {
         CostEstimation ce = costEstimations.findById(id).orElseThrow(() -> new RuntimeException("Cost Estimation not found"));
-        costEstimationLines.findByEstimationId(id).forEach(l -> costEstimationLines.deleteById(l.getId()));
+
+        // Preserve manual data: OTHER cost lines are never regenerated, and manual dimension /
+        // alt-UOM / efficiency overrides keyed by component or operation survive recalculation.
+        Map<String, CostEstimationLine> manualByComponent = new LinkedHashMap<>();
+        Map<Integer, CostEstimationLine> manualByOp = new LinkedHashMap<>();
+        List<CostEstimationLine> otherLines = new ArrayList<>();
+        for (CostEstimationLine l : costEstimationLines.findByEstimationId(id)) {
+            if ("OTHER".equalsIgnoreCase(l.getLineType())) { otherLines.add(l); continue; }
+            if ("MATERIAL".equalsIgnoreCase(l.getLineType()) && l.getComponentItemCode() != null) {
+                manualByComponent.put(l.getComponentItemCode(), l);
+            } else if ("MACHINE".equalsIgnoreCase(l.getLineType()) && l.getOpSequence() != null) {
+                manualByOp.put(l.getOpSequence(), l);
+            }
+            costEstimationLines.deleteById(l.getId());
+        }
 
         BigDecimal totalMaterialCost = BigDecimal.ZERO;
-        BigDecimal totalMachineCost = BigDecimal.ZERO;
+        BigDecimal totalProcessCost = BigDecimal.ZERO;
+        BigDecimal scrapCredit = BigDecimal.ZERO;
         BigDecimal batchQty = ce.getBatchQty() == null ? BigDecimal.ONE : ce.getBatchQty();
 
-        // Material cost from BOM
+        // Material cost from BOM (count-based, alternate-UOM or dimension-based)
         if (ce.getBomId() != null) {
             ProductionBOM bom = productionBoms.findById(ce.getBomId()).orElse(null);
             if (bom != null) {
                 for (ProductionBOMLine bomLine : bom.getLines()) {
+                    CostEstimationLine prior = manualByComponent.get(bomLine.getComponentItemCode());
                     BigDecimal qtyPer = bomLine.getQuantityPer() == null ? BigDecimal.ONE : bomLine.getQuantityPer();
-                    BigDecimal totalQty = qtyPer.multiply(batchQty);
-                    BigDecimal rate = BigDecimal.ZERO;
                     Optional<ItemMaster> itemOpt = items.findByCode(bomLine.getComponentItemCode());
-                    if (itemOpt.isPresent() && itemOpt.get().getDefaultRate() != null) {
-                        rate = itemOpt.get().getDefaultRate();
+                    BigDecimal rate = (itemOpt.isPresent() && itemOpt.get().getDefaultRate() != null)
+                        ? itemOpt.get().getDefaultRate() : BigDecimal.ZERO;
+
+                    BigDecimal thickness = prior != null ? prior.getThickness() : null;
+                    BigDecimal width = prior != null ? prior.getWidth() : null;
+                    BigDecimal length = prior != null ? prior.getLength() : null;
+                    BigDecimal density = prior != null ? prior.getDensityFactor() : null;
+                    BigDecimal conversionRatio = prior != null ? prior.getConversionRatio() : null;
+
+                    // FRS §22: dimension-based qty = Thickness × Width × Length × density factor;
+                    // fall back to the BOM's explicit required qty, then to quantity-per.
+                    BigDecimal unitQty = qtyPer;
+                    if (thickness != null && width != null && length != null && density != null) {
+                        unitQty = thickness.multiply(width).multiply(length).multiply(density);
+                    } else if (bomLine.getRequiredQty() != null) {
+                        unitQty = bomLine.getRequiredQty();
                     }
-                    BigDecimal amount = totalQty.multiply(rate);
+                    BigDecimal totalQty = unitQty.multiply(batchQty);
+
+                    // Alternate-UOM rate: prefer a stock-UOM rate, else convert an alt-UOM rate back.
+                    BigDecimal rateUsed = rate;
+                    if (prior != null && prior.getRateStockUom() != null) {
+                        rateUsed = prior.getRateStockUom();
+                    } else if (prior != null && prior.getRateAltUom() != null && conversionRatio != null
+                               && conversionRatio.compareTo(BigDecimal.ZERO) > 0) {
+                        rateUsed = prior.getRateAltUom().divide(conversionRatio, 6, RoundingMode.HALF_UP);
+                    }
+
+                    BigDecimal scrapQty = prior != null && prior.getScrapQty() != null ? prior.getScrapQty() : BigDecimal.ZERO;
+                    BigDecimal scrapRate = prior != null && prior.getScrapRate() != null ? prior.getScrapRate() : BigDecimal.ZERO;
+                    BigDecimal scrapAmount = scrapQty.multiply(scrapRate);
+                    BigDecimal productAmount = totalQty.multiply(rateUsed);
+                    BigDecimal amount = productAmount.subtract(scrapAmount); // scrap recovery is a credit
                     totalMaterialCost = totalMaterialCost.add(amount);
+                    scrapCredit = scrapCredit.add(scrapAmount);
 
                     CostEstimationLine line = new CostEstimationLine();
                     line.setEstimation(ce);
                     line.setLineType("MATERIAL");
                     line.setComponentItemCode(bomLine.getComponentItemCode());
                     line.setComponentName(bomLine.getDescription());
+                    line.setItemName(bomLine.getDescription());
+                    line.setStockUom(bomLine.getUom());
+                    line.setConversionRatio(conversionRatio);
+                    line.setAlternateUom(prior != null ? prior.getAlternateUom() : null);
+                    line.setBomQtyStockUom(unitQty);
+                    line.setBomQtyAltUom(conversionRatio != null && conversionRatio.compareTo(BigDecimal.ZERO) > 0
+                        ? unitQty.multiply(conversionRatio) : null);
+                    line.setRateStockUom(rateUsed);
+                    line.setRateAltUom(prior != null ? prior.getRateAltUom() : null);
                     line.setQtyRequired(totalQty);
-                    line.setRatePerUnit(rate);
+                    line.setRatePerUnit(rateUsed);
+                    line.setProductAmount(productAmount);
+                    line.setThickness(thickness);
+                    line.setWidth(width);
+                    line.setLength(length);
+                    line.setDensityFactor(density);
+                    line.setScrapQty(scrapQty);
+                    line.setScrapRate(scrapRate);
+                    line.setScrapAmount(scrapAmount);
                     line.setAmount(amount);
                     line.setCreatedAt(Instant.now());
                     costEstimationLines.save(line);
@@ -908,40 +1683,58 @@ public class PlanningMasterController {
             }
         }
 
-        // Machine cost from Route
-        if (ce.getRouteId() != null) {
+        // Process cost from Route — standard time inflated by efficiency (FRS §22)
+        boolean includeProcess = !Boolean.FALSE.equals(ce.getProcessRateApplicable());
+        if (includeProcess && ce.getRouteId() != null) {
             RouteSheet route = routeSheets.findById(ce.getRouteId()).orElse(null);
             if (route != null) {
                 for (RouteOperation op : route.getOperations()) {
+                    CostEstimationLine prior = op.getSequenceNo() != null ? manualByOp.get(op.getSequenceNo()) : null;
                     BigDecimal setupMin = op.getSetupTime() == null ? BigDecimal.ZERO : op.getSetupTime();
                     BigDecimal cycleMin = op.getCycleTime() == null ? BigDecimal.ZERO : op.getCycleTime();
                     BigDecimal setupHrs = setupMin.divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP);
                     BigDecimal cycleHrs = cycleMin.divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP);
-                    BigDecimal totalTimeHrs = setupHrs.add(cycleHrs.multiply(batchQty));
+                    BigDecimal standardTimeHrs = setupHrs.add(cycleHrs.multiply(batchQty));
 
                     BigDecimal hourlyRate = BigDecimal.ZERO;
+                    BigDecimal efficiencyPct = prior != null ? prior.getEfficiencyPct() : null;
                     if (op.getWorkCenterCode() != null) {
                         Optional<WorkCenter> wcOpt = workCenters.findByCode(op.getWorkCenterCode());
-                        if (wcOpt.isPresent() && wcOpt.get().getHourlyRate() != null) {
-                            hourlyRate = wcOpt.get().getHourlyRate();
+                        if (wcOpt.isPresent()) {
+                            WorkCenter wc = wcOpt.get();
+                            if (wc.getHourlyRate() != null) hourlyRate = wc.getHourlyRate();
+                            if (efficiencyPct == null && wc.getEfficiencyPct() != null) efficiencyPct = wc.getEfficiencyPct();
                         }
                     }
                     if (hourlyRate.compareTo(BigDecimal.ZERO) == 0 && op.getStandardCostRate() != null) {
                         hourlyRate = op.getStandardCostRate();
                     }
+                    // Actual Time = Standard Time ÷ (Efficiency / 100) — never cost at 100% theoretical.
+                    BigDecimal totalTimeHrs = standardTimeHrs;
+                    if (efficiencyPct != null && efficiencyPct.compareTo(BigDecimal.ZERO) > 0) {
+                        totalTimeHrs = standardTimeHrs.multiply(BigDecimal.valueOf(100))
+                            .divide(efficiencyPct, 6, RoundingMode.HALF_UP);
+                    }
                     BigDecimal machineCost = totalTimeHrs.multiply(hourlyRate);
-                    totalMachineCost = totalMachineCost.add(machineCost);
+                    totalProcessCost = totalProcessCost.add(machineCost);
 
                     CostEstimationLine line = new CostEstimationLine();
                     line.setEstimation(ce);
                     line.setLineType("MACHINE");
                     line.setOpSequence(op.getSequenceNo());
                     line.setOperationName(op.getOperationDescription());
+                    line.setItemName(ce.getItemDescription());
                     line.setMachineCode(op.getMachineCode());
                     line.setMachineHourRate(hourlyRate);
+                    line.setEfficiencyPct(efficiencyPct);
+                    line.setBatchQty(batchQty);
+                    line.setQty(cycleMin);
                     line.setSetupTimeHrs(setupHrs);
                     line.setCycleTimeHrs(cycleHrs);
+                    line.setSetupTimeMin(setupMin);
+                    line.setProcessTimeMin(cycleMin);
                     line.setTotalTimeHrs(totalTimeHrs);
+                    line.setProcessCost(machineCost);
                     line.setMachineCost(machineCost);
                     line.setCreatedAt(Instant.now());
                     costEstimationLines.save(line);
@@ -949,25 +1742,66 @@ public class PlanningMasterController {
             }
         }
 
-        BigDecimal scrapAllowance = ce.getScrapAllowanceCost() == null ? BigDecimal.ZERO : ce.getScrapAllowanceCost();
-        BigDecimal totalManufacturingCost = totalMaterialCost.add(totalMachineCost).add(scrapAllowance);
-        BigDecimal labourCost = ce.getTotalLabourCost() == null ? BigDecimal.ZERO : ce.getTotalLabourCost();
-        BigDecimal toolingCost = ce.getTotalToolingCost() == null ? BigDecimal.ZERO : ce.getTotalToolingCost();
-        BigDecimal subcontractCost = ce.getTotalSubcontractCost() == null ? BigDecimal.ZERO : ce.getTotalSubcontractCost();
-        BigDecimal overheadCost = ce.getTotalOverheadCost() == null ? BigDecimal.ZERO : ce.getTotalOverheadCost();
-        totalManufacturingCost = totalManufacturingCost.add(labourCost).add(toolingCost).add(subcontractCost).add(overheadCost);
+        // Other Cost — repeatable overhead % lines (ADD/DEDUCT), plus manual labour/tooling/subcontract/overhead
+        BigDecimal rawMaterialCost = totalMaterialCost;
+        BigDecimal otherCost = BigDecimal.ZERO;
+        for (CostEstimationLine l : otherLines) {
+            BigDecimal pct = l.getOtherPercent() == null ? BigDecimal.ZERO : l.getOtherPercent();
+            BigDecimal basis = otherBasisAmount(l.getOtherBasis(), rawMaterialCost, totalProcessCost,
+                ce.getTotalOverheadCost() == null ? BigDecimal.ZERO : ce.getTotalOverheadCost());
+            BigDecimal amt = basis.multiply(pct).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+            if ("DEDUCT".equalsIgnoreCase(l.getOtherType())) amt = amt.negate();
+            l.setAmount(amt);
+            l.setEstimation(ce);
+            l.setUpdatedAt(Instant.now());
+            costEstimationLines.save(l);
+            otherCost = otherCost.add(amt);
+        }
+        otherCost = otherCost
+            .add(ce.getTotalLabourCost() == null ? BigDecimal.ZERO : ce.getTotalLabourCost())
+            .add(ce.getTotalToolingCost() == null ? BigDecimal.ZERO : ce.getTotalToolingCost())
+            .add(ce.getTotalSubcontractCost() == null ? BigDecimal.ZERO : ce.getTotalSubcontractCost())
+            .add(ce.getTotalOverheadCost() == null ? BigDecimal.ZERO : ce.getTotalOverheadCost());
 
+        BigDecimal netCost = rawMaterialCost.add(totalProcessCost).add(otherCost);
+        BigDecimal profitBasis = switch (ce.getProfitFrom() == null ? "TOTAL" : ce.getProfitFrom().toUpperCase()) {
+            case "RAW_MATERIAL", "MATERIAL" -> rawMaterialCost;
+            case "PROCESS" -> totalProcessCost;
+            default -> netCost;
+        };
         BigDecimal profitMargin = ce.getProfitMarginPercent() == null ? BigDecimal.ZERO : ce.getProfitMarginPercent();
-        BigDecimal profitAmount = totalManufacturingCost.multiply(profitMargin).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-        BigDecimal sellingPrice = totalManufacturingCost.add(profitAmount);
+        BigDecimal profitAmount = profitBasis.multiply(profitMargin).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        BigDecimal makeupPct = ce.getMakeupPercent() == null ? BigDecimal.ZERO : ce.getMakeupPercent();
+        BigDecimal makeupAmount = netCost.multiply(makeupPct).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP)
+            .add(ce.getMakeupAmount() == null ? BigDecimal.ZERO : ce.getMakeupAmount());
+        BigDecimal preDiscount = netCost.add(profitAmount).add(makeupAmount);
+        BigDecimal discountPct = ce.getDiscountPercent() == null ? BigDecimal.ZERO : ce.getDiscountPercent();
+        BigDecimal discount = preDiscount.multiply(discountPct).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        BigDecimal sellingPrice = preDiscount.subtract(discount);
+        if (Boolean.TRUE.equals(ce.getRoundOff())) {
+            sellingPrice = sellingPrice.setScale(0, RoundingMode.HALF_UP);
+        }
 
-        ce.setTotalMaterialCost(totalMaterialCost);
-        ce.setTotalMachineCost(totalMachineCost);
-        ce.setTotalManufacturingCost(totalManufacturingCost);
+        ce.setTotalMaterialCost(rawMaterialCost);
+        ce.setTotalMachineCost(totalProcessCost);
+        ce.setScrapAllowanceCost(scrapCredit);
+        ce.setOtherCostAmount(otherCost);
+        ce.setNetCost(netCost);
+        ce.setTotalManufacturingCost(netCost);
         ce.setProfitAmount(profitAmount);
         ce.setEstimatedSellingPrice(sellingPrice);
         ce.setUpdatedAt(Instant.now());
         return costEstimations.save(ce);
+    }
+
+    private BigDecimal otherBasisAmount(String basis, BigDecimal rawMaterial, BigDecimal process, BigDecimal overhead) {
+        if (basis == null) return BigDecimal.ZERO;
+        return switch (basis.toUpperCase()) {
+            case "RAW_MATERIAL", "MATERIAL" -> rawMaterial;
+            case "PROCESS" -> process;
+            case "TOTAL", "NET" -> rawMaterial.add(process).add(overhead);
+            default -> BigDecimal.ZERO;
+        };
     }
 
     // ---- Cost Estimate vs Actual Reconciliation ----

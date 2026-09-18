@@ -1,6 +1,8 @@
+import StoreSelect from '../../../../components/common/StoreSelect';
 import { useState, useEffect } from 'react';
 import { useToast } from '../../../../contexts/ToastContext';
 import { getApiErrorMessage } from '../../../../utils/apiError';
+import StoreName from '../../../../components/common/StoreName';
 
 type ReturnTab =
   | 'register'
@@ -338,7 +340,7 @@ export default function ReturnManagementReports() {
                 <option value="SCRAP">SCRAP</option>
               </select>
             </label>
-            <label className="fld"><span>Location</span><input className="in" value={damagedLocation} onChange={(e) => setDamagedLocation(e.target.value)} /></label>
+            <label className="fld"><span>Location</span><StoreSelect value={damagedLocation} onChange={setDamagedLocation} placeholder="All stores" /></label>
             <label className="fld"><span>Item Code</span><input className="in" value={damagedItem} onChange={(e) => setDamagedItem(e.target.value)} /></label>
             <div className="fld" style={{ display: 'flex', alignItems: 'flex-end' }}>
               <button type="button" className="btn btn-p" onClick={fetchDamaged} disabled={loading}>
@@ -359,7 +361,7 @@ export default function ReturnManagementReports() {
                     const label = { DAMAGED: 'Damaged', REJECTED: 'Rejected', SCRAP: 'Scrap' }[r.stockStatus as string] || r.stockStatus;
                     return (
                       <tr key={i}>
-                        <td>{r.itemCode}</td><td>{r.location}</td><td>{r.batchNo || '-'}</td><td className="num">{r.heatNo || '-'}</td>
+                        <td>{r.itemCode}</td><td><StoreName code={r.location} /></td><td>{r.batchNo || '-'}</td><td className="num">{r.heatNo || '-'}</td>
                         <td><span className={`badge ${r.stockStatus === 'SCRAP' ? 'danger' : r.stockStatus === 'REJECTED' ? 'warn' : 'danger'}`}>{label}</span></td>
                         <td className="num">{r.qty}</td>
                       </tr>

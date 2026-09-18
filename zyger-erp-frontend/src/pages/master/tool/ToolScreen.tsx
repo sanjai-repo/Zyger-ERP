@@ -3,6 +3,7 @@ import apiClient from '../../../api/axiosClient';
 import { useToast } from '../../../contexts/ToastContext';
 import { getApiErrorMessage } from '../../../utils/apiError';
 import ConfirmActionModal from '../../../components/common/ConfirmActionModal';
+import StoreSelect from '../../../components/common/StoreSelect';
 
 export interface ToolItem {
   id: number;
@@ -454,8 +455,8 @@ export default function ToolScreen() {
               </label>
 
               <label className="fld">
-                <span>STORE CODE</span>
-                <input className="in" type="text" placeholder="STORE-01" value={storeCode} onChange={e => setStoreCode(e.target.value)} />
+                <span>STORE</span>
+                <StoreSelect value={storeCode} onChange={setStoreCode} />
               </label>
 
               <label className="fld">

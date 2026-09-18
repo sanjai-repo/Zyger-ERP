@@ -20,15 +20,29 @@ interface MachineLoadPlan {
 interface MachineLoadLine {
   id: number;
   machineCode: string;
-  machineDescription: string;
-  workCenter: string;
-  scheduledDate: string;
-  startTime: string;
-  endTime: string;
-  utilizationPercent: number;
-  workOrderId?: string;
-  operationCode?: string;
-  status: string;
+  loadDate?: string;
+  shiftName?: string;
+  availableHours?: number;
+  plannedLoadHours?: number;
+  utilizationPercent?: number;
+  isOverloaded?: boolean;
+  overloadHours?: number;
+  woNumber?: string;
+  operationSequence?: number;
+  woOperationCode?: string;
+  processQty?: number;
+  processTimeHrs?: number;
+  setupHours?: number;
+  runHours?: number;
+  previousProcessEnd?: string;
+  startTime?: string;
+  endTime?: string;
+  totalTimeSec?: number;
+  itemCode?: string;
+  itemName?: string;
+  processName?: string;
+  operatorCode?: string;
+  toolCode?: string;
   rescheduleAction?: string;
   rescheduleMachineCode?: string;
   rescheduleShift?: string;
@@ -49,6 +63,13 @@ function getUtilizationColor(pct: number): string {
   return '#22c55e';
 }
 
+function fmtDt(iso?: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleString([], { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
 export default function MachineLoadScreen() {
   const { toast } = useToast();
   const { closeTab } = useTabs();
@@ -65,6 +86,8 @@ export default function MachineLoadScreen() {
   const [loadLines, setLoadLines] = useState<MachineLoadLine[]>([]);
   const [loadingLines, setLoadingLines] = useState(false);
   const [generating, setGenerating] = useState<number | null>(null);
+  const [addForm, setAddForm] = useState<Record<string, unknown>>({});
+  const [adding, setAdding] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -127,16 +150,48 @@ export default function MachineLoadScreen() {
 
   const saveLine = async (line: MachineLoadLine) => {
     try {
-      await apiClient.put(`/v1/planning/machine-load-lines/${line.id}`, {
-        rescheduleAction: line.rescheduleAction || null,
-        rescheduleMachineCode: line.rescheduleMachineCode || null,
-        rescheduleShift: line.rescheduleShift || null,
-        rescheduleDate: line.rescheduleDate || null,
-      });
-      toast('Line reschedule updated.');
-      if (expandedId) toggleExpand(expandedId);
+      const body: Record<string, unknown> = {
+        startTime: line.startTime ?? null,
+        processQty: line.processQty ?? null,
+        operatorCode: line.operatorCode ?? null,
+        toolCode: line.toolCode ?? null,
+        remarks: null,
+      };
+      if ((line.rescheduleAction ?? '') === 'ANOTHER_MACHINE') {
+        body.machineCode = line.rescheduleMachineCode ?? null;
+      }
+      if ((line.rescheduleAction ?? '') === 'ANOTHER_DATE' && line.rescheduleDate) {
+        body.loadDate = new Date(`${line.rescheduleDate}T00:00:00`).toISOString();
+      }
+      if ((line.rescheduleAction ?? '') === 'ANOTHER_SHIFT') {
+        body.shiftName = line.rescheduleShift ?? null;
+      }
+      if ((line.rescheduleAction ?? '') === 'SUBCONTRACT') {
+        toast('Set the Route operation to subcontract, then regenerate.', 'error');
+        return;
+      }
+      await apiClient.put(`/v1/planning/machine-load-lines/${line.id}`, body);
+      toast('Line rescheduled and re-sequenced.');
+      if (expandedId) {
+        const { data } = await apiClient.get(`/v1/planning/machine-load-plans/${expandedId}/lines`);
+        setLoadLines(Array.isArray(data) ? data : data.content ?? []);
+      }
     } catch (e) {
       toast(getApiErrorMessage(e, 'Failed to update line.'), 'error');
+    }
+  };
+
+  // FRS §8 rule 3 / §19: recompute process time, End datetime and capacity overload server-side.
+  const calculateLine = async (line: MachineLoadLine) => {
+    try {
+      await apiClient.post(`/v1/planning/machine-load-plans/${expandedId}/lines/${line.id}/calculate`);
+      toast('Line calculated.');
+      if (expandedId) {
+        const { data } = await apiClient.get(`/v1/planning/machine-load-plans/${expandedId}/lines`);
+        setLoadLines(Array.isArray(data) ? data : data.content ?? []);
+      }
+    } catch (e) {
+      toast(getApiErrorMessage(e, 'Calculate failed.'), 'error');
     }
   };
 
@@ -144,6 +199,30 @@ export default function MachineLoadScreen() {
     setLoadLines((prev) =>
       prev.map((l) => (l.id === lineId ? { ...l, [field]: value } : l))
     );
+  };
+
+  // Add one Work Order + operation as a sequenced machine-load line (FRS §19).
+  const addLine = async () => {
+    if (!expandedId || !addForm.woNumber) { toast('Enter a Work Order number.', 'error'); return; }
+    setAdding(true);
+    try {
+      const body: Record<string, unknown> = {
+        woNumber: addForm.woNumber,
+        operationSequence: addForm.operationSequence ? Number(addForm.operationSequence) : 1,
+        machineCode: addForm.machineCode ?? null,
+        processQty: addForm.processQty ? Number(addForm.processQty) : null,
+      };
+      if (addForm.startTime) body.startTime = addForm.startTime;
+      if (addForm.loadDate) body.loadDate = new Date(`${addForm.loadDate}T00:00:00`).toISOString();
+      await apiClient.post(`/v1/planning/machine-load-plans/${expandedId}/lines`, body);
+      toast('Operation line added and sequenced.');
+      setAddForm({});
+      const { data } = await apiClient.get(`/v1/planning/machine-load-plans/${expandedId}/lines`);
+      setLoadLines(Array.isArray(data) ? data : data.content ?? []);
+    } catch (e) {
+      toast(getApiErrorMessage(e, 'Failed to add line.'), 'error');
+    }
+    setAdding(false);
   };
 
   const toggleExpand = async (id: number) => {
@@ -282,19 +361,17 @@ export default function MachineLoadScreen() {
                                   <tr>
                                     <th>S.No</th>
                                     <th>Machine</th>
-                                    <th>Description</th>
-                                    <th>Work Center</th>
+                                    <th>Process</th>
+                                    <th>Qty</th>
                                     <th>Date</th>
                                     <th>Start</th>
                                     <th>End</th>
+                                    <th>Prev End</th>
                                     <th>Utilization</th>
                                     <th>Work Order</th>
-                                    <th>Operation</th>
-                                    <th>Status</th>
-                                    <th>Reschedule Action</th>
-                                    <th>Reschedule Machine</th>
-                                    <th>Reschedule Shift</th>
-                                    <th>Reschedule Date</th>
+                                    <th>Op</th>
+                                    <th>Overload</th>
+                                    <th>Action</th>
                                     <th></th>
                                   </tr>
                                 </thead>
@@ -303,19 +380,28 @@ export default function MachineLoadScreen() {
                                     <tr key={line.id}>
                                       <td className="num mut">{idx + 1}</td>
                                       <td>{line.machineCode}</td>
-                                      <td>{line.machineDescription}</td>
-                                      <td>{line.workCenter}</td>
-                                      <td>{line.scheduledDate}</td>
-                                      <td>{line.startTime}</td>
-                                      <td>{line.endTime}</td>
+                                      <td>{line.processName ?? line.woOperationCode ?? ''}</td>
+                                      <td className="num">{line.processQty ?? ''}</td>
+                                      <td>{line.loadDate ? line.loadDate.slice(0, 10) : ''}</td>
+                                      <td>{line.startTime ? fmtDt(line.startTime) : ''}</td>
+                                      <td>{line.endTime ? fmtDt(line.endTime) : ''}</td>
+                                      <td>{line.previousProcessEnd ? fmtDt(line.previousProcessEnd) : ''}</td>
                                       <td>
-                                        <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#fff', background: getUtilizationColor(line.utilizationPercent) }}>
-                                          {line.utilizationPercent.toFixed(1)}%
+                                        <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#fff', background: getUtilizationColor(line.utilizationPercent ?? 0) }}>
+                                          {(line.utilizationPercent ?? 0).toFixed(1)}%
                                         </span>
                                       </td>
-                                      <td>{line.workOrderId ?? ''}</td>
-                                      <td>{line.operationCode ?? ''}</td>
-                                      <td>{line.status}</td>
+                                      <td>{line.woNumber ?? ''}</td>
+                                      <td>{line.operationSequence ?? ''}</td>
+                                      <td>
+                                        {line.isOverloaded ? (
+                                          <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#fff', background: '#dc2626' }}>
+                                            +{(line.overloadHours ?? 0).toFixed(2)}h
+                                          </span>
+                                        ) : (
+                                          <span className="mut">-</span>
+                                        )}
+                                      </td>
                                       <td>
                                         <select
                                           className="in"
@@ -328,31 +414,28 @@ export default function MachineLoadScreen() {
                                           <option value="ANOTHER_DATE">Another Date</option>
                                           <option value="SUBCONTRACT">Subcontract</option>
                                         </select>
-                                      </td>
-                                      <td>
                                         {(line.rescheduleAction ?? '') === 'ANOTHER_MACHINE' && (
                                           <input
                                             className="in"
+                                            style={{ marginTop: 4 }}
                                             value={line.rescheduleMachineCode ?? ''}
                                             onChange={(e) => updateLine(line.id, 'rescheduleMachineCode', e.target.value)}
                                             placeholder="Machine code"
                                           />
                                         )}
-                                      </td>
-                                      <td>
                                         {(line.rescheduleAction ?? '') === 'ANOTHER_SHIFT' && (
                                           <input
                                             className="in"
+                                            style={{ marginTop: 4 }}
                                             value={line.rescheduleShift ?? ''}
                                             onChange={(e) => updateLine(line.id, 'rescheduleShift', e.target.value)}
                                             placeholder="Shift"
                                           />
                                         )}
-                                      </td>
-                                      <td>
                                         {(line.rescheduleAction ?? '') === 'ANOTHER_DATE' && (
                                           <input
                                             className="in"
+                                            style={{ marginTop: 4 }}
                                             type="date"
                                             value={line.rescheduleDate ?? ''}
                                             onChange={(e) => updateLine(line.id, 'rescheduleDate', e.target.value)}
@@ -360,6 +443,9 @@ export default function MachineLoadScreen() {
                                         )}
                                       </td>
                                       <td>
+                                        <button className="ibtn" title="Calculate time & capacity" onClick={() => calculateLine(line)}>
+                                          <span className="material-symbols-rounded">calculate</span>
+                                        </button>
                                         {(line.rescheduleAction ?? '') !== '' && (
                                           <button className="ibtn" title="Save reschedule" onClick={() => saveLine(line)}>
                                             <span className="material-symbols-rounded">save</span>
@@ -371,6 +457,48 @@ export default function MachineLoadScreen() {
                                 </tbody>
                               </table>
                             )}
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
+                              <span className="mut" style={{ fontSize: 12 }}>Add operation line:</span>
+                              <input
+                                className="in"
+                                style={{ width: 140 }}
+                                placeholder="WO No"
+                                value={(addForm.woNumber as string) ?? ''}
+                                onChange={(e) => setAddForm((c) => ({ ...c, woNumber: e.target.value }))}
+                              />
+                              <input
+                                className="in"
+                                style={{ width: 70 }}
+                                placeholder="Op No"
+                                value={(addForm.operationSequence as string) ?? ''}
+                                onChange={(e) => setAddForm((c) => ({ ...c, operationSequence: e.target.value }))}
+                              />
+                              <input
+                                className="in"
+                                style={{ width: 110 }}
+                                placeholder="Machine"
+                                value={(addForm.machineCode as string) ?? ''}
+                                onChange={(e) => setAddForm((c) => ({ ...c, machineCode: e.target.value }))}
+                              />
+                              <input
+                                className="in"
+                                style={{ width: 80 }}
+                                placeholder="Qty"
+                                value={(addForm.processQty as string) ?? ''}
+                                onChange={(e) => setAddForm((c) => ({ ...c, processQty: e.target.value }))}
+                              />
+                              <input
+                                className="in"
+                                style={{ width: 160 }}
+                                type="datetime-local"
+                                placeholder="Start"
+                                value={(addForm.startTime as string) ?? ''}
+                                onChange={(e) => setAddForm((c) => ({ ...c, startTime: new Date(e.target.value).toISOString() }))}
+                              />
+                              <button className="btn btn-primary" disabled={adding} onClick={addLine}>
+                                <span className="material-symbols-rounded" style={{ fontSize: 16 }}>add</span> Add
+                              </button>
+                            </div>
                           </div>
                         </td>
                       </tr>

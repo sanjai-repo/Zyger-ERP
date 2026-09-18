@@ -1,8 +1,10 @@
+import UomName from '../../components/common/UomName';
 import { useEffect, useState } from 'react';
 import apiClient from '../../api/axiosClient';
 import { useToast } from '../../contexts/ToastContext';
 import { getApiErrorMessage } from '../../utils/apiError';
 import ConfirmActionModal from '../../components/common/ConfirmActionModal';
+import StoreSelect from '../../components/common/StoreSelect';
 
 interface Item {
   id: number; code: string; description: string; uom?: string;
@@ -190,7 +192,7 @@ export default function ItemMasterScreen() {
                 <input className="in" type="number" step="0.01" value={String(form.safetyStock ?? '')} onChange={(e) => set('safetyStock', e.target.value ? Number(e.target.value) : null)} />
               </label>
               <label className="fld"><span>Default Warehouse</span>
-                <input className="in" value={String(form.defaultWarehouse ?? '')} onChange={(e) => set('defaultWarehouse', e.target.value)} />
+                <StoreSelect value={String(form.defaultWarehouse ?? '')} onChange={(code) => set('defaultWarehouse', code)} />
               </label>
               <label className="fld"><span>Batch Control</span>
                 <select className="in" value={String(form.batchControl ?? false)} onChange={(e) => set('batchControl', e.target.value === 'true')}>
@@ -248,7 +250,7 @@ export default function ItemMasterScreen() {
                     <td className="num mut">{page * PAGE_SIZE + idx + 1}</td>
                     <td>{r.code}</td>
                     <td>{r.description}</td>
-                    <td>{r.uom ?? ''}</td>
+                    <td><UomName value={r.uom} /></td>
                     <td>{r.weight != null && Number(r.weight) > 0 ? `${r.weight} kg` : '—'}</td>
                     <td>{groupRows.find(g => g.code === r.itemGroup)?.name ?? r.itemGroup ?? ''}</td>
                     <td>{r.category ?? ''}</td>

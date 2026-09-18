@@ -116,6 +116,50 @@ public class CostEstimation {
     @Column(name = "valid_upto")
     Instant validUpto;
 
+    // ── FRS §10 / §22 (Phase 3, additive) ──────────────────────────────
+    /** Costing basis for material lines, e.g. FIFO / WEIGHTED_AVG / STANDARD. */
+    @Column(name = "rate_from", length = 30)
+    String rateFrom;
+
+    @Column(name = "reference_screen", length = 60)
+    String referenceScreen;
+
+    @Column(name = "reference_no", length = 60)
+    String referenceNo;
+
+    @Column(name = "product_image_url", length = 500)
+    String productImageUrl;
+
+    /** Whether routing/process cost is included in this estimate. */
+    @Column(name = "process_rate_applicable")
+    Boolean processRateApplicable = true;
+
+    /** Basis on which profit % is applied: RAW_MATERIAL, PROCESS or TOTAL. */
+    @Column(name = "profit_from", length = 20)
+    String profitFrom = "TOTAL";
+
+    @Column(name = "makeup_percent", precision = 5, scale = 2)
+    BigDecimal makeupPercent;
+
+    @Column(name = "makeup_amount", precision = 38, scale = 2)
+    BigDecimal makeupAmount;
+
+    @Column(name = "discount_percent", precision = 5, scale = 2)
+    BigDecimal discountPercent;
+
+    @Column(name = "net_cost", precision = 38, scale = 2)
+    BigDecimal netCost;
+
+    @Column(name = "other_cost_amount", precision = 38, scale = 2)
+    BigDecimal otherCostAmount;
+
+    @Column(name = "round_off")
+    Boolean roundOff = false;
+
+    /** Link to the immediately previous version when "Go to New Version" is used. */
+    @Column(name = "prior_version_id")
+    Long priorVersionId;
+
     @Column(name = "prepared_by", length = 100)
     String preparedBy;
     @Column(name = "prepared_date")

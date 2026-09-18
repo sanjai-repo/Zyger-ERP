@@ -30,6 +30,7 @@ public class EmailService {
 
     private final JavaMailSender mailSender;
     private final CompanyInfoRepository companyInfoRepository;
+    private final UomNameResolver uomNames;
 
     @Value("${app.mail.from-email:}")
     private String fromEmailOverride;
@@ -273,7 +274,7 @@ public class EmailService {
                         .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;\">").append(safe(it.getItemName())).append("</td>")
                         .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;\">").append(safe(it.getSpecification())).append("</td>")
                         .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;text-align:right;\">").append(it.getRequiredQty() != null ? it.getRequiredQty().toPlainString() : "").append("</td>")
-                        .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;\">").append(safe(it.getUom())).append("</td>")
+                        .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;\">").append(safe(uomNames.name(it.getUom()))).append("</td>")
                         .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;\">").append(fmtDate(it.getRequiredDeliveryDate())).append("</td>")
                         .append("</tr>");
             }
@@ -324,7 +325,7 @@ public class EmailService {
                         .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;\">").append(safe(it.getItemCode())).append("</td>")
                         .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;\">").append(safe(it.getItemName())).append("</td>")
                         .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;text-align:right;\">").append(it.getOrderQty() != null ? it.getOrderQty().toPlainString() : "").append("</td>")
-                        .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;\">").append(safe(it.getUom())).append("</td>")
+                        .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;\">").append(safe(uomNames.name(it.getUom()))).append("</td>")
                         .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;text-align:right;\">").append(it.getUnitPrice() != null ? it.getUnitPrice().toPlainString() : "").append("</td>")
                         .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;text-align:right;\">").append(lineTotal.toPlainString()).append("</td>")
                         .append("</tr>");
@@ -372,7 +373,7 @@ public class EmailService {
                 items.append("<tr>")
                         .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;\">").append(safe(it.getItemCode())).append("</td>")
                         .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;text-align:right;\">").append(it.getQty() != null ? it.getQty().toPlainString() : "").append("</td>")
-                        .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;\">").append(safe(it.getUom())).append("</td>")
+                        .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;\">").append(safe(uomNames.name(it.getUom()))).append("</td>")
                         .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;text-align:right;\">").append(it.getUnitPrice() != null ? it.getUnitPrice().toPlainString() : "").append("</td>")
                         .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;text-align:right;\">").append(lineTotal.toPlainString()).append("</td>")
                         .append("</tr>");
@@ -416,7 +417,7 @@ public class EmailService {
                         .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;\">").append(safe(it.getItemCode())).append("</td>")
                         .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;\">").append(safe(it.getItemName())).append("</td>")
                         .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;text-align:right;\">").append(it.getOrderQty() != null ? it.getOrderQty().toPlainString() : "").append("</td>")
-                        .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;\">").append(safe(it.getUom())).append("</td>")
+                        .append("<td style=\"padding:6px 8px;border:1px solid #e2e8f0;\">").append(safe(uomNames.name(it.getUom()))).append("</td>")
                         .append("</tr>");
             }
         }

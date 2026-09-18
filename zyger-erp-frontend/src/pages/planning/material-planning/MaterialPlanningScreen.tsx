@@ -14,23 +14,48 @@ interface MaterialPlan {
   plannedBy: string;
   status: string;
   remarks?: string;
+  planningType?: string;
+  runMode?: string;
   lines?: MaterialPlanLine[];
 }
 
+const PLANNING_TYPES = [
+  { value: 'ALL', label: 'All Active Work Orders' },
+  { value: 'SALES_WORK_ORDER', label: 'Sales Work Order' },
+  { value: 'INVENTORY_WORK_ORDER', label: 'Inventory Work Order' },
+  { value: 'FIXED_SALES_ORDER', label: 'Fixed Sales Order' },
+  { value: 'SCHEDULE_SALES_ORDER', label: 'Schedule Sales Order' },
+  { value: 'MIN_STOCK_MANUFACTURING_ITEM', label: 'Min Stock – Manufacturing Item' },
+  { value: 'MIN_STOCK_PURCHASE_ITEM', label: 'Min Stock – Purchase Item' },
+  { value: 'MANUAL', label: 'Manual' },
+];
+
+// Field names mirror MaterialPlanLine on the backend side (grossRequirement/onHandStock/
+// netRequirement/recommendedOrderQty/...) so the run output is actually shown in the grid.
 interface MaterialPlanLine {
   id: number;
   itemCode: string;
-  itemDescription: string;
-  requiredQty: number;
-  availableQty: number;
-  shortfallQty: number;
-  suggestedOrderQty: number;
-  sourceType: string;
+  itemDescription?: string;
+  uom?: string;
+  bomLevel?: number;
+  sourceWoNumber?: string;
+  grossRequirement?: number;
+  onHandStock?: number;
+  onOrderQty?: number;
+  wipQty?: number;
+  safetyStock?: number;
+  netRequirement?: number;
+  recommendedOrderQty?: number;
+  orderType?: string;
+  requiredDate?: string;
+  leadTimeDays?: number;
+  estimatedCost?: number;
+  actionStatus?: string;
+  reservedQty?: number;
+  reservationStatus?: string;
+  allocatedStock?: number;
+  priority?: string;
   remarks?: string;
-  reservedQty: number;
-  reservationStatus: string;
-  allocatedStock: number;
-  netRequirement: number;
 }
 
 const PAGE_SIZE = 20;
@@ -39,6 +64,12 @@ const STATUS_COLORS: Record<string, { color: string; bg: string }> = {
   DRAFT:    { color: '#888',    bg: '#e9ecef' },
   COMPLETE: { color: '#22c55e', bg: '#d4edda' },
   ERROR:    { color: '#ef4444', bg: '#f8d7da' },
+};
+
+const ACTION_STATUS_COLORS: Record<string, { color: string; bg: string }> = {
+  PENDING: { color: '#d97706', bg: '#fef3c7' },
+  SPAWNED: { color: '#2563eb', bg: '#dbeafe' },
+  DONE:    { color: '#22c55e', bg: '#d4edda' },
 };
 
 export default function MaterialPlanningScreen() {
@@ -57,6 +88,7 @@ export default function MaterialPlanningScreen() {
   const [planLines, setPlanLines] = useState<MaterialPlanLine[]>([]);
   const [loadingLines, setLoadingLines] = useState(false);
   const [runningMrp, setRunningMrp] = useState<number | null>(null);
+  const [spawningId, setSpawningId] = useState<number | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -117,6 +149,18 @@ export default function MaterialPlanningScreen() {
     setRunningMrp(null);
   };
 
+  const spawnPlan = async (id: number) => {
+    setSpawningId(id);
+    try {
+      const { data } = await apiClient.post(`/v1/planning/material-plans/${id}/spawn`);
+      toast(`Spawned ${data.spawnedCount ?? 0} order(s) from the plan.`);
+      load();
+    } catch (e) {
+      toast(getApiErrorMessage(e, 'Spawn failed.'), 'error');
+    }
+    setSpawningId(null);
+  };
+
   const toggleExpand = async (id: number) => {
     if (expandedId === id) { setExpandedId(null); setPlanLines([]); return; }
     setExpandedId(id);
@@ -131,7 +175,45 @@ export default function MaterialPlanningScreen() {
     setLoadingLines(false);
   };
 
+  const reserve = async (line: MaterialPlanLine) => {
+    const qty = line.netRequirement ?? line.grossRequirement ?? 0;
+    try {
+      await apiClient.put(`/v1/planning/material-plans/lines/${line.id}`, {
+        itemCode: line.itemCode,
+        itemDescription: line.itemDescription,
+        uom: line.uom,
+        bomLevel: line.bomLevel,
+        grossRequirement: line.grossRequirement,
+        onHandStock: line.onHandStock,
+        onOrderQty: line.onOrderQty,
+        wipQty: line.wipQty,
+        safetyStock: line.safetyStock,
+        netRequirement: line.netRequirement,
+        recommendedOrderQty: line.recommendedOrderQty,
+        orderType: line.orderType,
+        requiredDate: line.requiredDate,
+        leadTimeDays: line.leadTimeDays,
+        actionStatus: line.actionStatus ?? 'PENDING',
+        reservationStatus: 'RESERVED',
+        reservedQty: qty,
+        allocatedStock: line.allocatedStock,
+      });
+      setPlanLines((prev) => prev.map((l) => l.id === line.id ? { ...l, reservationStatus: 'RESERVED', reservedQty: qty } : l));
+      toast('Stock reserved.');
+    } catch (e) {
+      toast(getApiErrorMessage(e, 'Reserve failed.'), 'error');
+    }
+  };
+
   const set = (k: string, v: unknown) => setForm((c) => ({ ...c, [k]: v }));
+
+  const filtered = rows.filter((r) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return (r.planNumber ?? '').toLowerCase().includes(q)
+      || (r.plannedBy ?? '').toLowerCase().includes(q)
+      || (r.remarks ?? '').toLowerCase().includes(q);
+  });
 
   return (
     <>
@@ -168,6 +250,19 @@ export default function MaterialPlanningScreen() {
           <label className="fld">
             <span>Triggered By</span>
             <input className="in" value={String(form.triggeredBy ?? '')} onChange={(e) => set('triggeredBy', e.target.value)} />
+          </label>
+          <label className="fld">
+            <span>Planning Type</span>
+            <select className="in" value={String(form.planningType ?? 'ALL')} onChange={(e) => set('planningType', e.target.value)}>
+              {PLANNING_TYPES.map((pt) => <option key={pt.value} value={pt.value}>{pt.label}</option>)}
+            </select>
+          </label>
+          <label className="fld">
+            <span>Run Mode</span>
+            <select className="in" value={String(form.runMode ?? 'RUN')} onChange={(e) => set('runMode', e.target.value)}>
+              <option value="RUN">Run MRP</option>
+              <option value="RUN_WITHOUT_STOCK">Run MRP W/o Stock</option>
+            </select>
           </label>
           <label className="fld">
             <span>Status</span>
@@ -214,15 +309,16 @@ export default function MaterialPlanningScreen() {
                   <th>Plan Number</th>
                   <th>Plan Date</th>
                   <th>Planned By</th>
+                  <th>Planning Type</th>
                   <th>Status</th>
                   <th>Remarks</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.length === 0 ? (
-                  <tr><td colSpan={8}><div className="empty"><span className="material-symbols-rounded">description</span> No material plans.</div></td></tr>
-                ) : rows.map((r, idx) => (
+                {filtered.length === 0 ? (
+                  <tr><td colSpan={9}><div className="empty"><span className="material-symbols-rounded">description</span> No material plans.</div></td></tr>
+                ) : filtered.map((r, idx) => (
                   <>
                     <tr key={r.id} onClick={() => toggleExpand(r.id)} style={{ cursor: 'pointer' }}>
                       <td className="num mut">{page * PAGE_SIZE + idx + 1}</td>
@@ -232,6 +328,7 @@ export default function MaterialPlanningScreen() {
                       <td>{r.planNumber}</td>
                       <td>{r.planDate}</td>
                       <td>{r.plannedBy}</td>
+                      <td>{PLANNING_TYPES.find((pt) => pt.value === r.planningType)?.label ?? r.planningType ?? 'All Active Work Orders'}</td>
                       <td>
                         <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 12, fontSize: 12, fontWeight: 600, color: (STATUS_COLORS[r.status] ?? STATUS_COLORS.DRAFT).color, background: (STATUS_COLORS[r.status] ?? STATUS_COLORS.DRAFT).bg }}>
                           {r.status}
@@ -241,6 +338,9 @@ export default function MaterialPlanningScreen() {
                       <td>
                         <button className="ibtn" title="Run MRP" disabled={runningMrp === r.id || r.status !== 'DRAFT'} onClick={(e) => { e.stopPropagation(); runMrp(r.id); }}>
                           <span className="material-symbols-rounded">{runningMrp === r.id ? 'sync' : 'play_arrow'}</span>
+                        </button>
+                        <button className="ibtn" title="Spawn orders" disabled={spawningId === r.id || r.status === 'DRAFT'} onClick={(e) => { e.stopPropagation(); spawnPlan(r.id); }}>
+                          <span className="material-symbols-rounded">{spawningId === r.id ? 'sync' : 'rocket_launch'}</span>
                         </button>
                         <button className="ibtn" title="Edit" onClick={(e) => { e.stopPropagation(); setForm(r as unknown as Record<string, unknown>); setEditId(r.id); }}>
                           <span className="material-symbols-rounded">edit</span>
@@ -254,7 +354,7 @@ export default function MaterialPlanningScreen() {
                     </tr>
                     {expandedId === r.id && (
                       <tr key={`${r.id}-lines`}>
-                        <td colSpan={8}>
+                        <td colSpan={9}>
                           <div style={{ background: '#f9fafb', padding: 12, borderBottom: '1px solid #e5e7eb' }}>
                             <h4 style={{ margin: '0 0 8px', fontSize: 13, color: '#555' }}>Plan Lines</h4>
                             {loadingLines ? (
@@ -268,14 +368,19 @@ export default function MaterialPlanningScreen() {
                                     <th>S.No</th>
                                     <th>Item Code</th>
                                     <th>Description</th>
-                                    <th>Required Qty</th>
-                                    <th>Available Qty</th>
-                                    <th>Shortfall</th>
-                                    <th>Suggested Order</th>
+                                    <th className="num">BOM Lvl</th>
+                                    <th className="num">Required</th>
+                                    <th className="num">Available</th>
+                                    <th className="num">On Order</th>
+                                    <th className="num">WIP</th>
+                                    <th className="num">Safety</th>
+                                    <th className="num">Shortfall</th>
+                                    <th className="num">Suggested Order</th>
+                                    <th>Order Type</th>
                                     <th>Source</th>
-                                    <th>Reserved Qty</th>
-                                    <th>Reservation Status</th>
-                                    <th>Allocated Stock</th>
+                                    <th>Action</th>
+                                    <th>Reserved</th>
+                                    <th>Reservation</th>
                                     <th>Remarks</th>
                                     <th>Actions</th>
                                   </tr>
@@ -285,12 +390,22 @@ export default function MaterialPlanningScreen() {
                                     <tr key={line.id}>
                                       <td className="num mut">{idx + 1}</td>
                                       <td>{line.itemCode}</td>
-                                      <td>{line.itemDescription}</td>
-                                      <td>{line.requiredQty}</td>
-                                      <td>{line.availableQty}</td>
-                                      <td style={{ color: line.shortfallQty > 0 ? '#ef4444' : undefined }}>{line.shortfallQty}</td>
-                                      <td>{line.suggestedOrderQty}</td>
-                                      <td>{line.sourceType}</td>
+                                      <td>{line.itemDescription ?? ''}</td>
+                                      <td className="num">{line.bomLevel ?? 0}</td>
+                                      <td className="num">{line.grossRequirement}</td>
+                                      <td className="num">{line.onHandStock}</td>
+                                      <td className="num">{line.onOrderQty}</td>
+                                      <td className="num">{line.wipQty}</td>
+                                      <td className="num">{line.safetyStock}</td>
+                                      <td className="num" style={{ color: (line.netRequirement ?? 0) > 0 ? '#ef4444' : undefined }}>{line.netRequirement}</td>
+                                      <td className="num">{line.recommendedOrderQty}</td>
+                                      <td>{line.orderType ?? ''}</td>
+                                      <td>{line.sourceWoNumber ?? ''}</td>
+                                      <td>
+                                        <span style={{ display: 'inline-block', padding: '1px 8px', borderRadius: 12, fontSize: 11, fontWeight: 600, color: (ACTION_STATUS_COLORS[line.actionStatus ?? 'PENDING']).color, background: (ACTION_STATUS_COLORS[line.actionStatus ?? 'PENDING']).bg }}>
+                                          {line.actionStatus ?? 'PENDING'}
+                                        </span>
+                                      </td>
                                       <td>{line.reservedQty}</td>
                                       <td>
                                         <select className="in" value={line.reservationStatus ?? ''} onChange={(e) => {
@@ -303,12 +418,9 @@ export default function MaterialPlanningScreen() {
                                           <option value="PARTIALLY_RESERVED">Partially Reserved</option>
                                         </select>
                                       </td>
-                                      <td>{line.allocatedStock}</td>
                                       <td>{line.remarks ?? ''}</td>
                                       <td>
-                                        <button className="ibtn" title="Reserve" disabled={line.reservationStatus === 'RESERVED'} onClick={() => {
-                                          setPlanLines((prev) => prev.map((l) => l.id === line.id ? { ...l, reservationStatus: 'RESERVED', reservedQty: line.netRequirement } : l));
-                                        }}>
+                                        <button className="ibtn" title="Reserve" disabled={line.reservationStatus === 'RESERVED'} onClick={() => reserve(line)}>
                                           <span className="material-symbols-rounded">inventory_2</span>
                                         </button>
                                       </td>

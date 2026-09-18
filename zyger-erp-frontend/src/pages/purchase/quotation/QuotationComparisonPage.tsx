@@ -1,3 +1,4 @@
+import UomName from '../../../components/common/UomName';
 import { useEffect, useMemo, useState } from 'react';
 import axiosClient from '../../../api/axiosClient';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -636,7 +637,7 @@ export default function QuotationComparisonPage() {
                         <tr key={item.itemCode}>
                           <td style={{ fontWeight: 600, color: 'var(--text)' }}>
                             {item.itemCode} — {item.itemName}
-                            <div className="mut">Req Qty: {item.qty} {item.uom}</div>
+                            <div className="mut">Req Qty: {item.qty} <UomName value={item.uom} /></div>
                           </td>
                           {filteredQuotations.map((q) => {
                             const l = item.lines[q.id];

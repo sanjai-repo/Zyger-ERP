@@ -10,6 +10,8 @@ interface GapAnalysis {
   scope: string;
   scopeValue?: string;
   status: string;
+  runMode?: string;
+  standardRef?: string;
   remarks?: string;
 }
 
@@ -32,6 +34,13 @@ interface GapResult {
   gapOwner?: string;
   responsibleDepartment?: string;
   expectedResolutionDate?: string;
+  clauseNo?: string;
+  clauseText?: string;
+  complianceStatus?: string;
+  referenceDoc?: string;
+  procedureRef?: string;
+  changeCategory?: string;
+  gapDescription?: string;
 }
 
 const PAGE_SIZE = 20;
@@ -59,6 +68,7 @@ export default function GapAnalysisScreen() {
   const [editId, setEditId] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GapAnalysis | null>(null);
   const [runTarget, setRunTarget] = useState<GapAnalysis | null>(null);
+  const [runKind, setRunKind] = useState<'CAPACITY' | 'QMS'>('CAPACITY');
   const [busy, setBusy] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [results, setResults] = useState<GapResult[]>([]);
@@ -139,6 +149,19 @@ export default function GapAnalysisScreen() {
     setBusy(false);
   };
 
+  const runQms = async () => {
+    if (!runTarget) return;
+    setBusy(true);
+    try {
+      await apiClient.post(`/v1/planning/gap-analysis/${runTarget.id}/run-qms`, {});
+      toast('QMS clause analysis completed.');
+      setRunTarget(null); load();
+    } catch (e) {
+      toast(getApiErrorMessage(e, 'QMS run failed.'), 'error');
+    }
+    setBusy(false);
+  };
+
   const toggleResults = async (id: number) => {
     if (expandedId === id) { setExpandedId(null); setResults([]); return; }
     setExpandedId(id);
@@ -175,6 +198,8 @@ export default function GapAnalysisScreen() {
             <span>Scope *</span>
             <select className="in" value={String(form.scope ?? '')} onChange={(e) => set('scope', e.target.value)}>
               <option value="">Select...</option>
+              <option value="PLANT">Plant (QMS)</option>
+              <option value="ITEM">Item (QMS)</option>
               <option value="ALL">All</option>
               <option value="CUSTOMER">Customer</option>
               <option value="ITEM_GROUP">Item Group</option>
@@ -265,8 +290,11 @@ export default function GapAnalysisScreen() {
                       </td>
                       <td>{r.remarks ?? ''}</td>
                       <td>
-                        <button className="ibtn" title="Run Analysis" onClick={(e) => { e.stopPropagation(); setRunTarget(r); }}>
+                        <button className="ibtn" title="Run Analysis" onClick={(e) => { e.stopPropagation(); setRunKind('CAPACITY'); setRunTarget(r); }}>
                           <span className="material-symbols-rounded">play_arrow</span>
+                        </button>
+                        <button className="ibtn" title="Run QMS Clause Analysis" onClick={(e) => { e.stopPropagation(); setRunKind('QMS'); setRunTarget(r); }}>
+                          <span className="material-symbols-rounded">fact_check</span>
                         </button>
                         <button className="ibtn" title="Edit" onClick={(e) => { e.stopPropagation(); setForm(r as unknown as Record<string, unknown>); setEditId(r.id); }}>
                           <span className="material-symbols-rounded">edit</span>
@@ -278,7 +306,7 @@ export default function GapAnalysisScreen() {
                     </tr>
                     {expandedId === r.id && (
                       <tr key={`${r.id}-results`}>
-                        <td colSpan={8}>
+                        <td colSpan={20}>
                           <div style={{ background: '#f9fafb', padding: 12, borderBottom: '1px solid #e5e7eb' }}>
                             <h4 style={{ margin: '0 0 8px', fontSize: 13, color: '#555' }}>Analysis Results</h4>
                             {resultsLoading ? (
@@ -292,6 +320,13 @@ export default function GapAnalysisScreen() {
                                     <th>S.No</th>
                                     <th>Severity</th>
                                     <th>Gap Type</th>
+                                    {results.some((res) => res.clauseNo) && (
+                                      <>
+                                        <th>Clause</th>
+                                        <th>Compliance</th>
+                                        <th>Reference</th>
+                                      </>
+                                    )}
                                     <th>Component</th>
                                     <th>Required</th>
                                     <th>Available</th>
@@ -315,6 +350,19 @@ export default function GapAnalysisScreen() {
                                           </span>
                                         </td>
                                         <td>{res.gapType ?? '—'}</td>
+                                        {res.clauseNo !== undefined && (
+                                          <>
+                                            <td title={res.clauseText ?? ''}>{res.clauseNo ?? '—'}</td>
+                                            <td>
+                                              <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 12, fontSize: 12, fontWeight: 600,
+                                                color: res.complianceStatus === 'COMPLIANT' ? '#166534' : '#991b1b',
+                                                background: res.complianceStatus === 'COMPLIANT' ? '#d1fae5' : '#fee2e2' }}>
+                                                {res.complianceStatus ?? '—'}
+                                              </span>
+                                            </td>
+                                            <td>{res.referenceDoc ?? '—'}</td>
+                                          </>
+                                        )}
                                         <td>{res.componentCode ?? res.componentDescription ?? '—'}</td>
                                         <td>{res.requiredQty ?? '—'}</td>
                                         <td>{res.availableQty ?? '—'}</td>
@@ -349,7 +397,7 @@ export default function GapAnalysisScreen() {
         )}
       </div>
 
-      <ConfirmActionModal open={Boolean(runTarget)} title={runTarget ? `Run Analysis` : ''} body={runProgress ? "Analyzing..." : "Execute this gap analysis run?"} okLabel="Run" busy={busy} onClose={() => { if (!busy) { setRunTarget(null); setRunProgress(null); } }} onConfirm={runAnalysis} />
+      <ConfirmActionModal open={Boolean(runTarget)} title={runTarget ? (runKind === 'QMS' ? 'Run QMS Clause Analysis' : 'Run Analysis') : ''} body={runProgress ? "Analyzing..." : (runKind === 'QMS' ? "Assess QMS clause compliance from master data?" : "Execute this gap analysis run?")} okLabel="Run" busy={busy} onClose={() => { if (!busy) { setRunTarget(null); setRunProgress(null); } }} onConfirm={runKind === 'QMS' ? runQms : runAnalysis} />
       {runProgress && (
         <div className="panel" style={{ padding: 20 }}>
           <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>

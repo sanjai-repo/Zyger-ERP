@@ -1,3 +1,4 @@
+import UomSelect from '../../../components/common/UomSelect';
 import { useEffect, useState, useCallback } from 'react';
 import apiClient from '../../../api/axiosClient';
 import { useToast } from '../../../contexts/ToastContext';
@@ -8,6 +9,7 @@ import StatusBadge from '../../../components/common/StatusBadge';
 import { exportToCsv } from '../../../utils/csvExport';
 import { filterPurchaseRelevantItems } from '../../../utils/itemClassification';
 import { useTabs } from '../../../contexts/TabsContext';
+import StoreSelect from '../../../components/common/StoreSelect';
 import type {
   ProductionConsumption,
   ProductionConsumptionLine,
@@ -197,8 +199,8 @@ export default function ConsumptionScreen() {
                     <td><input className="in" type="number" value={String(l.consumedQty ?? '')} onChange={(e) => setLine(i, 'consumedQty', Number(e.target.value))} /></td>
                     <td><input className="in" type="number" value={String(l.returnQty ?? '')} onChange={(e) => setLine(i, 'returnQty', Number(e.target.value))} /></td>
                     <td><input className="in" type="number" value={String(l.scrapQty ?? '')} onChange={(e) => setLine(i, 'scrapQty', Number(e.target.value))} /></td>
-                    <td><input className="in" value={l.uom ?? ''} onChange={(e) => setLine(i, 'uom', e.target.value)} /></td>
-                    <td><input className="in" value={l.location ?? ''} onChange={(e) => setLine(i, 'location', e.target.value)} /></td>
+                    <td><UomSelect value={l.uom ?? ''} onChange={(code) => setLine(i, 'uom', code)} /></td>
+                    <td><StoreSelect value={l.location ?? ''} onChange={(code) => setLine(i, 'location', code)} /></td>
                     <td><input className="in" value={l.batchNumber ?? ''} onChange={(e) => setLine(i, 'batchNumber', e.target.value)} /></td>
                     <td><button className="ibtn danger" onClick={() => removeLine(i)}><span className="material-symbols-rounded">remove</span></button></td>
                   </tr>

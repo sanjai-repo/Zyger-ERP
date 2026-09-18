@@ -1,3 +1,4 @@
+import UomSelect from '../../../components/common/UomSelect';
 import { useEffect, useState, useCallback } from 'react';
 import apiClient from '../../../api/axiosClient';
 import { useToast } from '../../../contexts/ToastContext';
@@ -16,6 +17,7 @@ import MultipleOperatorsModal, { type OperatorAssignment } from './MultipleOpera
 import RejectionReasonModal, { type RejectionReasonItem } from './RejectionReasonModal';
 import ReworkReasonModal, { type ReworkReasonItem } from './ReworkReasonModal';
 import ProductionSummaryReportModal from './ProductionSummaryReportModal';
+import StoreSelect from '../../../components/common/StoreSelect';
 
 interface ProductionEntryItem {
   id?: number;
@@ -667,9 +669,9 @@ export default function ProductionEntryScreen() {
                         </td>
                         <td><input className="in" placeholder="Item Code" value={String(line.itemCode ?? '')} onChange={(e) => updateAdditionalOutput(idx, 'itemCode', e.target.value)} /></td>
                         <td><input className="in" type="number" value={String(line.quantity ?? '')} onChange={(e) => updateAdditionalOutput(idx, 'quantity', Number(e.target.value))} /></td>
-                        <td><input className="in" value={String(line.location ?? 'STORE')} onChange={(e) => updateAdditionalOutput(idx, 'location', e.target.value)} /></td>
+                        <td><StoreSelect value={String(line.location ?? 'STORE')} onChange={(code) => updateAdditionalOutput(idx, 'location', code)} /></td>
                         <td><input className="in" type="number" value={String(line.weight ?? '')} onChange={(e) => updateAdditionalOutput(idx, 'weight', Number(e.target.value))} /></td>
-                        <td><input className="in" value={String(line.uom ?? '')} onChange={(e) => updateAdditionalOutput(idx, 'uom', e.target.value)} /></td>
+                        <td><UomSelect value={String(line.uom ?? '')} onChange={(code) => updateAdditionalOutput(idx, 'uom', code)} /></td>
                         <td><input className="in" placeholder="Next op / FG / SFG" value={String(line.destinationStageCode ?? '')} onChange={(e) => updateAdditionalOutput(idx, 'destinationStageCode', e.target.value)} /></td>
                         <td><input className="in" value={String(line.remarks ?? '')} onChange={(e) => updateAdditionalOutput(idx, 'remarks', e.target.value)} /></td>
                         <td><button className="ibtn danger" title="Remove output" onClick={() => removeAdditionalOutput(idx)}><span className="material-symbols-rounded">delete</span></button></td>

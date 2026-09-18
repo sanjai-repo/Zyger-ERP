@@ -14,6 +14,7 @@ import {
   runBatchCardAction,
 } from '../../../services/batchCardApi';
 import type { BatchCard, BatchCardAllocation, EntryOption } from '../../../services/batchCardApi';
+import StoreSelect from '../../../components/common/StoreSelect';
 
 const STATUS_STYLE: Record<string, { color: string; bg: string }> = {
   OPEN: { color: '#2563eb', bg: '#dbeafe' },
@@ -225,7 +226,7 @@ export function BatchCardScreen({ screenId }: { screenId: string }) {
                     <td><input className="in" value={a.lotNumber ?? ''} onChange={(e) => setAllocation(i, { lotNumber: e.target.value })} /></td>
                     <td><input className="in" value={a.heatNumber ?? ''} onChange={(e) => setAllocation(i, { heatNumber: e.target.value })} /></td>
                     <td><input className="in" type="number" min="0" step="any" value={String(a.quantity ?? '')} onChange={(e) => setAllocation(i, { quantity: Number(e.target.value) })} /></td>
-                    <td><input className="in" value={a.location ?? 'STORE'} onChange={(e) => setAllocation(i, { location: e.target.value })} /></td>
+                    <td><StoreSelect value={a.location ?? 'STORE'} onChange={(code) => setAllocation(i, { location: code })} /></td>
                     <td>
                       <button className="ibtn danger" title="Remove line" disabled={allocations.length <= 1} onClick={() => setAllocations((prev) => prev.filter((_, x) => x !== i))}>
                         <span className="material-symbols-rounded">remove_circle</span>

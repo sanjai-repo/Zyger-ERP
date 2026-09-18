@@ -1,3 +1,5 @@
+import UomName from '../components/common/UomName';
+import UomSelect from '../components/common/UomSelect';
 import { useState, useEffect } from 'react';
 import axiosClient from '../api/axiosClient';
 
@@ -37,7 +39,7 @@ export default function SparePartMasterPage() {
             <input placeholder="Inventory Item Code" value={form.itemCode} onChange={e => setForm({ ...form, itemCode: e.target.value })} />
             <input placeholder="Name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
             <input placeholder="Description" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
-            <input placeholder="UOM" value={form.uom} onChange={e => setForm({ ...form, uom: e.target.value })} />
+            <UomSelect value={form.uom} onChange={code => setForm({ ...form, uom: code })} />
             <input placeholder="Unit Cost" type="number" value={form.unitCost} onChange={e => setForm({ ...form, unitCost: e.target.value })} />
           </div>
           <button onClick={save} className="btn-primary" style={{ marginTop: 12 }}>Save</button>
@@ -53,7 +55,7 @@ export default function SparePartMasterPage() {
         <tbody>
           {items.map((s, idx) => (
             <tr key={s.id} style={{ borderBottom: '1px solid #313244' }}>
-              <td className="num mut" style={{ padding: 8 }}>{idx + 1}</td><td style={{ padding: 8 }}>{s.code}</td><td style={{ padding: 8 }}>{s.itemCode || '-'}</td><td style={{ padding: 8 }}>{s.name}</td><td style={{ padding: 8 }}>{s.uom}</td><td style={{ padding: 8 }}>{s.unitCost}</td>
+              <td className="num mut" style={{ padding: 8 }}>{idx + 1}</td><td style={{ padding: 8 }}>{s.code}</td><td style={{ padding: 8 }}>{s.itemCode || '-'}</td><td style={{ padding: 8 }}>{s.name}</td><td style={{ padding: 8 }}><UomName value={s.uom} /></td><td style={{ padding: 8 }}>{s.unitCost}</td>
             </tr>
           ))}
         </tbody>

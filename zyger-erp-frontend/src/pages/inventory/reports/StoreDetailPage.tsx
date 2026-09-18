@@ -140,8 +140,7 @@ export default function StoreDetailPage({ initialFilters }: StoreDetailPageProps
       <div className="pg-head">
         <h1>{store?.name ?? storeCode}</h1>
         <p>
-          Store {storeCode}
-          {kpis.lastMovement ? ` — last movement ${formatDate(kpis.lastMovement)}` : ''}
+          {kpis.lastMovement ? `Last movement ${formatDate(kpis.lastMovement)}` : ''}
         </p>
       </div>
 

@@ -1,3 +1,4 @@
+import { useUomNames } from '../../hooks/useUomNames';
 import { useState, useEffect, useRef } from 'react';
 import apiClient from '../../api/axiosClient';
 import { filterPurchaseRelevantItems } from '../../utils/itemClassification';
@@ -25,6 +26,7 @@ export default function ItemSearchDropdown({
   placeholder = 'Type 2-3 letters of item name or specification...',
   disabled = false,
 }: ItemSearchDropdownProps) {
+  const { uomName } = useUomNames();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<ItemSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -158,7 +160,7 @@ export default function ItemSearchDropdown({
               >
                 <div style={{ fontWeight: 600, color: 'var(--text-main, #1e293b)' }}>{itemName}</div>
                 <div style={{ fontSize: '0.82rem', color: 'var(--text-muted, #64748b)' }}>
-                  Code: {itemCode} | Spec: {spec || 'N/A'} | UOM: {item.uom || 'Pcs'}
+                  Code: {itemCode} | Spec: {spec || 'N/A'} | UOM: {uomName(item.uom || 'Pcs')}
                 </div>
               </div>
             );

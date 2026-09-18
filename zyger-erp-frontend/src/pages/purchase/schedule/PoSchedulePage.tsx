@@ -1,3 +1,5 @@
+import { useUomNames } from '../../../hooks/useUomNames';
+import UomName from '../../../components/common/UomName';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../../contexts/AuthContext';
 import axiosClient from '../../../api/axiosClient';
@@ -9,6 +11,8 @@ import { logSystemActivity } from '../../../utils/activityLog';
 import { exportToCsv } from '../../../utils/csvExport';
 import { filterPurchaseRelevantItems } from '../../../utils/itemClassification';
 import SearchableItemLookup from '../../../components/common/SearchableItemLookup';
+import StoreSelect from '../../../components/common/StoreSelect';
+import StoreName from '../../../components/common/StoreName';
 
 interface ScheduleRow {
   id?: number;
@@ -33,6 +37,7 @@ interface ScheduleRow {
 }
 
 export default function PoSchedulePage() {
+  const { uomName } = useUomNames();
   const { openTab } = useTabs();
   const { toast } = useToast();
   const { user } = useAuth();
@@ -567,14 +572,14 @@ export default function PoSchedulePage() {
                     </td>
                     <td className="num">₹{s.unitPrice ?? 0}</td>
                     <td className="num cell-b">
-                      {s.scheduledQty} <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{s.uom}</span>
+                      {s.scheduledQty} <span style={{ fontSize: '11px', color: 'var(--muted)' }}><UomName value={s.uom} /></span>
                     </td>
                     <td className="num cell-b" style={{ color: 'var(--blue)' }}>
                       ₹{(s.totalAmount ?? (s.scheduledQty * (s.unitPrice ?? 0))).toLocaleString()}
                     </td>
                     <td>{s.scheduledDate}</td>
                     <td>
-                      <span style={{ fontSize: '12px' }}>{s.location || 'MAIN'}</span>
+                      <span style={{ fontSize: '12px' }}><StoreName code={s.location || 'MAIN'} /></span>
                     </td>
                     <td>
                       <span
@@ -649,7 +654,7 @@ export default function PoSchedulePage() {
                   <option value="">— Select Reference Quotation or PO to Auto-Fill —</option>
                   {referenceDocs.map((ref) => (
                     <option key={ref.id} value={ref.docNo}>
-                      {ref.docNo} ({ref.type}) — {ref.supplier} — {ref.itemCode} ({ref.qty} {ref.uom})
+                      {ref.docNo} ({ref.type}) — {ref.supplier} — {ref.itemCode} ({ref.qty} {uomName(ref.uom)})
                     </option>
                   ))}
                 </select>
@@ -780,15 +785,10 @@ export default function PoSchedulePage() {
 
                 <label className="fld">
                   <span>Delivery Location / Store</span>
-                  <select
-                    className="in"
+                  <StoreSelect
                     value={newSchedule.location}
-                    onChange={(e) => setNewSchedule((prev) => ({ ...prev, location: e.target.value }))}
-                  >
-                    <option value="MAIN - Main Warehouse">MAIN - Main Warehouse</option>
-                    <option value="STORE-01 - Raw Material Store">STORE-01 - Raw Material Store</option>
-                    <option value="STORE-02 - Subcon Store">STORE-02 - Subcon Store</option>
-                  </select>
+                    onChange={(code) => setNewSchedule((prev) => ({ ...prev, location: code }))}
+                  />
                 </label>
               </div>
 
