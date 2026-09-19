@@ -88,7 +88,7 @@ export default function SalesDocScreen({ config, initialDocId, viewOnly = false,
   const [auditOpen, setAuditOpen] = useState(false);
 
   // Master dropdown data
-  const [customerMasters, setCustomerMasters] = useState<Array<{ id: number; name: string; code: string; billingAddress?: string; shippingAddress?: string; address?: string; city?: string; state?: string; pincode?: string; gstNumber?: string; gstin?: string; addressesJson?: string; deliveryAddressesJson?: string }>>([]);
+  const [customerMasters, setCustomerMasters] = useState<Array<{ id: number; name: string; code: string; billingAddress?: string; shippingAddress?: string; address?: string; city?: string; state?: string; pincode?: string; gstNumber?: string; gstin?: string; gstState?: string; addressesJson?: string; deliveryAddressesJson?: string }>>([]);
   const [itemMasters, setItemMasters] = useState<Array<{ id: number; name: string; code: string; uom?: string; price?: number; description?: string; taxCode?: string; active?: boolean }>>([]);
   const [uomMasters, setUomMasters] = useState<Array<{ id: number; code: string; name: string }>>([]);
   const [storeMasters, setStoreMasters] = useState<Array<{ code: string; name: string }>>([]);
@@ -664,12 +664,22 @@ export default function SalesDocScreen({ config, initialDocId, viewOnly = false,
       }
       if (!shippingAddr) shippingAddr = buildAddr(found);
     }
+    // GSTIN and Place of Supply come from the customer master, so they follow whichever
+    // customer is picked (and clear when it has none) — only for docs that carry the fields.
+    const hasField = (k: string) => config.fields.some((f) => f.key === k);
+    const gst = String(found?.gstNumber || found?.gstin || '').trim();
+    const state = String(found?.state || found?.gstState || '').trim();
+    const gstPatch: Record<string, unknown> = {};
+    if (hasField('customerGstin')) gstPatch.customerGstin = gst;
+    if (hasField('placeOfSupply')) gstPatch.placeOfSupply = state;
+    if (hasField('placeOfSupplyCode') && gst.length >= 2) gstPatch.placeOfSupplyCode = gst.slice(0, 2);
     setForm(prev => ({
       ...prev,
       customer: customerName,
       customerCode: found?.code ?? prev.customerCode ?? '',
       billingAddress: billingAddr,
       shippingAddress: shippingAddr,
+      ...gstPatch,
     }));
   };
 

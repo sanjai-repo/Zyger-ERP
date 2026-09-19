@@ -707,7 +707,7 @@ public class PrintService {
         meta.add(new String[]{"Mode of Transport", str(doc.getOrDefault("modeOfTransport", "Road"))});
         meta.add(new String[]{"Vehicle No.", str(doc.get("vehicleNo"))});
         meta.add(new String[]{"Transporter", str(doc.get("transporter"))});
-        meta.add(new String[]{"LR / Docket No.", str(doc.get("lrNo"))});
+        if (!"sales-dc".equals(type)) meta.add(new String[]{"LR / Docket No.", str(doc.get("lrNo"))});
         meta.add(new String[]{"e-Way Bill No.", firstNonEmpty(str(doc.get("ewayBillNo")), str(doc.get("ewayBillReference")))});
 
         String partyHeading = "jo-dc".equals(type) ? "Job Worker / Vendor:" : "transfer-dc".equals(type) ? "Transfer To (Destination):" : "Consignee / Customer:";
