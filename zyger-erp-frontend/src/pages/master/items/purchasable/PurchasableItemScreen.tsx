@@ -1,3 +1,4 @@
+import StoreSelect from '../../../../components/common/StoreSelect';
 import { useEffect, useState } from 'react';
 import apiClient from '../../../../api/axiosClient';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -618,11 +619,7 @@ export default function PurchasableItemScreen() {
                 </label>
                 <label className="fld">
                   <span>Store / Location</span>
-                  <select className="in" value={form.storeLocation} onChange={e => setFld('storeLocation', e.target.value)}>
-                    <option value="">Select...</option>
-                    <option value="MAIN_STORE">Main Store</option>
-                    <option value="RM_STORE">RM Store</option>
-                  </select>
+                  <StoreSelect value={form.storeLocation} onChange={code => setFld('storeLocation', code)} />
                 </label>
 
                 <label className="fld">

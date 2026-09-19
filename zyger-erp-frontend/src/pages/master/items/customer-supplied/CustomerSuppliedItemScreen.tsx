@@ -1,3 +1,4 @@
+import StoreSelect from '../../../../components/common/StoreSelect';
 import { useEffect, useState } from 'react';
 import apiClient from '../../../../api/axiosClient';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -650,9 +651,7 @@ export default function CustomerSuppliedItemScreen() {
 
                 <label className="fld">
                   <span>Store / Location</span>
-                  <select className="in" value={form.storeLocation} onChange={e => setFld('storeLocation', e.target.value)}>
-                    <option value="">Select...</option>
-                  </select>
+                  <StoreSelect value={form.storeLocation} onChange={code => setFld('storeLocation', code)} />
                 </label>
                 <label className="fld">
                   <span>Rack</span>

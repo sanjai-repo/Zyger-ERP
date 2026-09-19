@@ -248,7 +248,7 @@ public class RejectedItemsService {
 
     private static final String STOCK_RETURN_SQL =
             "SELECT 'STOCK_RETURN', 'Return', h.doc_no, h.doc_date, l.item_code, im.name, l.batch_no, l.location, " +
-            "l.rejected_qty, im.uom, h.reason_code, h.party, NULL, l.stock_status, h.original_document_no " +
+            "l.rejected_qty, im.uom, h.reason_code, h.party, NULL, CASE WHEN l.stock_status IS NULL OR UPPER(l.stock_status) = 'FREE' THEN h.condition ELSE l.stock_status END, h.original_document_no " +
             "FROM internal_return_line l JOIN internal_return h ON h.id = l.doc_id " +
             "LEFT JOIN item_master im ON im.code = l.item_code " +
             "WHERE " + LIVE_HEADER + " AND l.rejected_qty > 0";
@@ -258,12 +258,12 @@ public class RejectedItemsService {
             "l.batch_no, l.location, l.returned_qty, COALESCE(l.uom, im.uom), COALESCE(l.return_reason, h.return_reason, h.reason), " +
             "h.customer, NULL, h.disposition, h.original_dc_number " +
             "FROM dc_return_line l JOIN dc_return h ON h.id = l.doc_id LEFT JOIN item_master im ON im.code = l.item_code " +
-            "WHERE " + LIVE_HEADER + " AND l.returned_qty > 0 AND h.disposition IN ('REJECTED','DAMAGED','SCRAP')";
+            "WHERE " + LIVE_HEADER + " AND l.returned_qty > 0 AND UPPER(h.disposition) IN ('REJECTED','DAMAGED','SCRAP')";
 
     private static final String INVOICE_RETURN_SQL =
             "SELECT 'INVOICE_RETURN', 'Customer Return', h.doc_no, h.doc_date, l.item_code, COALESCE(l.item_name, im.name), " +
             "l.batch_no, l.location, l.returned_qty, COALESCE(l.uom, im.uom), COALESCE(l.return_reason, h.return_reason, h.reason), " +
             "h.customer, l.rate, h.disposition, h.original_invoice_number " +
             "FROM invoice_return_line l JOIN invoice_return h ON h.id = l.doc_id LEFT JOIN item_master im ON im.code = l.item_code " +
-            "WHERE " + LIVE_HEADER + " AND l.returned_qty > 0 AND h.disposition IN ('REJECTED','DAMAGED','SCRAP')";
+            "WHERE " + LIVE_HEADER + " AND l.returned_qty > 0 AND UPPER(h.disposition) IN ('REJECTED','DAMAGED','SCRAP')";
 }
