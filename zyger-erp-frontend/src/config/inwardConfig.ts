@@ -168,8 +168,6 @@ export function buildLineFields(qtyField: string, inwardType?: InwardType): Inwa
     { key: 'tax', label: 'Tax (%)', type: 'number' },
     { key: 'taxAmount', label: 'Tax Amt', type: 'auto' },
     { key: 'netAmount', label: 'Net Amt', type: 'auto' },
-    { key: 'acceptedQty', label: 'Accepted', type: 'number', required: true },
-    { key: 'rejectedQty', label: 'Rejected', type: 'number' },
   ];
 
   // Batch/Heat/Lot No render for every inward type except PO Inward, which doesn't need

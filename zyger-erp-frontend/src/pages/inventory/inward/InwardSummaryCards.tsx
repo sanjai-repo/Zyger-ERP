@@ -13,10 +13,8 @@ export default function InwardSummaryCards({
   summary,
   activeType,
   onSelectType,
-  onOpenPending,
 }: InwardSummaryCardsProps) {
   const total = summary?.total ?? { count: 0, qty: 0, amount: 0 };
-  const pending = summary?.pending ?? { count: 0, qty: 0, amount: 0 };
 
   return (
     <div className="inward-cards">
@@ -58,24 +56,6 @@ export default function InwardSummaryCards({
       </div>
 
       <div className="inward-cards-grid">
-        <div
-          className={`inward-card is-pending ${pending.count > 0 ? 'needs-action' : ''}`}
-          onClick={() => onOpenPending?.()}
-          title="Open pending inward documents"
-          role="button"
-          tabIndex={0}
-        >
-          {pending.count > 0 && <span className="inward-card-flag">Needs action</span>}
-          <div className="inward-card-ic pending">
-            <span className="material-symbols-rounded">hourglass_top</span>
-          </div>
-          <div className="inward-card-label">Pending Approval</div>
-          <div className="inward-card-value">{formatNumber(pending.count)}</div>
-          <div className="inward-card-sub">
-            Qty {formatNumber(pending.qty)} • {formatMoney(pending.amount)}
-          </div>
-        </div>
-
         {INWARD_TYPE_LIST.map((config) => {
           const value = summary?.byType?.[config.type] ?? { count: 0, qty: 0, amount: 0 };
           const share = total.count > 0 ? Math.round((value.count / total.count) * 100) : 0;

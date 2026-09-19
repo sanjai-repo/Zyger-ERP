@@ -6,7 +6,6 @@ import InwardSummaryCards from './InwardSummaryCards';
 import InwardForm from './InwardForm';
 import InwardListPage from './InwardListPage';
 import InwardLog from './InwardLog';
-import PendingInwardListPage from './PendingInwardListPage';
 
 export default function InwardEntryPage() {
   const { openTab } = useTabs();
@@ -25,16 +24,6 @@ export default function InwardEntryPage() {
       icon: 'table_view',
       component: InwardListPage,
       props: { inwardType: type },
-    });
-  };
-
-  const openPendingList = () => {
-    openTab({
-      id: 'pending-inward',
-      label: 'Pending Inward',
-      icon: 'hourglass_top',
-      component: PendingInwardListPage,
-      props: { showLog: false },
     });
   };
 
@@ -73,7 +62,6 @@ export default function InwardEntryPage() {
         summary={dashboardQuery.data}
         activeType={activeType}
         onSelectType={handleSelectType}
-        onOpenPending={openPendingList}
       />
 
       <InwardLog />

@@ -3151,3 +3151,63 @@ textarea.in {
     color: #ef4444;
     background: rgba(239, 68, 68, 0.12);
 }
+
+/* Quotation Comparison — "Add Compare Quotation" picker: hover a row's Lines
+   cell to bob up a popover listing that quotation's item names. The popover
+   itself is rendered through a React portal straight into <body> (so it can't
+   be clipped by the modal's overflow:auto list) — its show/hide is driven by
+   React hover state (LineNamesTip), not by a CSS :hover selector, since a
+   portalled node is no longer a DOM descendant of .qc-line-tip-wrap. */
+.qc-line-tip-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: default;
+    border-bottom: 1px dashed var(--muted);
+}
+
+.qc-line-tip {
+    min-width: 200px;
+    max-width: 280px;
+    background: var(--dark-nav, #1e293b);
+    color: #fff;
+    border-radius: var(--r-md, 8px);
+    box-shadow: var(--sh-md, 0 8px 24px rgba(0,0,0,.18));
+    padding: 8px 10px;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.5;
+    text-align: left;
+    white-space: normal;
+    z-index: 1000;
+    pointer-events: none;
+    animation: qc-tip-in .12s ease-out;
+}
+
+@keyframes qc-tip-in {
+    from { opacity: 0; transform: translate(-50%, calc(-100% + 4px)); }
+    to   { opacity: 1; transform: translate(-50%, -100%); }
+}
+
+.qc-line-tip-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #94a3b8;
+    margin-bottom: 4px;
+}
+
+.qc-line-tip-item {
+    padding: 1px 0;
+}
+
+.qc-line-tip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: var(--dark-nav, #1e293b);
+}

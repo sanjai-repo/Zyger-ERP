@@ -1,5 +1,6 @@
 import UomName from '../../../components/common/UomName';
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import axiosClient from '../../../api/axiosClient';
 import { useAuth } from '../../../contexts/AuthContext';
 import { formatNumber } from '../../../utils/format';
@@ -70,6 +71,55 @@ function loadSelection(): number[] {
     /* ignore */
   }
   return [];
+}
+
+/** Portal-based tooltip for line items in picker modal — escapes overflow:hidden clipping */
+function LineNamesTip({ lines, children }: { lines: QuotationLine[]; children: React.ReactNode }) {
+  const [hover, setHover] = useState(false);
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+  const spanRef = React.useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (hover && spanRef.current) {
+      const rect = spanRef.current.getBoundingClientRect();
+      setCoords({ top: rect.top - 8, left: rect.left + rect.width / 2 });
+    } else {
+      setCoords(null);
+    }
+  }, [hover]);
+
+  return (
+    <>
+      <span
+        ref={spanRef}
+        className="qc-line-tip-wrap"
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+      >
+        {children}
+      </span>
+      {hover && coords && createPortal(
+        <div
+          className="qc-line-tip"
+          style={{
+            position: 'fixed',
+            top: coords.top,
+            left: coords.left,
+            transform: 'translate(-50%, -100%)',
+          }}
+        >
+          <div className="qc-line-tip-title">Items in this quotation</div>
+          {lines.map((l, idx) => (
+            <div key={idx} className="qc-line-tip-item">
+              {l.itemCode ? `${l.itemCode} — ` : ''}
+              {l.itemName || l.description || 'Unnamed item'}
+            </div>
+          ))}
+        </div>,
+        document.body
+      )}
+    </>
+  );
 }
 
 export default function QuotationComparisonPage() {
@@ -635,7 +685,7 @@ export default function QuotationComparisonPage() {
 
                       return (
                         <tr key={item.itemCode}>
-                          <td style={{ fontWeight: 600, color: 'var(--text)' }}>
+                          <td style={{ fontWeight: 600, color: 'var(--text)' }} title={item.itemName}>
                             {item.itemCode} — {item.itemName}
                             <div className="mut">Req Qty: {item.qty} <UomName value={item.uom} /></div>
                           </td>
@@ -789,7 +839,8 @@ export default function QuotationComparisonPage() {
                   </thead>
                   <tbody>
                     {availableForPicker.map((q) => {
-                      const lineCount = (q.lines ?? []).length;
+                      const lines = q.lines ?? [];
+                      const lineCount = lines.length;
                       const enabled = lineCount > 0;
                       const checked = confirmedPending.includes(q.id);
                       return (
@@ -810,7 +861,15 @@ export default function QuotationComparisonPage() {
                           <td style={{ fontWeight: 600 }}>{q.docNo}</td>
                           <td>{q.supplier}</td>
                           <td className="mut">{q.enquiryNumber || '—'}</td>
-                          <td className="mut">{enabled ? lineCount : 'No lines'}</td>
+                          <td className="mut">
+                            {enabled ? (
+                              <LineNamesTip lines={lines}>
+                                {lineCount}
+                              </LineNamesTip>
+                            ) : (
+                              'No lines'
+                            )}
+                          </td>
                         </tr>
                       );
                     })}
